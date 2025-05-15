@@ -1,4 +1,3 @@
-from pathlib import Path
 from importlib import resources
 import inspect
 import json
@@ -6,11 +5,12 @@ import pathlib
 import warnings
 import copy
 import numpy as np
-from photompy import read_ies_data, write_ies_data, total_optical_power
+from photompy import Photometry, IESFile
 from .spectrum import Spectrum
 from .lamp_surface import LampSurface
 from .lamp_plotter import LampPlotter
-from .trigonometry import to_cartesian, to_polar, attitude
+from .lamp_orientation import LampOrientation
+from .trigonometry import to_polar  # , to_cartesian, attitude
 from ._data import get_tlvs
 
 VALID_LAMPS = [
@@ -105,7 +105,6 @@ class Lamp:
         self,
         lamp_id=None,
         name=None,
-        filename=None,
         filedata=None,
         x=None,
         y=None,
@@ -134,20 +133,32 @@ class Lamp:
             possibly need to make all the surface emission properties into a separate class
         """
 
-        self.lamp_id = str(lamp_id)
+        self.lamp_id = lamp_id
         self.name = lamp_id if name is None else str(name)
         self.enabled = True if enabled is None else enabled
-        # position
-        self.x = 0.0 if x is None else x
-        self.y = 0.0 if y is None else y
-        self.z = 0.0 if z is None else z
-        self.position = np.array([self.x, self.y, self.z])
-        # orientation
-        self.angle = 0.0 if angle is None else angle
-        self.aimx = self.x if aimx is None else aimx
-        self.aimy = self.y if aimy is None else aimy
-        self.aimz = self.z - 1.0 if aimz is None else aimz
-        self.aim_point = np.array([self.aimx, self.aimy, self.aimz])
+        # # position
+        # self.x = 0.0 if x is None else x
+        # self.y = 0.0 if y is None else y
+        # self.z = 0.0 if z is None else z
+        # self.position = np.array([self.x, self.y, self.z])
+        # # orientation
+        # self.angle = 0.0 if angle is None else angle
+        # self.aimx = self.x if aimx is None else aimx
+        # self.aimy = self.y if aimy is None else aimy
+        # self.aimz = self.z - 1.0 if aimz is None else aimz
+        # self.aim_point = np.array([self.aimx, self.aimy, self.aimz])
+        x = 0.0 if x is None else x
+        y = 0.0 if y is None else y
+        z = 0.0 if z is None else z
+        self.pose = LampOrientation(
+            x=x,
+            y=y,
+            z=z,
+            angle=0.0 if angle is None else angle,
+            aimx=x if aimx is None else aimx,
+            aimy=y if aimy is None else aimy,
+            aimz=z - 1.0 if aimz is None else aimz,
+        )
 
         # mW/sr or uW/cm2 typically; not directly specified in .ies file and they can vary for GUV fixtures
         self.intensity_units = self._set_intensity_units(intensity_units)
@@ -176,13 +187,14 @@ class Lamp:
             units=units,
             source_density=source_density,
             intensity_map=intensity_map,
-            position=self.position,
-            aim_point=self.aim_point,
-            angle=self.angle,
+            pose=self.pose,
+            # position=self.position,
+            # aim_point=self.aim_point,
+            # angle=self.angle,
         )
 
-        # update heading and bank
-        self.aim(self.aimx, self.aimy, self.aimz)
+        # # update heading and bank - after surface
+        # self.aim(self.aimx, self.aimy, self.aimz)
 
         # spectra
         self.spectra_source = spectra_source
@@ -192,23 +204,122 @@ class Lamp:
         self.plotter = LampPlotter(self)
 
         # load file and coordinates
-        self.filename = filename
+        # temp -- these properties probably shouldn't stick around
         self.filedata = filedata
-        self._check_filename()
+        self.ies = None
+        self._base_ies = None
+        self.load_ies(filedata)
+
+        # temp!!!
+        self.filename = None
 
         # values that will be filled in if there is filedata available
-        self.lampdict = None
-        self.thetas = None
-        self.phis = None
-        self.values = None
-        self.coords = None
-        self.photometric_coords = None
+        # self.lampdict = None
+        # self.thetas = None
+        # self.phis = None
+        # self.values = None
+        # self.coords = None
+        # self.photometric_coords = None
         self.calc_state = None
 
-        # filename is just a label, filedata controls everything.
-        if self.filedata is not None:
-            self._load()
-            self._orient()
+        # # filename is just a label, filedata controls everything.
+        # if self.filedata is not None:
+        # self._load()
+        # self._orient()
+
+    # temp properties...
+    @property
+    def x(self):
+        return self.pose.x
+
+    @property
+    def y(self):
+        return self.pose.y
+
+    @property
+    def z(self):
+        return self.pose.z
+
+    @property
+    def position(self):
+        return self.pose.position
+
+    @property
+    def aimx(self):
+        return self.pose.aimx
+
+    @property
+    def aimy(self):
+        return self.pose.aimy
+
+    @property
+    def aimz(self):
+        return self.pose.aimz
+
+    @property
+    def aim_point(self):
+        return self.pose.aim_point
+
+    @property
+    def heading(self):
+        return self.pose.heading
+
+    @property
+    def bank(self):
+        return self.pose.bank
+
+    @property
+    def units(self):
+        return self.surface.units
+
+    @property
+    def length(self):
+        return self.surface.length
+
+    @property
+    def width(self):
+        return self.surface.width
+
+    @property
+    def depth(self):
+        return self.surface.depth
+
+    @property
+    def photometry(self) -> Photometry | None:
+        """Active Photometry block (or None if lamp has no photometry)."""
+        if self.ies is None:
+            return None
+        return self.ies.photometry
+
+    @property
+    def thetas(self):
+        if self.ies.photometry is None:
+            raise AttributeError("Lamp has no photometry")
+        return self.ies.photometry.thetas
+
+    @property
+    def phis(self):
+        if self.ies.photometry is None:
+            raise AttributeError("Lamp has no photometry")
+        return self.ies.photometry.phis
+
+    @property
+    def values(self):
+        if self.ies.photometry is None:
+            raise AttributeError("Lamp has no photometry")
+        return self.ies.photometry.values
+
+    @property
+    def coords(self):
+        if self.ies.photometry is None:
+            raise AttributeError("Lamp has no photometry")
+        return self.ies.photometry.coords
+
+    @property
+    def photometric_coords(self):
+        if self.ies.photometry is None:
+            raise AttributeError("Lamp has no photometry")
+        return self.ies.photometry.photometric_coords
 
     def to_dict(self):
         """
@@ -219,13 +330,20 @@ class Lamp:
         data = {}
         data["lamp_id"] = self.lamp_id
         data["name"] = self.name
-        data["x"] = float(self.x)
-        data["y"] = float(self.y)
-        data["z"] = float(self.z)
-        data["angle"] = float(self.angle)
-        data["aimx"] = float(self.aimx)
-        data["aimy"] = float(self.aimy)
-        data["aimz"] = float(self.aimz)
+        # data["x"] = float(self.x)
+        # data["y"] = float(self.y)
+        # data["z"] = float(self.z)
+        # data["angle"] = float(self.angle)
+        # data["aimx"] = float(self.aimx)
+        # data["aimy"] = float(self.aimy)
+        # data["aimz"] = float(self.aimz)
+        data["x"] = float(self.pose.x)
+        data["y"] = float(self.pose.y)
+        data["z"] = float(self.pose.z)
+        data["angle"] = float(self.pose.angle)
+        data["aimx"] = float(self.pose.aimx)
+        data["aimy"] = float(self.pose.aimy)
+        data["aimz"] = float(self.pose.aimz)
         data["intensity_units"] = self.intensity_units
         data["guv_type"] = self.guv_type
         data["wavelength"] = self.wavelength
@@ -242,7 +360,7 @@ class Lamp:
 
         data["enabled"] = True
 
-        data["filename"] = str(self.filename)
+        # data["filename"] = str(self.filename)
         filedata = self.save_ies()
         data["filedata"] = filedata.decode() if filedata is not None else None
 
@@ -271,7 +389,7 @@ class Lamp:
     @property
     def keywords(self):
         return VALID_LAMPS
-
+        
     @classmethod
     def from_keyword(cls, key, lamp_id=None, **kwargs):
         """define a Lamp object from a predefined keyword"""
@@ -279,19 +397,20 @@ class Lamp:
             raise TypeError(f"Keyword must be str, not {type(key)}")
         if key.lower() in VALID_LAMPS:
             path = "guv_calcs.data.lamp_data"
-            fn = resources.files(path).joinpath(key.lower() + ".ies")
-            sn = resources.files(path).joinpath(key.lower() + ".csv")
+            fname = key.lower() + ".ies"
+            spec_fname = key.lower() + ".csv"
+            filename = resources.files(path).joinpath(fname)
+            spectra_source = resources.files(path).joinpath(spec_fname)
+            kwargs.setdefault("filedata", filename)
+            kwargs.setdefault("spectra_source", spectra_source)
         else:
             raise KeyError(
                 f"{key} is not a valid lamp key. Valid keys are {VALID_LAMPS}"
             )
 
-        return cls(
-            lamp_id=key if lamp_id is None else lamp_id,
-            filename=fn,
-            spectra_source=sn,
-            **kwargs,
-        )
+        kwargs.setdefault("lamp_id", key)
+
+        return cls(**kwargs)
 
     @classmethod
     def from_index(cls, key_index=0, lamp_id=None, **kwargs):
@@ -301,59 +420,51 @@ class Lamp:
         if key_index < len(VALID_LAMPS):
             key = VALID_LAMPS[key_index]
             path = "guv_calcs.data.lamp_data"
-            fn = resources.files(path).joinpath(key.lower() + ".ies")
-            sn = resources.files(path).joinpath(key.lower() + ".csv")
+            fname = key.lower() + ".ies"
+            spec_fname = key.lower() + ".csv"
+            filename = resources.files(path).joinpath(fname)
+            spectra_source = resources.files(path).joinpath(spec_fname)
+            kwargs.setdefault("filedata", filename)
+            kwargs.setdefault("spectra_source", spectra_source)
         else:
             raise IndexError(
                 f"Only {len(VALID_LAMPS)} lamps are available. Available lamps: {VALID_LAMPS}"
             )
-        return cls(
-            lamp_id=key if lamp_id is None else lamp_id,
-            filename=fn,
-            spectra_source=sn,
-            **kwargs,
-        )
+            
+        kwargs.setdefault("lamp_id", key)
+        
+        return cls(**kwargs)
 
     def move(self, x=None, y=None, z=None):
         """Designate lamp position in cartesian space"""
-        # determine new position   selected_lamp.
-        x = self.x if x is None else float(x)
-        y = self.y if y is None else float(y)
-        z = self.z if z is None else float(z)
-        position = np.array([x, y, z])
-        # update aim point based on new position
-        diff = position - self.position
-        self.aim_point += diff
-        self.aimx, self.aimy, self.aimz = self.aim_point
-        # update position
-        self.position = position
-        self.x, self.y, self.z = self.position
-
-        self.surface.set_orientation(
-            mounting_position=self.position, aim_point=self.aim_point
-        )
+        self.pose.move(x=x, y=y, z=z)
+        self.surface.set_pose(self.pose)
         return self
 
     def rotate(self, angle):
         """designate lamp orientation with respect to its z axis"""
-        self.angle = float(angle)
-        self.surface.set_angle(angle)
+        # self.angle = angle
+        # self.surface.set_angle(angle)
+        self.pose = self.pose.rotate(angle)
+        self.surface.set_pose(self.pose)
         return self
 
     def aim(self, x=None, y=None, z=None):
         """aim lamp at a point in cartesian space"""
-        x = self.aimx if x is None else float(x)
-        y = self.aimy if y is None else float(y)
-        z = self.aimz if z is None else float(z)
-        self.aim_point = np.array([x, y, z])
-        self.aimx, self.aimy, self.aimz = self.aim_point
-        xr, yr, zr = self.aim_point - self.position
-        self.heading = np.degrees(np.arctan2(yr, xr))
-        self.bank = np.degrees(np.arctan2(np.sqrt(xr ** 2 + yr ** 2), zr) - np.pi)
-        # update grid points
-        self.surface.set_orientation(
-            mounting_position=self.position, aim_point=self.aim_point
-        )
+        self.pose = self.pose.aim(x=x, y=y, z=z)
+        self.surface.set_pose(self.pose)
+        # x = self.aimx if x is None else x
+        # y = self.aimy if y is None else y
+        # z = self.aimz if z is None else z
+        # self.aim_point = np.array([x, y, z])
+        # self.aimx, self.aimy, self.aimz = self.aim_point
+        # xr, yr, zr = self.aim_point - self.position
+        # self.heading = np.degrees(np.arctan2(yr, xr))
+        # self.bank = np.degrees(np.arctan2(np.sqrt(xr ** 2 + yr ** 2), zr) - np.pi)
+        # # update grid points
+        # self.surface.set_orientation(
+        # mounting_position=self.position, aim_point=self.aim_point
+        # )
         return self
 
     def transform(self, coords, scale=1):
@@ -362,12 +473,13 @@ class Lamp:
         Applies rotation, then aiming, then scaling, then translation.
         Scale parameter should generally only be used for photometric_coords
         """
-        coords = np.array(attitude(coords.T, roll=0, pitch=0, yaw=self.angle)).T
-        coords = np.array(
-            attitude(coords.T, roll=0, pitch=self.bank, yaw=self.heading)
-        ).T
-        coords = (coords.T / scale).T + self.position
-        return coords
+        return self.pose.transform(coords, scale=scale)
+        # coords = np.array(attitude(coords.T, roll=0, pitch=0, yaw=self.angle)).T
+        # coords = np.array(
+        # attitude(coords.T, roll=0, pitch=self.bank, yaw=self.heading)
+        # ).T
+        # coords = (coords.T / scale).T + self.position
+        # return coords
 
     def set_orientation(self, orientation, dimensions=None, distance=None):
         """
@@ -377,8 +489,12 @@ class Lamp:
         use the `rotate` method
         """
         # orientation = (orientation + 360) % 360
-        self.heading = orientation
-        self._recalculate_aim_point(dimensions=dimensions, distance=distance)
+        # self.heading = orientation
+        # self._recalculate_aim_point(dimensions=dimensions, distance=distance)
+        self.pose = self.pose.recalculate_aim_point(
+            heading=orientation, dimensions=dimensions, distance=distance
+        )
+        self.surface.set_pose(self.pose)
         return self
 
     def set_tilt(self, tilt, dimensions=None, distance=None):
@@ -387,8 +503,13 @@ class Lamp:
         alternative to setting aim point with `aim`
         """
         # tilt = (tilt + 360) % 360
-        self.bank = tilt
-        self._recalculate_aim_point(dimensions=dimensions, distance=distance)
+        # self.bank = tilt
+        # self._recalculate_aim_point(dimensions=dimensions, distance=distance)
+
+        self.pose = self.pose.recalculate_aim_point(
+            bank=tilt, dimensions=dimensions, distance=distance
+        )
+        self.surface.set_pose(self.pose)
         return self
 
     def set_source_density(self, source_density):
@@ -396,22 +517,30 @@ class Lamp:
         self.surface.set_source_density(source_density)
 
     def set_units(self, units):
-        """set"""
+        """set units"""
+        self.ies.update(units=1 if units == "feet" else 2)
         self.surface.set_units(units)
         return self
 
     def set_width(self, width):
         """change x-axis extent of lamp emissive surface"""
+        self.ies.update(width=width)
         self.surface.set_width(width)
         return self
 
     def set_length(self, length):
         """change y-axis extent of lamp emissive surface"""
+        self.ies.update(length=length)
         self.surface.set_length(length)
         return self
 
     def set_depth(self, depth):
-        """change the z-axis offset of where the lamp's emissive surface is"""
+        """
+        TODO: this should actually be decoupled from the ies file, that
+        property is rightly height not depth.
+        change the z-axis offset of where the lamp's emissive surface is
+        """
+        self.ies.update(depth=depth)
         self.surface.set_depth(depth)
 
     def get_calc_state(self):
@@ -447,7 +576,7 @@ class Lamp:
 
     def get_total_power(self):
         """return the lamp's total optical power"""
-        return total_optical_power(self.lampdict["interp_vals"])
+        return self.ies.photometry.total_optical_power()
 
     def get_limits(self, standard=0):
         """
@@ -475,28 +604,55 @@ class Lamp:
         cartesian = self.transform(self.coords) - self.position
         return np.array(to_polar(*cartesian.T)).round(sigfigs)
 
-    def reload(self, filename=None, filedata=None):
-        """
-        replace the ies file without erasing any position/rotation/eing information
-        can be used to load an ies file after initialization
-        """
+    def load_ies(self, filedata, override=True):
+        """load an ies file"""
 
-        self.filename = filename
-        self.filedata = filedata
-        # if filename is a path, filedata is filename
-        self._check_filename()
+        self.filedata = filedata  # tmp
+        if filedata is None:
+            self._base_ies = None
+        elif isinstance(filedata, IESFile):
+            self._base_ies = filedata
+        elif isinstance(filedata, Photometry):
+            self._base_ies = IESFile.from_photometry(filedata)
+        else:  # all other datasource cases covered here
+            self._base_ies = IESFile.read(filedata)
+        # in case the base object is mutated
+        self.ies = self._base_ies
 
-        if self.filedata is not None:
-            self._load()
-            self._orient()
-        else:
-            self.lampdict = None
-            self.thetas = None
-            self.phis = None
-            self.values = None
-            self.coords = None
-            self.photometric_coords = None
-            self.spectra = None
+        # update length/width/units
+        if override:
+            self.surface.set_ies(self.ies)
+
+        # # update coordinates for plotting
+        # if self.ies:
+        # self.coords, self.photometric_coords = self._orient()
+        # else:
+        # self.coords, self.photometric_coords = None, None
+        return self.ies
+
+    # def reload(self, filename=None, filedata=None):
+    # """
+    # DEPRECATE
+    # replace the ies file without erasing any position/rotation/eing information
+    # can be used to load an ies file after initialization
+    # """
+
+    # self.filename = filename
+    # self.filedata = filedata
+    # # if filename is a path, filedata is filename
+    # self._check_filename()
+
+    # if self.filedata is not None:
+    # self._load()
+    # self._orient()
+    # else:
+    # self.lampdict = None
+    # self.thetas = None
+    # self.phis = None
+    # self.values = None
+    # self.coords = None
+    # self.photometric_coords = None
+    # self.spectra = None
 
     def load_spectra(self, spectra_source):
         """external method for loading spectra after lamp object has been instantiated"""
@@ -516,12 +672,14 @@ class Lamp:
         """
         Save the current lamp paramters as an .ies file; alternatively, save the original ies file.
         """
-        if self.lampdict is not None:
+        if self.ies is not None:
             if original:
-                iesbytes = write_ies_data(self.lampdict, valkey="original_vals")
+                # iesbytes = write_ies_data(self.lampdict, valkey="original_vals")
+                iesbytes = self._base_ies.write(which="orig")
             else:
-                updated_lampdict = self.get_lampdict()
-                iesbytes = write_ies_data(updated_lampdict, valkey="original_vals")
+                iesbytes = self.ies.write(which="orig")
+                # updated_lampdict = self.get_lampdict()
+                # iesbytes = write_ies_data(updated_lampdict, valkey="original_vals")
 
             # write to file if provided, otherwise
             if fname is not None:
@@ -559,99 +717,108 @@ class Lamp:
         """see LampSurface.plot_surface"""
         return self.surface.plot_surface(**kwargs)
 
-    def _check_filename(self):
-        """
-        determine datasource
-        if filename is a path AND file exists AND filedata is None, it replaces filedata
-        otherwise filedata stays the same
-        """
-        FILE_IS_PATH = False
-        # if filename is string, check if it's a path
-        if isinstance(self.filename, (str, pathlib.PosixPath)):
-            if Path(self.filename).is_file():
-                FILE_IS_PATH = True
-            else:
-                if self.filedata is None:
-                    warnings.warn(
-                        f"File {self.filename} not found. Provide a valid file or the filedata."
-                    )
-        # if filename is a path and exists, it will replace filedata, but only if filedata wasn't specified to begin with
-        if FILE_IS_PATH and self.filedata is None:
-            self.filedata = Path(self.filename).read_text()
+    # def _check_filename(self):
+    # """
+    # DEPRECATE
+    # determine datasource
+    # if filename is a path AND file exists AND filedata is None, it replaces filedata
+    # otherwise filedata stays the same
+    # """
+    # FILE_IS_PATH = False
+    # # if filename is string, check if it's a path
+    # if isinstance(self.filename, (str, pathlib.PosixPath)):
+    # if Path(self.filename).is_file():
+    # FILE_IS_PATH = True
+    # else:
+    # if self.filedata is None:
+    # warnings.warn(
+    # f"File {self.filename} not found. Provide a valid file or the filedata."
+    # )
+    # # if filename is a path and exists, it will replace filedata, but only if filedata wasn't specified to begin with
+    # if FILE_IS_PATH and self.filedata is None:
+    # self.filedata = Path(self.filename).read_text()
 
-    def _load(self):
-        """
-        Loads lamp data from an IES file and initializes photometric properties.
-        """
+    # def _load(self):
+    # """
+    # DEPRECATE
+    # Loads lamp data from an IES file and initializes photometric properties.
+    # If override,
+    # """
+    # self.lampdict = read_ies_data(self.filedata)
+    # self.thetas = self.lampdict["full_vals"]["thetas"]
+    # self.phis = self.lampdict["full_vals"]["phis"]
+    # self.values = self.lampdict["full_vals"]["values"]
+    # self.surface.update_from_lampdict(self.lampdict)
 
-        self.lampdict = read_ies_data(self.filedata)
-        self.thetas = self.lampdict["full_vals"]["thetas"]
-        self.phis = self.lampdict["full_vals"]["phis"]
-        self.values = self.lampdict["full_vals"]["values"]
-        self.surface.update_from_lampdict(self.lampdict)
+    # def get_lampdict(self):
+    # """
+    # DEPRECATE
+    # update the lampdict object for writing a new ies file
+    # TODO: maybe include multiplier somehow?
+    # """
 
-    def get_lampdict(self):
-        """
-        update the lampdict object for writing a new ies file
-        TODO: maybe include multiplier somehow?
-        """
+    # lampdict = self.lampdict.copy()
+    # if self.surface.units == "feet":
+    # lampdict["units_type"] = 1
+    # elif self.surface.units == "meters":
+    # lampdict["units_type"] = 2
 
-        lampdict = self.lampdict.copy()
-        if self.surface.units == "feet":
-            lampdict["units_type"] = 1
-        elif self.surface.units == "meters":
-            lampdict["units_type"] = 2
+    # lampdict["width"] = self.surface.width
+    # lampdict["length"] = self.surface.length
+    # lampdict["height"] = self.surface.depth
+    # return lampdict
 
-        lampdict["width"] = self.surface.width
-        lampdict["length"] = self.surface.length
-        lampdict["height"] = self.surface.depth
-        return lampdict
+    # def _orient(self):
+    # """
+    # Initializes the orientation of the lamp based on its photometric data.
+    # """
+    # # true value coordinates
+    # if self.ies:
+    # tgrid, pgrid = np.meshgrid(self.thetas, self.phis)
+    # tflat, pflat = tgrid.flatten(), pgrid.flatten()
+    # tflat = 180 - tflat  # to account for reversed z direction
+    # x, y, z = to_cartesian(tflat, pflat, 1)
+    # self.coords = np.array([x, y, z]).T
 
-    def _orient(self):
-        """
-        Initializes the orientation of the lamp based on its photometric data.
-        """
+    # # photometric web coordinates
+    # xp, yp, zp = to_cartesian(tflat, pflat, self.values.flatten())
+    # self.photometric_coords = np.array([xp, yp, zp]).T
+    # else:
+    # self.coords = None
+    # self.photometric_coords = None
 
-        # true value coordinates
-        tgrid, pgrid = np.meshgrid(self.thetas, self.phis)
-        tflat, pflat = tgrid.flatten(), pgrid.flatten()
-        tflat = 180 - tflat  # to account for reversed z direction
-        x, y, z = to_cartesian(tflat, pflat, 1)
-        self.coords = np.array([x, y, z]).T
+    # return self.coords, self.photometric_coords
 
-        # photometric web coordinates
-        xp, yp, zp = to_cartesian(tflat, pflat, self.values.flatten())
-        self.photometric_coords = np.array([xp, yp, zp]).T
+    # def _recalculate_aim_point(self, dimensions=None, distance=None):
+    # """
+    # internal method to call if setting tilt/bank or orientation/heading
+    # if `dimensions` is passed, `distance` is not used
+    # """
+    # distance = 1 if distance is None else distance
+    # heading_rad = np.radians(self.heading)
+    # # Correcting bank angle for the pi shift
+    # bank_rad = np.radians(self.bank - 180)
 
-    def _recalculate_aim_point(self, dimensions=None, distance=None):
-        """
-        internal method to call if setting tilt/bank or orientation/heading
-        if `dimensions` is passed, `distance` is not used
-        """
-        distance = 1 if distance is None else distance
-        heading_rad = np.radians(self.heading)
-        # Correcting bank angle for the pi shift
-        bank_rad = np.radians(self.bank - 180)
+    # # Convert from spherical to Cartesian coordinates
+    # dx = np.sin(bank_rad) * np.cos(heading_rad)
+    # dy = np.sin(bank_rad) * np.sin(heading_rad)
+    # dz = np.cos(bank_rad)
+    # if dimensions is not None:
+    # distances = []
+    # dimx, dimy, dimz = dimensions
+    # if dx != 0:
+    # distances.append((dimx - self.x) / dx if dx > 0 else self.x / -dx)
+    # if dy != 0:
+    # distances.append((dimy - self.y) / dy if dy > 0 else self.y / -dy)
+    # if dz != 0:
+    # distances.append((dimz - self.z) / dz if dz > 0 else self.z / -dz)
+    # distance = min([d for d in distances])
+    # self.aim_point = self.position + np.array([dx, dy, dz]) * distance
+    # self.aimx, self.aimy, self.aimz = self.aim_point
 
-        # Convert from spherical to Cartesian coordinates
-        dx = np.sin(bank_rad) * np.cos(heading_rad)
-        dy = np.sin(bank_rad) * np.sin(heading_rad)
-        dz = np.cos(bank_rad)
-        if dimensions is not None:
-            distances = []
-            dimx, dimy, dimz = dimensions
-            if dx != 0:
-                distances.append((dimx - self.x) / dx if dx > 0 else self.x / -dx)
-            if dy != 0:
-                distances.append((dimy - self.y) / dy if dy > 0 else self.y / -dy)
-            if dz != 0:
-                distances.append((dimz - self.z) / dz if dz > 0 else self.z / -dz)
-            distance = min([d for d in distances])
-        self.aim_point = self.position + np.array([dx, dy, dz]) * distance
-        self.aimx, self.aimy, self.aimz = self.aim_point
-        self.surface.set_orientation(
-            mounting_position=self.position, aim_point=self.aim_point
-        )
+    # self.surface.set_orientation(
+    # mounting_position=self.position, aim_point=self.aim_point
+    # )
 
     def _set_intensity_units(self, arg):
         """determine the units of the radiant intensity"""

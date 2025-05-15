@@ -1,0 +1,132 @@
+from dataclasses import dataclass, replace
+import numpy as np
+from .trigonometry import attitude
+
+
+@dataclass(frozen=True, slots=True)
+class LampOrientation:
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+    angle: float = 0.0
+    aimx: float = 0.0
+    aimy: float = 0.0
+    aimz: float = -1.0
+
+    def __post_init__(self):
+        if (self.aimx, self.aimy, self.aimz) == (self.x, self.y, self.z):
+            raise ValueError("Aim point cannot equal position")
+
+    @property
+    def position(self):
+        return np.array([self.x, self.y, self.z])
+
+    @property
+    def aim_point(self):
+        return np.array([self.aimx, self.aimy, self.aimz])
+
+    @property
+    def heading(self):
+        xr, yr = self.aimx - self.x, self.aimy - self.y
+        return np.degrees(np.arctan2(yr, xr))
+
+    @property
+    def bank(self):
+        xr, yr, zr = self.aimx - self.x, self.aimy - self.y, self.aimz - self.z
+        return np.degrees(np.arctan2(np.sqrt(xr ** 2 + yr ** 2), zr) - np.pi)
+
+    ## check later if this is the correct way to do things
+    # @property
+    # def heading(self) -> float:              # 0–360°, +X = 0°
+    # dx, dy = self.aimx - self.x, self.aimy - self.y
+    # return (np.degrees(np.arctan2(dy, dx)) + 360.0) % 360.0
+
+    # @property
+    # def bank(self) -> float:                 # +90 = straight down, -90 = up
+    # dx, dy, dz = (self.aimx - self.x,
+    # self.aimy - self.y,
+    # self.aimz - self.z)
+    # horiz = np.hypot(dx, dy)
+    # return np.degrees(np.arctan2(-dz, horiz))
+
+    def with_(self, **changes):
+        return replace(self, **changes)
+
+    def move(self, x=None, y=None, z=None):
+        """Designate lamp position in cartesian space"""
+        # determine new position   selected_lamp.
+        x = self.x if x is None else x
+        y = self.y if y is None else y
+        z = self.z if z is None else z
+        position = np.array([x, y, z])
+        # update aim point based on new position
+        diff = position - self.position
+        aimx, aimy, aimz = self.aim_point + diff
+
+        return self.with_(x=x, y=y, z=z, aimx=aimx, aimy=aimy, aimz=aimz)
+
+    def rotate(self, angle):
+        return self.with_(angle=angle)
+
+    def aim(self, x=None, y=None, z=None):
+        """aim lamp at a point in cartesian space"""
+        aimx = self.aimx if x is None else x
+        aimy = self.aimy if y is None else y
+        aimz = self.aimz if z is None else z
+        return self.with_(aimx=aimx, aimy=aimy, aimz=aimz)
+
+    def tilt(self, tilt, dimensions=None, distance=None):
+        """set the tilt, or bank"""
+        return self.recalculate_aim_point(
+            bank=tilt, dimensions=dimensions, distance=distance
+        )
+
+    def orient(self, orientation, dimensions=None, distance=None):
+        """set the orientation, or heading"""
+        return self.recalculate_aim_point(
+            heading=orientation, dimensions=dimensions, distance=distance
+        )
+
+    def recalculate_aim_point(
+        self, heading=None, bank=None, dimensions=None, distance=None
+    ):
+        """recalculate the aim point based on the heading and bank"""
+        heading = self.heading if heading is None else heading
+        bank = self.bank if bank is None else bank
+
+        heading_rad = np.radians(self.heading)
+        # Correcting bank angle for the pi shift
+        bank_rad = np.radians(self.bank - 180)
+
+        # Convert from spherical to Cartesian coordinates
+        dx = np.sin(bank_rad) * np.cos(heading_rad)
+        dy = np.sin(bank_rad) * np.sin(heading_rad)
+        dz = np.cos(bank_rad)
+        if dimensions is not None:
+            distances = []
+            dimx, dimy, dimz = dimensions
+            if dx != 0:
+                distances.append((dimx - self.x) / dx if dx > 0 else self.x / -dx)
+            if dy != 0:
+                distances.append((dimy - self.y) / dy if dy > 0 else self.y / -dy)
+            if dz != 0:
+                distances.append((dimz - self.z) / dz if dz > 0 else self.z / -dz)
+            distance = min([d for d in distances])
+        else:
+            distance = 1 if distance is None else distance
+
+        aimx, aimy, aimz = self.position + np.array([dx, dy, dz]) * distance
+        return self.with_(aimx=aimx, aimy=aimy, aimz=aimz)
+
+    def transform(self, coords, scale=1):
+        """
+        Transforms the given coordinates based on the lamp's orientation and position.
+        Applies rotation, then aiming, then scaling, then translation.
+        Scale parameter should generally only be used for photometric_coords
+        """
+        coords = np.array(attitude(coords.T, roll=0, pitch=0, yaw=self.angle)).T
+        coords = np.array(
+            attitude(coords.T, roll=0, pitch=self.bank, yaw=self.heading)
+        ).T
+        coords = (coords.T / scale).T + self.position
+        return coords
