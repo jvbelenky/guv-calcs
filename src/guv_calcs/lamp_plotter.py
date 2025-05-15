@@ -1,7 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial import Delaunay
-from photompy import plot_ies
 from .trigonometry import to_polar
 
 
@@ -16,8 +15,8 @@ class LampPlotter:
 
     def plot_ies(self, title=""):
         """standard polar plot of an ies file"""
-        if self.lamp.filedata is not None:
-            fig, ax = plot_ies(fdata=self.lamp.lampdict["full_vals"], title=title)
+        if self.lamp.ies is not None:
+            fig, ax = self.lamp.ies.plot(title=title)
         else:
             fig, ax = plt.subplots(subplot_kw={"projection": "polar"})
         return fig, ax
@@ -39,7 +38,7 @@ class LampPlotter:
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot(111, projection="3d")
 
-        if self.lamp.filedata is not None:
+        if self.lamp.ies is not None:
             scale = self.lamp.values.max()
             x, y, z = self.lamp.transform(self.lamp.photometric_coords, scale=scale).T
             Theta, Phi, R = to_polar(*self.lamp.photometric_coords.T)
@@ -81,7 +80,7 @@ class LampPlotter:
         """
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot(111, projection="3d")
-        if self.lamp.filedata is not None:
+        if self.lamp.ies is not None:
             x, y, z = self.lamp.transform(self.lamp.coords).T
             intensity = self.lamp.values.flatten()
 

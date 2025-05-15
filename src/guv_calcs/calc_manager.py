@@ -1,5 +1,4 @@
 import numpy as np
-from photompy import get_intensity
 from .trigonometry import attitude, to_polar
 from .units import convert_units
 
@@ -65,8 +64,12 @@ class LightingCalculator:
             if lamp.surface.units.lower() != "meters":
                 R = np.array(convert_units(lamp.surface.units, "meters", *R))
             # fetch intensity values from photometric data
-            interpdict = lamp.lampdict["interp_vals"]
-            values = get_intensity(Theta, Phi, interpdict) / R ** 2
+            # interpdict = lamp.lampdict["interp_vals"]
+            # values = get_intensity(Theta, Phi, interpdict) / R ** 2
+
+            # # in new photompy version 0.0.9
+            phot = lamp.ies.photometry.interpolated()
+            values = phot.get_intensity(Theta, Phi) / R ** 2
 
             # near field only if necessary
             if lamp.surface.source_density > 0 and lamp.surface.photometric_distance:
@@ -141,8 +144,10 @@ class LightingCalculator:
             if lamp.surface.units.lower() != "meters":
                 R_n = np.array(convert_units(lamp.surface.units, "meters", *R_n))
 
-            interpdict = lamp.lampdict["interp_vals"]
-            near_values = get_intensity(Theta_n, Phi_n, interpdict) / R_n ** 2
+            phot = lamp.ies.photometry.interpolated()
+            near_values = phot.get_intensity(Theta_n, Phi_n) / R_n ** 2
+            # interpdict = lamp.lampdict["interp_vals"]
+            # near_values = get_intensity(Theta_n, Phi_n, interpdict) / R_n ** 2
             near_values = near_values * val / num_points
             values[near_idx] += near_values
 

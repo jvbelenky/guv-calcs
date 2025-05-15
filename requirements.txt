@@ -1,7 +1,7 @@
 matplotlib==3.8.4
 numpy==1.26.4
 pandas==2.2.2
-photompy==0.0.8
+photompy==0.0.9
 plotly==5.22.0
 scipy==1.13.1
 setuptools==68.2.2
