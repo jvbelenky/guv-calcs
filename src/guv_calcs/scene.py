@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from collections import defaultdict
 import warnings
 from matplotlib import colormaps
 from .geometry import RoomDimensions
@@ -8,6 +9,7 @@ from .lamp_helpers import new_lamp_position
 
 
 class Scene:
+<<<<<<< HEAD
     def __init__(
         self, dim: RoomDimensions, unit_mode: str, overwrite: str, colormap: str
     ):
@@ -15,11 +17,21 @@ class Scene:
         self.unit_mode: str = unit_mode  # "strict" → raise; "auto" → convert in place
         self.overwrite: str = overwrite  # "error" | "warn" | "silent"
         self.colormap: str = colormap
+=======
+    def __init__(self, dim: RoomDimensions, unit_mode: str, on_collision: str):
+        self.dim = dim
+        self.unit_mode: str = unit_mode  # "strict" → raise; "auto" → convert in place
+        self.on_collision: str = on_collision  # error | increment | overwrite"
+>>>>>>> 8a69197 (unique id generation)
 
         self.lamps: dict[str, Lamp] = {}
         self.calc_zones: dict[str, CalcZone] = {}
 
-    def add(self, *args, overwrite=None):
+        # for generating unique IDs
+        self._lamp_counter = defaultdict(int)
+        self._zone_counter = defaultdict(int)
+
+    def add(self, *args, on_collision=None, unit_mode=None):
         """
         Add objects to the Scene.
         - If an object is a Lamp, it is added as a lamp.
@@ -30,41 +42,46 @@ class Scene:
 
         for obj in args:
             if isinstance(obj, Lamp):
-                self.add_lamp(obj, overwrite=overwrite)
+                self.add_lamp(obj, on_collision=on_collision, unit_mode=unit_mode)
             elif isinstance(obj, (CalcZone, CalcPlane, CalcVol)):
-                self.add_calc_zone(obj, overwrite=overwrite)
+                self.add_calc_zone(obj, on_collision=on_collision)
             elif isinstance(obj, dict):
-                self.add(*obj.values(), overwrite=overwrite)
+                self.add(*obj.values(), on_collision=on_collision)
             elif isinstance(obj, Iterable) and not isinstance(obj, (str, bytes)):
                 self.add(
-                    *obj, overwrite=overwrite
+                    *obj, on_collision=on_collision
                 )  # Recursively process other iterables
             else:
                 msg = f"Cannot add object of type {type(obj).__name__} to Room."
                 warnings.warn(msg, stacklevel=3)
 
-    def add_lamp(self, lamp, *, overwrite=None, unit_mode=None):
-        """
-        Adds a lamp to the room if it fits within the room's boundaries.
-        """
-        self.lamps[lamp.lamp_id] = self._check_lamp(
-            lamp, overwrite=overwrite, unit_mode=unit_mode
+    def add_lamp(self, lamp, base_id="Lamp", on_collision=None, unit_mode=None):
+        """Add a lamp to the room"""
+        lamp_id = self._get_id(
+            mapping=self.lamps,
+            obj_id=lamp.lamp_id,
+            base_id=base_id,
+            counter=self._lamp_counter,
+            on_collision=on_collision,
         )
+        lamp.lamp_id = lamp_id
+        self.lamps[lamp_id] = self._check_lamp(lamp, unit_mode=unit_mode)
+        return self
 
-    def place_lamp(self, lamp, overwrite=None, unit_mode=None):
+    def place_lamp(self, lamp, on_collision=None, unit_mode=None):
         """
         Position a lamp as far from other lamps and the walls as possible
         """
         idx = len(self.lamps) + 1
         x, y = new_lamp_position(idx, self.dim.x, self.dim.y)
         lamp.move(x, y, self.dim.z)
-        self.add_lamp(lamp, overwrite=overwrite, unit_mode=unit_mode)
+        self.add_lamp(lamp, on_collision=on_collision, unit_mode=unit_mode)
 
-    def place_lamps(self, *args, overwrite=None, unit_mode=None):
+    def place_lamps(self, *args, on_collision=None, unit_mode=None):
         """place multiple lamps in the room, as far away from each other and the walls as possible"""
         for obj in args:
             if isinstance(obj, Lamp):
-                self.place_lamp(obj, overwrite=overwrite, unit_mode=unit_mode)
+                self.place_lamp(obj, on_collision=on_collision, unit_mode=unit_mode)
             else:
                 msg = f"Cannot add object of type {type(obj).__name__} to Room."
                 warnings.warn(msg, stacklevel=3)
@@ -82,20 +99,29 @@ class Scene:
             for zone in self.calc_zones.values():
                 zone.colormap = self.colormap
 
-    def add_calc_zone(self, calc_zone, *, overwrite=None):
+    def add_calc_zone(self, zone, base_id=None, on_collision=None):
         """
         Add a calculation zone to the scene
         """
-        calc_zone.colormap = self.colormap
-        self.calc_zones[calc_zone.zone_id] = self._check_zone(
-            calc_zone, overwrite=overwrite
+        if base_id is None:
+            base_id = "Calc" + zone.calctype
+
+        zone_id = self._get_id(
+            mapping=self.calc_zones,
+            obj_id=zone.zone_id,
+            base_id=base_id,
+            counter=self._zone_counter,
+            on_collision=on_collision,
         )
+        zone.zone_id = zone_id
+        zone.colormap = self.colormap
+        self.calc_zones[zone_id] = self._check_zone(zone, on_collision=on_collision)
 
     def remove_calc_zone(self, zone_id):
         """remove calculation zone from scene"""
         self.calc_zones.pop(zone_id, None)
 
-    def add_standard_zones(self, standard, *, overwrite=None):
+    def add_standard_zones(self, standard, *, on_collision=None):
         """
         Add the special calculation zones SkinLimits, EyeLimits, and
         WholeRoomFluence to the scene
@@ -120,7 +146,7 @@ class Scene:
             ),
         ]
 
-        self.add(standard_zones, overwrite=overwrite)
+        self.add(standard_zones, on_collision=on_collision)
         # sets the height and field of view parameters
         self.update_standard_zones(standard)
 
@@ -182,11 +208,30 @@ class Scene:
 
     # --------------------------- internals ----------------------------
 
-    def _check_lamp(self, lamp, overwrite=None, unit_mode=None):
+    def _get_id(self, mapping, obj_id, base_id, counter, on_collision=None):
+        """generate an ID for a lamp or calc zone object"""
+        policy = on_collision or self.on_collision
+        if obj_id is None:
+            return self._unique_id(base_id, counter)
+        else:
+            new_id = self._unique_id(obj_id, counter)
+            if obj_id not in mapping:
+                return new_id
+            elif policy == "error":
+                raise ValueError(f"'{obj_id}' already exists")
+            elif policy == "warn":
+                msg = f"'{obj_id}' already exists - overwriting"
+                warnings.warn(msg, stacklevel=3)
+            return new_id
+
+    def _unique_id(self, base: str, counter: defaultdict) -> str:
+        counter[base] += 1
+        return base if counter[base] == 1 else f"{base}-{counter[base]}"
+
+    def _check_lamp(self, lamp, unit_mode=None):
         """check lamp position and units"""
         if not isinstance(lamp, Lamp):
             raise TypeError(f"Must be type Lamp, not {type(lamp)}")
-        self._check_duplicate(self.lamps, lamp.lamp_id, "Lamp", overwrite)
         self._check_lamp_position(lamp)
         self._check_lamp_units(lamp, unit_mode)
         return lamp
@@ -202,27 +247,11 @@ class Scene:
                 )
             lamp.set_units(self.dim.units)
 
-    def _check_zone(self, zone, overwrite=None):
+    def _check_zone(self, zone):
         if not isinstance(zone, (CalcZone, CalcPlane, CalcVol)):
             raise TypeError(f"Must be CalcZone, CalcPlane, or CalcVol not {type(zone)}")
-
-        self._check_duplicate(
-            self.calc_zones, zone.zone_id, "Zone", overwrite=overwrite
-        )
         self._check_zone_position(zone)
         return zone
-
-    def _check_duplicate(self, mapping, obj_id: str, kind: str, overwrite=None):
-        policy = overwrite or self.overwrite
-        if obj_id not in mapping:
-            return
-        if policy == "error":
-            raise KeyError(f"{kind} id '{obj_id}' already exists")
-        if policy == "warn":
-            warnings.warn(
-                f"{kind} id '{obj_id}' already exists – overwriting", stacklevel=3
-            )
-        # "silent" → just fall through
 
     def _check_lamp_position(self, lamp):
         return self._check_position(lamp.position, lamp.name)

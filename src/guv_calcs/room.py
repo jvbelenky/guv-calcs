@@ -37,9 +37,9 @@ class Room:
         air_changes=None,
         ozone_decay_constant=None,
         precision=1,
-        unit_mode="auto",
-        overwrite="warn",
         colormap="plasma",
+        unit_mode="auto",  # strict | auto
+        on_collision="increment",  # error | increment | overwrite
     ):
 
         ### Dimensions
@@ -66,9 +66,7 @@ class Room:
         self.precision = precision
 
         ### Scene - lamps and zones
-        self.scene = Scene(
-            dim=self.dim, unit_mode=unit_mode, overwrite=overwrite, colormap=colormap
-        )
+        self.scene = Scene(dim=self.dim, on_collision=on_collision, unit_mode=unit_mode, colormap=colormap)
         self.lamps = self.scene.lamps
         self.calc_zones = self.scene.calc_zones
 
@@ -329,7 +327,7 @@ class Room:
 
     # -------------------- Scene: lamps and zones ---------------------
 
-    def add(self, *args):
+    def add(self, *args, on_collision=None, unit_mode=None):
         """
         Add objects to the Scene.
         - If an object is a Lamp, it is added as a lamp.
@@ -340,21 +338,21 @@ class Room:
         self.scene.add(*args)
         return self
 
-    def add_lamp(self, lamp):
+    def add_lamp(self, lamp, on_collision=None, unit_mode=None):
         """
         Add a lamp to the room scene
         """
         self.scene.add_lamp(lamp)
         return self
 
-    def place_lamp(self, lamp):
+    def place_lamp(self, lamp, on_collision=None, unit_mode=None):
         """
         Position a lamp as far from other lamps and the walls as possible
         """
         self.scene.place_lamp(lamp)
         return self
 
-    def place_lamps(self, *args):
+    def place_lamps(self, *args, on_collision=None, unit_mode=None):
         """
         Place multiple lamps in the room, as far away from each other and the walls as possible
         """
@@ -366,20 +364,21 @@ class Room:
         self.scene.remove_lamp(lamp_id)
         return self
 
-    def add_calc_zone(self, calc_zone):
+    def add_calc_zone(self, calc_zone, on_collision=None):
         """
         Add a calculation zone to the room
         """
         self.scene.add_calc_zone(calc_zone)
         return self
 
-    def add_standard_zones(self, overwrite=None):
+    def add_standard_zones(self, on_collision=None):
         """
         Add the special calculation zones SkinLimits, EyeLimits, and
         WholeRoomFluence to the room scene.
+        If not overridden by user, standard zones are overwritten, not incremented
         """
-        policy = overwrite or "silent"
-        self.scene.add_standard_zones(self.standard, overwrite=policy)
+        policy = on_collision or "overwrite"
+        self.scene.add_standard_zones(self.standard, on_collision=policy)
         return self
 
     def remove_calc_zone(self, zone_id):
