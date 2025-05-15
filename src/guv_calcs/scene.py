@@ -20,10 +20,14 @@ class Scene:
 =======
     def __init__(self, dim: RoomDimensions, unit_mode: str, on_collision: str):
         self.dim = dim
-        self.unit_mode: str = unit_mode  # "strict" → raise; "auto" → convert in place
         self.on_collision: str = on_collision  # error | increment | overwrite"
+<<<<<<< HEAD
 >>>>>>> 8a69197 (unique id generation)
 
+=======
+        self.unit_mode: str = unit_mode  # "strict" → raise; "auto" → convert in place
+        
+>>>>>>> 8af78be (small bugfixes)
         self.lamps: dict[str, Lamp] = {}
         self.calc_zones: dict[str, CalcZone] = {}
 
@@ -115,7 +119,7 @@ class Scene:
         )
         zone.zone_id = zone_id
         zone.colormap = self.colormap
-        self.calc_zones[zone_id] = self._check_zone(zone, on_collision=on_collision)
+        self.calc_zones[zone_id] = self._check_zone(zone)
 
     def remove_calc_zone(self, zone_id):
         """remove calculation zone from scene"""

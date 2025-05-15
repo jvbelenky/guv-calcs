@@ -38,8 +38,8 @@ class Room:
         ozone_decay_constant=None,
         precision=1,
         colormap="plasma",
-        unit_mode="auto",  # strict | auto
         on_collision="increment",  # error | increment | overwrite
+        unit_mode="auto",  # strict | auto
     ):
 
         ### Dimensions
@@ -108,7 +108,7 @@ class Room:
         data["air_changes"] = self.air_changes
         data["ozone_decay_constant"] = self.ozone_decay_constant
         data["precision"] = self.precision
-        data["overwrite"] = self.scene.overwrite
+        data["on_collision"] = self.scene.on_collision
         data["unit_mode"] = self.scene.unit_mode
         data["colormap"] = self.scene.colormap
 

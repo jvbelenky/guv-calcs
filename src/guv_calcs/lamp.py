@@ -143,13 +143,6 @@ class Lamp:
             aimy=y if aimy is None else aimy,
             aimz=z - 1.0 if aimz is None else aimz,
         )
-        
-        # Photometric data
-        self.filedata = filedata # temp - property eventually to be removed
-        self.ies = None
-        self._base_ies = None
-        self.load_ies(filedata)
-        self.filename = None # VERY temp - just for illluminate
 
         # Surface data
         self.surface = LampSurface(
@@ -161,6 +154,13 @@ class Lamp:
             intensity_map=intensity_map,
             pose=self.pose
         )
+        
+        # Photometric data
+        self.filedata = filedata # temp - property eventually to be removed
+        self.ies = None
+        self._base_ies = None
+        self.load_ies(filedata)
+        self.filename = None # VERY temp - just for illluminate
 
         # Spectral data
         self.spectra_source = spectra_source
@@ -430,6 +430,10 @@ class Lamp:
     @property
     def aim_point(self):
         return self.pose.aim_point
+        
+    @property
+    def angle(self):
+        return self.pose.angle
 
     @property
     def heading(self):
@@ -442,7 +446,7 @@ class Lamp:
 
     def move(self, x=None, y=None, z=None):
         """Designate lamp position in cartesian space"""
-        self.pose.move(x=x, y=y, z=z)
+        self.pose = self.pose.move(x=x, y=y, z=z)
         self.surface.set_pose(self.pose)
         return self
 
@@ -503,19 +507,19 @@ class Lamp:
     def thetas(self):
         if self.ies.photometry is None:
             raise AttributeError("Lamp has no photometry")
-        return self.ies.photometry.thetas
+        return self.ies.photometry.expanded().thetas
 
     @property
     def phis(self):
         if self.ies.photometry is None:
             raise AttributeError("Lamp has no photometry")
-        return self.ies.photometry.phis
+        return self.ies.photometry.expanded().phis
 
     @property
     def values(self):
         if self.ies.photometry is None:
             raise AttributeError("Lamp has no photometry")
-        return self.ies.photometry.values
+        return self.ies.photometry.expanded().values
 
     @property
     def coords(self):
