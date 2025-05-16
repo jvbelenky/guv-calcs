@@ -9,25 +9,12 @@ from .lamp_helpers import new_lamp_position
 
 
 class Scene:
-<<<<<<< HEAD
-    def __init__(
-        self, dim: RoomDimensions, unit_mode: str, overwrite: str, colormap: str
-    ):
+    def __init__(self, dim: RoomDimensions, unit_mode: str, on_collision: str, colormap: str):
         self.dim = dim
         self.unit_mode: str = unit_mode  # "strict" → raise; "auto" → convert in place
-        self.overwrite: str = overwrite  # "error" | "warn" | "silent"
-        self.colormap: str = colormap
-=======
-    def __init__(self, dim: RoomDimensions, unit_mode: str, on_collision: str):
-        self.dim = dim
         self.on_collision: str = on_collision  # error | increment | overwrite"
-<<<<<<< HEAD
->>>>>>> 8a69197 (unique id generation)
-
-=======
-        self.unit_mode: str = unit_mode  # "strict" → raise; "auto" → convert in place
+        self.colormap: str = colormap
         
->>>>>>> 8af78be (small bugfixes)
         self.lamps: dict[str, Lamp] = {}
         self.calc_zones: dict[str, CalcZone] = {}
 
