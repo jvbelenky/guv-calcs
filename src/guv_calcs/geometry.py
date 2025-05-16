@@ -2,7 +2,7 @@ from dataclasses import dataclass, replace
 import numpy as np
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class RoomDimensions:
     x: float
     y: float
