@@ -206,41 +206,18 @@ class LampSurface:
         Total number of points will increase quadratically with density.
         """
 
-        # generate the points
-
         if self.source_density:
-
             num_points_u, num_points_v = self._get_num_points()
-            # points pre-transformation
             u_points, v_points = self._generate_raw_points(num_points_u, num_points_v)
-
             vv, uu = np.meshgrid(v_points, u_points)
-            # get the normal plane to the aim point
-            # Normalize the direction vector (normal vector)
+            
+            x_local = vv.ravel()
+            y_local = uu.ravel()
+            z_local = np.full_like(x_local, 0)
 
-            direction = self.position - self._pose.aim_point
-            normal = direction / np.linalg.norm(direction)
-
-            # Generate two vectors orthogonal to the normal
-            if np.allclose(normal, [1, 0, 0]):
-                # if normal is close to x-axis, use y and z to define the plane
-                u = np.array([0, 1, 0])
-            else:
-                u = np.cross(normal, [1, 0, 0])
-            u = u / np.linalg.norm(u)  # ensure it's unit length
-
-            # Second vector orthogonal to both the normal and u
-            v = np.cross(normal, u)
-            v = v / np.linalg.norm(v)  # ensure it's unit length
-
-            # rotate
-            u = self._rotate(u, normal)
-            v = self._rotate(v, normal)
-            # Calculate the 3D coordinates of the points, with an overall shift by the original point
-            surface_points = (
-                self.position + np.outer(uu.flatten(), u) + np.outer(vv.flatten(), v)
-            )
-            # reverse so that the 'upper left' point is first
+            local = np.vstack([x_local, y_local, z_local]).T  # shape (3, N)
+            # rotate/translate into world
+            surface_points = self._pose.transform_to_world(local).T            
             surface_points = surface_points[::-1]
             self.num_points_width = num_points_v
             self.num_points_length = num_points_u
@@ -299,17 +276,7 @@ class LampSurface:
             num_points_u, num_points_v = 1, 1
 
         return num_points_u, num_points_v
-
-    def _rotate(self, vec, normal):
-        angle_rad = np.radians(self._pose.angle)
-        cos_a = np.cos(angle_rad)
-        sin_a = np.sin(angle_rad)
-        return (
-            vec * cos_a
-            + np.cross(normal, vec) * sin_a
-            + normal * np.dot(normal, vec) * (1 - cos_a)
-        )
-
+        
     def _load_intensity_map(self, arg):
         """check filetype and return correct intensity_map as array"""
 

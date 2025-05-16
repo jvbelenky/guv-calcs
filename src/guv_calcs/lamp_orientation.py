@@ -142,6 +142,7 @@ class LampOrientation:
         """
         transform coordinates to align with the lamp's coordinates
         """
+        # coords = coords - self.position
         coords = self.rotation_matrix @ coords.T
         if which == "polar":
             return to_polar(*coords)
