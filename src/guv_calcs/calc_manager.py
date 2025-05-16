@@ -198,7 +198,7 @@ class LightingCalculator:
         rel_coords = np.array(
             attitude(rel_coords.T, roll=0, pitch=0, yaw=-lamp.heading)
         ).T
-        rel_coords = np.array(attitude(rel_coords.T, roll=0, pitch=-lamp.bank, yaw=0)).T
+        rel_coords = np.array(attitude(rel_coords.T, roll=0, pitch=lamp.bank, yaw=0)).T
         rel_coords = np.array(
             attitude(rel_coords.T, roll=0, pitch=0, yaw=-lamp.angle)
         ).T

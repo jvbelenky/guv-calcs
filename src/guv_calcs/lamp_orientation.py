@@ -27,27 +27,21 @@ class LampOrientation:
 
     @property
     def heading(self):
-        xr, yr = self.aimx - self.x, self.aimy - self.y
-        return np.degrees(np.arctan2(yr, xr))
-
+        # xr, yr = self.aimx - self.x, self.aimy - self.y
+        # return np.degrees(np.arctan2(yr, xr)) % 360       
+        dx, dy = self.aimx - self.x, self.aimy - self.y
+        if np.isclose([dx, dy], 0.0).all():
+            return 0.0
+        return np.degrees(np.arctan2(dy, dx)) % 360
+        
     @property
     def bank(self):
-        xr, yr, zr = self.aimx - self.x, self.aimy - self.y, self.aimz - self.z
-        return np.degrees(np.arctan2(np.sqrt(xr ** 2 + yr ** 2), zr) - np.pi)
-
-    ## check later if this is the correct way to do things
-    # @property
-    # def heading(self) -> float:              # 0–360°, +X = 0°
-    # dx, dy = self.aimx - self.x, self.aimy - self.y
-    # return (np.degrees(np.arctan2(dy, dx)) + 360.0) % 360.0
-
-    # @property
-    # def bank(self) -> float:                 # +90 = straight down, -90 = up
-    # dx, dy, dz = (self.aimx - self.x,
-    # self.aimy - self.y,
-    # self.aimz - self.z)
-    # horiz = np.hypot(dx, dy)
-    # return np.degrees(np.arctan2(-dz, horiz))
+        dx, dy, dz = self.aimx - self.x, self.aimy - self.y, self.aimz - self.z
+        norm = np.linalg.norm((dx, dy, dz))
+        if norm == 0:
+            return 0.0
+        # cos(tilt) = -dz / |v| so tilt=0 → down, 180→up
+        return np.degrees(np.arccos(np.clip(-dz / norm, -1.0, 1.0)))
 
     def with_(self, **changes):
         return replace(self, **changes)
@@ -94,14 +88,15 @@ class LampOrientation:
         heading = self.heading if heading is None else heading
         bank = self.bank if bank is None else bank
 
-        heading_rad = np.radians(self.heading)
+        heading_rad = np.radians(heading)
         # Correcting bank angle for the pi shift
-        bank_rad = np.radians(self.bank - 180)
-
+        bank_rad = np.radians(bank)# - 180)
+        # bank_rad = np.radians(np.clip(bank, 0, 180))
+        
         # Convert from spherical to Cartesian coordinates
         dx = np.sin(bank_rad) * np.cos(heading_rad)
         dy = np.sin(bank_rad) * np.sin(heading_rad)
-        dz = np.cos(bank_rad)
+        dz = -np.cos(bank_rad)
         if dimensions is not None:
             distances = []
             dimx, dimy, dimz = dimensions
@@ -126,7 +121,7 @@ class LampOrientation:
         """
         coords = np.array(attitude(coords.T, roll=0, pitch=0, yaw=self.angle)).T
         coords = np.array(
-            attitude(coords.T, roll=0, pitch=self.bank, yaw=self.heading)
+            attitude(coords.T, roll=0, pitch=-self.bank, yaw=self.heading)
         ).T
         coords = (coords.T / scale).T + self.position
         return coords
