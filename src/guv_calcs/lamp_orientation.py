@@ -1,6 +1,6 @@
 from dataclasses import dataclass, replace
 import numpy as np
-from .trigonometry import attitude
+from .trigonometry import to_polar
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +17,9 @@ class LampOrientation:
         if (self.aimx, self.aimy, self.aimz) == (self.x, self.y, self.z):
             raise ValueError("Aim point cannot equal position")
 
+    def with_(self, **changes):
+        return replace(self, **changes)
+
     @property
     def position(self):
         return np.array([self.x, self.y, self.z])
@@ -28,12 +31,12 @@ class LampOrientation:
     @property
     def heading(self):
         # xr, yr = self.aimx - self.x, self.aimy - self.y
-        # return np.degrees(np.arctan2(yr, xr)) % 360       
+        # return np.degrees(np.arctan2(yr, xr)) % 360
         dx, dy = self.aimx - self.x, self.aimy - self.y
         if np.isclose([dx, dy], 0.0).all():
             return 0.0
         return np.degrees(np.arctan2(dy, dx)) % 360
-        
+
     @property
     def bank(self):
         dx, dy, dz = self.aimx - self.x, self.aimy - self.y, self.aimz - self.z
@@ -43,8 +46,17 @@ class LampOrientation:
         # cos(tilt) = -dz / |v| so tilt=0 → down, 180→up
         return np.degrees(np.arccos(np.clip(-dz / norm, -1.0, 1.0)))
 
-    def with_(self, **changes):
-        return replace(self, **changes)
+    @property
+    def rotation_matrix(self):
+        # yaw1 = –heading, pitch = bank, yaw2 = –angle
+        R1 = self._R_z(-self.heading)
+        R2 = self._R_y(self.bank)
+        R3 = self._R_z(-self.angle)
+        return R3 @ R2 @ R1
+
+    @property
+    def inverse_rotation_matrix(self):
+        return self.rotation_matrix.T
 
     def move(self, x=None, y=None, z=None):
         """Designate lamp position in cartesian space"""
@@ -90,9 +102,9 @@ class LampOrientation:
 
         heading_rad = np.radians(heading)
         # Correcting bank angle for the pi shift
-        bank_rad = np.radians(bank)# - 180)
+        bank_rad = np.radians(bank)  # - 180)
         # bank_rad = np.radians(np.clip(bank, 0, 180))
-        
+
         # Convert from spherical to Cartesian coordinates
         dx = np.sin(bank_rad) * np.cos(heading_rad)
         dy = np.sin(bank_rad) * np.sin(heading_rad)
@@ -113,15 +125,42 @@ class LampOrientation:
         aimx, aimy, aimz = self.position + np.array([dx, dy, dz]) * distance
         return self.with_(aimx=aimx, aimy=aimy, aimz=aimz)
 
-    def transform(self, coords, scale=1):
+    def transform_to_world(self, coords, scale=1, which="cartesian"):
         """
-        Transforms the given coordinates based on the lamp's orientation and position.
-        Applies rotation, then aiming, then scaling, then translation.
+        transform coordinates from the lamp frame of reference to the world
         Scale parameter should generally only be used for photometric_coords
         """
-        coords = np.array(attitude(coords.T, roll=0, pitch=0, yaw=self.angle)).T
-        coords = np.array(
-            attitude(coords.T, roll=0, pitch=-self.bank, yaw=self.heading)
-        ).T
-        coords = (coords.T / scale).T + self.position
-        return coords
+        coords = self.inverse_rotation_matrix @ coords.T
+        coords = (coords / scale).T + self.position
+        if which == "polar":
+            return to_polar(*coords.T)
+        elif which == "cartesian":
+            return coords.T
+        raise ValueError(f"`which` must be polar or cartesian, not {which}")
+
+    def transform_to_lamp(self, coords, which="cartesian"):
+        """
+        transform coordinates to align with the lamp's coordinates
+        """
+        coords = self.rotation_matrix @ coords.T
+        if which == "polar":
+            return to_polar(*coords)
+        elif which == "cartesian":
+            return coords
+        raise ValueError(f"`which` must be polar or cartesian, not {which}")
+
+    # --------------- Internals --------------------------
+
+    @staticmethod
+    def _R_z(angle_deg):
+        a = np.radians(angle_deg)
+        return np.array(
+            [[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1]]
+        )
+
+    @staticmethod
+    def _R_y(angle_deg):
+        a = np.radians(angle_deg)
+        return np.array(
+            [[np.cos(a), 0, np.sin(a)], [0, 1, 0], [-np.sin(a), 0, np.cos(a)]]
+        )

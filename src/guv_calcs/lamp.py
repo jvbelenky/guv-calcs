@@ -129,7 +129,7 @@ class Lamp:
         self.lamp_id = lamp_id
         self.name = lamp_id if name is None else str(name)
         self.enabled = True if enabled is None else enabled
-        
+
         # Position / orientation
         x = 0.0 if x is None else x
         y = 0.0 if y is None else y
@@ -152,20 +152,20 @@ class Lamp:
             units=units,
             source_density=source_density,
             intensity_map=intensity_map,
-            pose=self.pose
+            pose=self.pose,
         )
-        
+
         # Photometric data
-        self.filedata = filedata # temp - property eventually to be removed
+        self.filedata = filedata  # temp - property eventually to be removed
         self.ies = None
         self._base_ies = None
         self.load_ies(filedata)
-        self.filename = None # VERY temp - just for illluminate
+        self.filename = None  # VERY temp - just for illluminate
 
         # Spectral data
         self.spectra_source = spectra_source
         self.spectra = self._load_spectra(spectra_source)
-        
+
         # source type & wavelength - just labels if Spectra is provided
         self.guv_type = guv_type
         if guv_type is not None:
@@ -181,7 +181,7 @@ class Lamp:
             if not isinstance(self.wavelength, (int, float)):
                 msg = f"Wavelength must be int or float, not {type(self.wavelength)}"
                 raise TypeError(msg)
-                
+
         # mW/sr or uW/cm2 typically; not directly specified in .ies file and they can vary for GUV fixtures
         self.intensity_units = self._set_intensity_units(intensity_units)
 
@@ -346,7 +346,7 @@ class Lamp:
             self._base_ies = IESFile.from_photometry(filedata)
         else:  # all other datasource cases covered here
             self._base_ies = IESFile.read(filedata)
-            
+
         # in case the base object is mutated
         self.ies = self._base_ies
 
@@ -430,7 +430,7 @@ class Lamp:
     @property
     def aim_point(self):
         return self.pose.aim_point
-        
+
     @property
     def angle(self):
         return self.pose.angle
@@ -462,13 +462,18 @@ class Lamp:
         self.surface.set_pose(self.pose)
         return self
 
-    def transform(self, coords, scale=1):
+    def transform_to_world(self, coords, scale=1, which="cartesian"):
         """
-        Transforms the given coordinates based on the lamp's orientation and position.
-        Applies rotation, then aiming, then scaling, then translation.
+        transform coordinates from the lamp frame of reference to the world
         Scale parameter should generally only be used for photometric_coords
         """
-        return self.pose.transform(coords, scale=scale)
+        return self.pose.transform_to_world(coords, scale=scale, which=which)
+
+    def transform_to_lamp(self, coords, which="cartesian"):
+        """
+        transform coordinates to align with the lamp's coordinates
+        """
+        return self.pose.transform_to_lamp(coords, which=which)
 
     def set_orientation(self, orientation, dimensions=None, distance=None):
         """

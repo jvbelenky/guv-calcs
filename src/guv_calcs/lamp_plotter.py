@@ -40,7 +40,9 @@ class LampPlotter:
 
         if self.lamp.ies is not None:
             scale = self.lamp.values.max()
-            x, y, z = self.lamp.transform(self.lamp.photometric_coords, scale=scale).T
+            x, y, z = self.lamp.transform_to_world(
+                self.lamp.photometric_coords, scale=scale
+            )
             Theta, Phi, R = to_polar(*self.lamp.photometric_coords.T)
             tri = Delaunay(np.column_stack((Theta.flatten(), Phi.flatten())))
 

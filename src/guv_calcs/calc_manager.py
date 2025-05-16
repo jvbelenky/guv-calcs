@@ -1,5 +1,6 @@
 import numpy as np
-from .trigonometry import attitude, to_polar
+
+# from .trigonometry import attitude, to_polar
 from .units import convert_units
 
 
@@ -60,14 +61,11 @@ class LightingCalculator:
         if hard or NEW_LAMP or LAMP_UPDATE or ZONE_UPDATE:
             # get coords
             rel_coords = self.zone.coords - lamp.surface.position
-            Theta, Phi, R = self._transform_lamp_coords(rel_coords, lamp)
+            Theta, Phi, R = lamp.transform_to_lamp(rel_coords, which="polar")
             if lamp.surface.units.lower() != "meters":
                 R = np.array(convert_units(lamp.surface.units, "meters", *R))
-            # fetch intensity values from photometric data
-            # interpdict = lamp.lampdict["interp_vals"]
-            # values = get_intensity(Theta, Phi, interpdict) / R ** 2
 
-            # # in new photompy version 0.0.9
+            # fetch intensity values from photometric data
             phot = lamp.ies.photometry.interpolated()
             values = phot.get_intensity(Theta, Phi) / R ** 2
 
@@ -138,7 +136,7 @@ class LightingCalculator:
         for point, val in zip(points, intensity_values):
 
             rel_coords = self.zone.coords - point
-            Theta, Phi, R = self._transform_lamp_coords(rel_coords, lamp)
+            Theta, Phi, R = lamp.transform_to_lamp(rel_coords, which="polar")
             Theta_n, Phi_n, R_n = Theta[near_idx], Phi[near_idx], R[near_idx]
 
             if lamp.surface.units.lower() != "meters":
@@ -187,20 +185,3 @@ class LightingCalculator:
         value_sums = value_sums.squeeze(-1)  # Shape (N, M)
 
         return np.max(value_sums, axis=1)  # Shape (N,)
-
-    def _transform_lamp_coords(self, rel_coords, lamp):
-        """
-        transform zone coordinates to be consistent with any lamp
-        transformations applied, and convert to polar coords for further
-        operations
-        """
-        # apply all transformations that have been applied to this lamp, but in reverse
-        rel_coords = np.array(
-            attitude(rel_coords.T, roll=0, pitch=0, yaw=-lamp.heading)
-        ).T
-        rel_coords = np.array(attitude(rel_coords.T, roll=0, pitch=lamp.bank, yaw=0)).T
-        rel_coords = np.array(
-            attitude(rel_coords.T, roll=0, pitch=0, yaw=-lamp.angle)
-        ).T
-        Theta, Phi, R = to_polar(*rel_coords.T)
-        return Theta, Phi, R

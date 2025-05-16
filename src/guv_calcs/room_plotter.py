@@ -115,7 +115,7 @@ class RoomPlotter:
         """plot lamp as a photometric web"""
 
         init_scale = convert_units(self.room.units, "meters", lamp.values.max())
-        coords = lamp.transform(lamp.photometric_coords, scale=init_scale).T
+        coords = lamp.transform_to_world(lamp.photometric_coords, scale=init_scale)
         scale = lamp.get_total_power() / 120
         coords = (coords.T - lamp.position) * scale + lamp.surface.position
         x, y, z = coords.T
