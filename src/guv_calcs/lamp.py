@@ -106,6 +106,7 @@ class Lamp:
         lamp_id=None,
         name=None,
         filedata=None,
+        filename=None,
         x=None,
         y=None,
         z=None,
@@ -156,6 +157,16 @@ class Lamp:
         )
 
         # Photometric data
+        if filename is not None:
+            warnings.warn(
+                "`filename` is deprecated and will be removed in v1.4; "
+                "pass the bytes or Path in `filedata` instead.",
+                DeprecationWarning,   # use FutureWarning if you prefer runtime visibility
+                stacklevel=2,
+            )
+            # honour old behaviour if the new arg wasn’t supplied
+            if filedata is None:
+                filedata = filename
         self.filedata = filedata  # temp - property eventually to be removed
         self.ies = None
         self._base_ies = None
