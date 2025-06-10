@@ -14,7 +14,10 @@ from matplotlib.figure import Figure as mpl_fig
 
 
 def load_room(filedata):
-    """load a room object from json filedata"""
+    """
+    TODO: wow this is hideous this should really just be a class method
+    load a room object from json filedata
+    """
     from .room import Room
 
     load_data = _parse_loadfile(filedata)

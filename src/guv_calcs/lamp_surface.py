@@ -210,14 +210,14 @@ class LampSurface:
             num_points_u, num_points_v = self._get_num_points()
             u_points, v_points = self._generate_raw_points(num_points_u, num_points_v)
             vv, uu = np.meshgrid(v_points, u_points)
-            
+
             x_local = vv.ravel()
             y_local = uu.ravel()
             z_local = np.full_like(x_local, 0)
 
             local = np.vstack([x_local, y_local, z_local]).T  # shape (3, N)
             # rotate/translate into world
-            surface_points = self._pose.transform_to_world(local).T            
+            surface_points = self._pose.transform_to_world(local).T
             surface_points = surface_points[::-1]
             self.num_points_width = num_points_v
             self.num_points_length = num_points_u
@@ -276,7 +276,7 @@ class LampSurface:
             num_points_u, num_points_v = 1, 1
 
         return num_points_u, num_points_v
-        
+
     def _load_intensity_map(self, arg):
         """check filetype and return correct intensity_map as array"""
 

@@ -113,6 +113,7 @@ class LightingCalculator:
                 values[theta < (np.pi / 2 - np.radians(self.zone.fov_vert / 2))] = 0
                 values[theta > (np.pi / 2 + np.radians(self.zone.fov_vert / 2))] = 0
 
+        # TODO: This should actually be in Lamp/Photometry
         if lamp.intensity_units.lower() == "mw/sr":
             values = values / 10  # convert from mW/Sr to uW/cm2
 

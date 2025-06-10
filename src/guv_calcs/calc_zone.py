@@ -152,8 +152,8 @@ class CalcZone(object):
 
     def set_offset(self, offset):
         if type(offset) is not bool:
-            raise TypeError("Offset must be either True or False")
-        self.offset = offset
+            raise TypeError(" must be either True or False")
+        self.offset = offsetOffset
         self._update()
 
     def set_value_type(self, dose):
@@ -282,7 +282,7 @@ class CalcVol(CalcZone):
 
     def __init__(
         self,
-        zone_id,
+        zone_id=None,
         name=None,
         x1=None,
         x2=None,
@@ -304,7 +304,7 @@ class CalcVol(CalcZone):
     ):
 
         super().__init__(
-            zone_id=zone_id,
+            zone_id=zone_id or "CalcVol",
             name=name,
             offset=offset,
             dose=dose,
@@ -569,7 +569,7 @@ class CalcPlane(CalcZone):
 
     def __init__(
         self,
-        zone_id,
+        zone_id=None,
         name=None,
         x1=None,
         x2=None,
@@ -594,7 +594,7 @@ class CalcPlane(CalcZone):
     ):
 
         super().__init__(
-            zone_id=zone_id,
+            zone_id=zone_id or "CalcPlane",
             name=name,
             offset=offset,
             dose=dose,
@@ -822,7 +822,6 @@ class CalcPlane(CalcZone):
             X = np.full(X.shape, self.height)
 
         self.coords = np.stack([X, Y, Z], axis=-1)
-
         self.num_points = np.array([len(self.xp), len(self.yp)])
 
     def plot_plane(self, fig=None, ax=None, vmin=None, vmax=None, title=None):

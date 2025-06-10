@@ -3,9 +3,9 @@ import inspect
 from .lamp import Lamp
 from .calc_zone import CalcPlane, CalcVol
 from .room_plotter import RoomPlotter
+from .room_dims import RoomDimensions
 from .disinfection_calculator import DisinfectionCalculator
 from .reflectance import ReflectanceManager
-from .geometry import RoomDimensions
 from .scene import Scene
 from .io import load_room, save_room, export_room_zip, generate_report
 

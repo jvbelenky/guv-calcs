@@ -9,7 +9,7 @@ class RoomDimensions:
     z: float
     units: str = "meters"
 
-    def volume(self) -> float:  # handy helper now, many more later
+    def volume(self) -> float:
         return self.x * self.y * self.z
 
     def dimensions(self) -> np.ndarray:

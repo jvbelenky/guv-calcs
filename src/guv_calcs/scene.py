@@ -2,7 +2,7 @@ from collections.abc import Iterable
 from collections import defaultdict
 import warnings
 from matplotlib import colormaps
-from .geometry import RoomDimensions
+from .room_dims import RoomDimensions
 from .lamp import Lamp
 from .calc_zone import CalcZone, CalcPlane, CalcVol
 from .lamp_helpers import new_lamp_position
