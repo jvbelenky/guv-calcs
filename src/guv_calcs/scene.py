@@ -241,7 +241,7 @@ class Scene:
     def _check_zone(self, zone):
         if not isinstance(zone, (CalcZone, CalcPlane, CalcVol)):
             raise TypeError(f"Must be CalcZone, CalcPlane, or CalcVol not {type(zone)}")
-        self._check_zone_position(zone)
+        # self._check_zone_position(zone)
         return zone
 
     def _check_lamp_position(self, lamp):
