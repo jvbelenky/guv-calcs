@@ -161,7 +161,7 @@ class Lamp:
             warnings.warn(
                 "`filename` is deprecated and will be removed in v1.4; "
                 "pass the bytes or Path in `filedata` instead.",
-                DeprecationWarning,   # use FutureWarning if you prefer runtime visibility
+                DeprecationWarning,  # use FutureWarning if you prefer runtime visibility
                 stacklevel=2,
             )
             # honour old behaviour if the new arg wasn’t supplied

@@ -66,7 +66,12 @@ class Room:
         self.precision = precision
 
         ### Scene - lamps and zones
-        self.scene = Scene(dim=self.dim, on_collision=on_collision, unit_mode=unit_mode, colormap=colormap)
+        self.scene = Scene(
+            dim=self.dim,
+            on_collision=on_collision,
+            unit_mode=unit_mode,
+            colormap=colormap,
+        )
         self.lamps = self.scene.lamps
         self.calc_zones = self.scene.calc_zones
 

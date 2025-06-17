@@ -139,9 +139,7 @@ class ReflectanceManager:
 
     def _get_surface_dimensions(self, wall):
         """retrieve the dimensions of a particular wall based on its id"""
-        
-        
-        
+
         if wall == "floor":
             x1, x2, y1, y2 = 0, self.x, 0, self.y
             height = 0
