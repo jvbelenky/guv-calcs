@@ -553,7 +553,7 @@ class Lamp:
         """return the lamp's total optical power"""
         return self.ies.photometry.total_optical_power()
 
-    def get_limits(self, standard=0):
+    def get_tlvs(self, standard=0):
         """
         get the threshold limit values for this lamp. Returns tuple
         (skin_limit, eye_limit) Will use the lamp spectrum if provided;
@@ -569,6 +569,10 @@ class Lamp:
         else:
             skin_tlv, eye_tlv = None, None
         return skin_tlv, eye_tlv
+        
+    def get_limits(self, standard=0):
+        """compatibility alias for `get_tlvs()`"""
+        return self.get_tlvs(standard=standard)
 
     def get_cartesian(self, scale=1, sigfigs=9):
         """Return lamp's true position coordinates in cartesian space"""
@@ -579,6 +583,43 @@ class Lamp:
         cartesian = self.transform(self.coords) - self.position
         return np.array(to_polar(*cartesian.T)).round(sigfigs)
 
+    # ---- scaling / dimming features -----
+    def scale_to_max(self, max_val):
+        """scale the photometry to a maximum value"""
+        if self.ies is None:
+            msg = "No .ies file provided; scaling not applied"
+            warnings.warn(msg, stacklevel=3)
+        else:
+            self.ies.photometry.scale_to_max(max_val)
+        return self
+
+    def scale_to_total(self, total_power):
+        """scale the photometry to a total optical power"""
+        if self.ies is None:
+            msg = "No .ies file provided; scaling not applied"
+            warnings.warn(msg, stacklevel=3)
+        else:
+            self.ies.photometry.scale_to_total(total_power)
+        return self
+
+    def scale_to_center(self, center_val):
+        """scale the photometry to a center value"""
+        if self.ies is None:
+            msg = "No .ies file provided; scaling not applied"
+            warnings.warn(msg, stacklevel=3)
+        else:
+            self.photometry.scale_to_center(center_val)
+        return self
+
+    def scale(self, scale_val):
+        """scale the photometry by the given value"""
+        if self.ies is None:
+            msg = "No .ies file provided; scaling not applied"
+            warnings.warn(msg, stacklevel=3)
+        else:
+            self.photometry.scale(scale_val)
+        return self
+        
     # ---------------------- Surface ---------------------------
 
     @property
