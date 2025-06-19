@@ -179,23 +179,23 @@ class Axis1D:
 
     @property
     def points(self):
-        
+
         span = abs(self.hi - self.lo)
-        
+
         # generate default spacing based on an approx number of points
-        n_pts_init = 1 if np.isclose(span,0) else min(int(span * 10), 50)
+        n_pts_init = 1 if np.isclose(span, 0) else min(int(span * 10), 50)
         sigfigs = -int(np.floor(np.log10(span / n_pts_init)))
         default_spacing = round(span / n_pts_init, sigfigs)
         # default num_points based on default spacing
         default_n_pts = int(round(span / default_spacing))
-                
+
         if self.spacing is None:
             n_pts = self.n_pts or default_n_pts
             spacing = self._set_spacing(n_pts)
         else:
             n_pts = int(round(span / self.spacing))
             spacing = self.spacing
-            
+
         offset = min(self.hi, self.lo)
         pts = np.array([i * spacing + offset for i in range(n_pts)])
         if self.offset:
