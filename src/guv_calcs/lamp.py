@@ -125,6 +125,7 @@ class Lamp:
         source_density=None,
         intensity_map=None,
         enabled=None,
+        scaling_factor=None,
     ):
 
         self.lamp_id = lamp_id
@@ -161,7 +162,7 @@ class Lamp:
             warnings.warn(
                 "`filename` is deprecated and will be removed in v1.4; "
                 "pass the bytes or Path in `filedata` instead.",
-                DeprecationWarning,  # use FutureWarning if you prefer runtime visibility
+                DeprecationWarning,  # maybe should be FutureWarning
                 stacklevel=2,
             )
             # honour old behaviour if the new arg wasn’t supplied
@@ -170,8 +171,10 @@ class Lamp:
         self.filedata = filedata  # temp - property eventually to be removed
         self.ies = None
         self._base_ies = None
+        self._scaling_factor = scaling_factor or 1.0
+        self._scale_mode = "factor"
         self.load_ies(filedata)
-        self.filename = None  # VERY temp - just for illluminate
+        self.filename = None  # VERY temp - just for illluminate compatibility
 
         # Spectral data
         self.spectra_source = spectra_source
@@ -229,6 +232,7 @@ class Lamp:
         data["depth"] = self.surface.depth
         data["units"] = self.surface.units
         data["source_density"] = self.surface.source_density
+        data["scaling_factor"] = float(self.scaling_factor)
 
         if self.surface.intensity_map_orig is None:
             data["intensity_map"] = None
@@ -238,7 +242,7 @@ class Lamp:
         data["enabled"] = True
 
         data["filename"] = str(self.filename)
-        filedata = self.save_ies()
+        filedata = self.save_ies(original=True)
         data["filedata"] = filedata.decode() if filedata is not None else None
 
         if self.spectra is not None:
@@ -279,19 +283,21 @@ class Lamp:
             kwargs.setdefault("filedata", fn)
             kwargs.setdefault("spectra_source", sn)
         else:
-            raise KeyError(f"{key} is not a valid lamp key. Valid keys are {VALID_LAMPS}")
+            raise KeyError(
+                f"{key} is not a valid lamp key. Valid keys are {VALID_LAMPS}"
+            )
 
         kwargs.setdefault("lamp_id", key)
 
         return cls(**kwargs)
-        
+
     @classmethod
     def from_index(cls, key_index=0, lamp_id=None, **kwargs):
         """define a Lamp object from an index value"""
-        
+
         if not isinstance(key_index, int):
             raise TypeError(f"Keyword index must be int, not {type(key_index)}")
-        
+
         if key_index < len(VALID_LAMPS):
             key = VALID_LAMPS[key_index]
             path = "guv_calcs.data.lamp_data"
@@ -300,10 +306,12 @@ class Lamp:
             kwargs.setdefault("filedata", fn)
             kwargs.setdefault("spectra_source", sn)
         else:
-            raise IndexError(f"Only {len(VALID_LAMPS)} lamps are available. Available lamps: {VALID_LAMPS}")
-        
+            raise IndexError(
+                f"Only {len(VALID_LAMPS)} lamps are available. Available lamps: {VALID_LAMPS}"
+            )
+
         kwargs.setdefault("lamp_id", key)
-        
+
         return cls(**kwargs)
 
     @classmethod
@@ -376,7 +384,10 @@ class Lamp:
             self._base_ies = IESFile.read(filedata)
 
         # in case the base object is mutated
-        self.ies = self._base_ies
+        self.ies = copy.deepcopy(self._base_ies)
+
+        if self.ies is not None:
+            self.ies.scale(self.scaling_factor)
 
         # update length/width/units
         if override:
@@ -586,7 +597,7 @@ class Lamp:
         else:
             skin_tlv, eye_tlv = None, None
         return skin_tlv, eye_tlv
-        
+
     def get_limits(self, standard=0):
         """compatibility alias for `get_tlvs()`"""
         return self.get_tlvs(standard=standard)
@@ -601,6 +612,16 @@ class Lamp:
         return np.array(to_polar(*cartesian.T)).round(sigfigs)
 
     # ---- scaling / dimming features -----
+
+    @property
+    def scaling_factor(self) -> float:
+        """Current multiplier relative to the loaded photometry."""
+        return self._scaling_factor
+
+    @scaling_factor.setter  # block direct writes
+    def scaling_factor(self, _):
+        raise AttributeError("scaling_factor is read-only")
+
     def scale_to_max(self, max_val):
         """scale the photometry to a maximum value"""
         if self.ies is None:
@@ -608,6 +629,8 @@ class Lamp:
             warnings.warn(msg, stacklevel=3)
         else:
             self.ies.photometry.scale_to_max(max_val)
+            self._update_scaling_factor()
+            # self._scale_mode = "max"
         return self
 
     def scale_to_total(self, total_power):
@@ -617,6 +640,8 @@ class Lamp:
             warnings.warn(msg, stacklevel=3)
         else:
             self.ies.photometry.scale_to_total(total_power)
+            self._update_scaling_factor()
+            # self._scale_mode = "total"
         return self
 
     def scale_to_center(self, center_val):
@@ -626,6 +651,8 @@ class Lamp:
             warnings.warn(msg, stacklevel=3)
         else:
             self.photometry.scale_to_center(center_val)
+            self._update_scaling_factor()
+            # self._scale_mode = "center"
         return self
 
     def scale(self, scale_val):
@@ -635,8 +662,14 @@ class Lamp:
             warnings.warn(msg, stacklevel=3)
         else:
             self.photometry.scale(scale_val)
+            self._update_scaling_factor()
+            # self._scale_mode = "factor"
         return self
-        
+
+    def _update_scaling_factor(self):
+        """update scaling factor based on the last scaling operation"""
+        self._scaling_factor = self.ies.center() / self._base_ies.center()
+
     # ---------------------- Surface ---------------------------
 
     @property
