@@ -152,8 +152,8 @@ class CalcZone(object):
 
     def set_offset(self, offset):
         if type(offset) is not bool:
-            raise TypeError(" must be either True or False")
-        self.offset = offsetOffset
+            raise TypeError("must be either True or False")
+        self.offset = offset
         self._update()
 
     def set_value_type(self, dose):
