@@ -363,6 +363,7 @@ class Lamp:
             self.surface.units,  # ""
             self.surface.source_density,  # ""
             intensity_map_orig,
+            self.scaling_factor,
         ]
 
     def get_update_state(self):
@@ -549,37 +550,64 @@ class Lamp:
 
     @property
     def thetas(self):
-        if self.ies.photometry is None:
+        if self.ies is None:
             raise AttributeError("Lamp has no photometry")
         return self.ies.photometry.expanded().thetas
 
     @property
     def phis(self):
-        if self.ies.photometry is None:
+        if self.ies is None:
             raise AttributeError("Lamp has no photometry")
         return self.ies.photometry.expanded().phis
 
     @property
     def values(self):
-        if self.ies.photometry is None:
+        if self.ies is None:
             raise AttributeError("Lamp has no photometry")
         return self.ies.photometry.expanded().values
 
     @property
     def coords(self):
-        if self.ies.photometry is None:
+        if self.ies is None:
             raise AttributeError("Lamp has no photometry")
         return self.ies.photometry.coords
 
     @property
     def photometric_coords(self):
-        if self.ies.photometry is None:
+        if self.ies is None:
             raise AttributeError("Lamp has no photometry")
         return self.ies.photometry.photometric_coords
 
+    def max(self):
+        """maximum irradiance value"""
+        if self.ies is None:
+            raise AttributeError("Lamp has no photometry")
+        if self.intensity_units == "mW/sr":
+            return self.ies.photometry.max() / 10
+        else:
+            return self.ies.photometry.max()
+            
+    def center(self):
+        """center irradiance value"""
+        if self.ies is None:
+            raise AttributeError("Lamp has no photometry")
+        if self.intensity_units == "mW/sr":
+            return self.ies.photometry.center() / 10
+        else:
+            return self.ies.photometry.center()
+            
+    def total(self):
+        """just an alias for get_total_power for now"""
+        return self.get_total_power()
+
     def get_total_power(self):
         """return the lamp's total optical power"""
-        return self.ies.photometry.total_optical_power()
+        if self.ies is None:
+            raise AttributeError("Lamp has no photometry")
+        if self.intensity_units == "mW/sr":
+            return self.ies.photometry.total_optical_power()
+        else:
+            return self.ies.photometry.total_optical_power() * 10
 
     def get_tlvs(self, standard=0):
         """
@@ -623,18 +651,21 @@ class Lamp:
         raise AttributeError("scaling_factor is read-only")
 
     def scale_to_max(self, max_val):
-        """scale the photometry to a maximum value"""
+        """scale the photometry to a maximum value [in uW/cm2]"""
         if self.ies is None:
             msg = "No .ies file provided; scaling not applied"
             warnings.warn(msg, stacklevel=3)
         else:
-            self.ies.photometry.scale_to_max(max_val)
+            if self.intensity_units == "mW/sr":        
+                self.ies.photometry.scale_to_max(max_val * 10)
+            else:
+                self.ies.photometry.scale_to_max(max_val)
             self._update_scaling_factor()
             # self._scale_mode = "max"
         return self
 
     def scale_to_total(self, total_power):
-        """scale the photometry to a total optical power"""
+        """scale the photometry to a total optical power [in mW]"""
         if self.ies is None:
             msg = "No .ies file provided; scaling not applied"
             warnings.warn(msg, stacklevel=3)
@@ -645,12 +676,15 @@ class Lamp:
         return self
 
     def scale_to_center(self, center_val):
-        """scale the photometry to a center value"""
+        """scale the photometry to a center irradiance value [in uW/cm2]"""
         if self.ies is None:
             msg = "No .ies file provided; scaling not applied"
             warnings.warn(msg, stacklevel=3)
         else:
-            self.photometry.scale_to_center(center_val)
+            if self.intensity_units == "mW/sr":                
+                self.photometry.scale_to_center(center_val * 10)
+            else:
+                self.photometry.scale_to_center(center_val)
             self._update_scaling_factor()
             # self._scale_mode = "center"
         return self
@@ -744,7 +778,10 @@ class Lamp:
     # --------------------------- Internals -----------------------------
 
     def _set_intensity_units(self, arg):
-        """determine the units of the radiant intensity"""
+        """
+        TODO: this should probably just be an enum?  
+        determine the units of the radiant intensity
+        """
         if arg is not None:
             msg = f"Intensity unit {arg} not recognized. Using default value `mW/sr`"
             if isinstance(arg, int):
