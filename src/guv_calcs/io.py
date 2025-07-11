@@ -42,7 +42,7 @@ def _parse_loadfile(filedata):
         except json.JSONDecodeError:
             path = Path(filedata)
             dct = _load_file(path)
-    elif isinstance(filedata, pathlib.PosixPath):
+    elif isinstance(filedata, pathlib.PurePath):
         dct = _load_file(filedata)
 
     return dct
@@ -94,7 +94,7 @@ def _check_savefile(filename, ext):
     if isinstance(filename, str):
         if not filename.lower().endswith(ext):
             filename += ext
-    elif isinstance(filename, pathlib.PosixPath):
+    elif isinstance(filename, pathlib.PurePath):
         if not filename.suffix == ext:
             filename = filename.parent / (filename.name + ext)
     return filename
@@ -394,7 +394,7 @@ def rows_to_bytes(rows, encoding="cp1252"):
 
 def load_csv(datasource):
     """load csv data from either path or bytes"""
-    if isinstance(datasource, (str, pathlib.PosixPath)):
+    if isinstance(datasource, (str, pathlib.PurePath)):
         filepath = Path(datasource)
         filetype = filepath.suffix.lower()
         if filetype != ".csv":

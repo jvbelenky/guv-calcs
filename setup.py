@@ -6,7 +6,7 @@ VERSION_RE = re.compile(r'__version__\s*=\s*"([^"]+)"')
 
 def read_version(path) -> str:
     return VERSION_RE.search(path.read_text()).group(1)
-       
+    
 with open("README.md", "r") as fh:
     long_description = fh.read()
 with open("requirements.txt", "r") as thefile: 

@@ -649,6 +649,17 @@ class Lamp:
     @scaling_factor.setter  # block direct writes
     def scaling_factor(self, _):
         raise AttributeError("scaling_factor is read-only")
+        
+    def scale(self, scale_val):
+        """scale the photometry by the given value"""
+        if self.ies is None:
+            msg = "No .ies file provided; scaling not applied"
+            warnings.warn(msg, stacklevel=3)
+        else:
+            self.photometry.scale(scale_val / self.scaling_factor)
+            self._update_scaling_factor()
+            # self._scale_mode = "factor"
+        return self
 
     def scale_to_max(self, max_val):
         """scale the photometry to a maximum value [in uW/cm2]"""
@@ -689,17 +700,6 @@ class Lamp:
             # self._scale_mode = "center"
         return self
 
-    def scale(self, scale_val):
-        """scale the photometry by the given value"""
-        if self.ies is None:
-            msg = "No .ies file provided; scaling not applied"
-            warnings.warn(msg, stacklevel=3)
-        else:
-            self.photometry.scale(scale_val)
-            self._update_scaling_factor()
-            # self._scale_mode = "factor"
-        return self
-
     def _update_scaling_factor(self):
         """update scaling factor based on the last scaling operation"""
         self._scaling_factor = self.ies.center() / self._base_ies.center()
@@ -728,7 +728,8 @@ class Lamp:
 
     def set_units(self, units):
         """set units"""
-        self.ies.update(units=1 if units == "feet" else 2)
+        if self.ies is not None:
+            self.ies.update(units=1 if units == "feet" else 2)
         self.surface.set_units(units)
         return self
 
