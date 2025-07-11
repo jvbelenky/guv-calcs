@@ -1,7 +1,12 @@
 from setuptools import setup, find_packages
-from src.guv_calcs.io import get_version
+#from src.guv_calcs.io import get_version
 from pathlib import Path
-    
+import re
+VERSION_RE = re.compile(r'__version__\s*=\s*"([^"]+)"')
+
+def read_version(path) -> str:
+    return VERSION_RE.search(path.read_text()).group(1)
+       
 with open("README.md", "r") as fh:
     long_description = fh.read()
 with open("requirements.txt", "r") as thefile: 
@@ -9,7 +14,7 @@ with open("requirements.txt", "r") as thefile:
 setup(
         name="guv_calcs",
         url="https://github.com/jvbelenky/guv-calcs",
-        version=get_version(Path(__file__).parent / 'src' / 'guv_calcs' / '_version.py'),
+        version=read_version(Path(__file__).parent / 'src' / 'guv_calcs' / '_version.py'),
         author="J. Vivian Belenky",
         author_email="j.vivian.belenky@outlook.com",
         description="A library for carrying out fluence and irradiance calculations for germicidal UV (GUV) applications.",
