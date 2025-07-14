@@ -482,8 +482,7 @@ class Lamp:
     @property
     def bank(self):
         return self.pose.bank
->>>>>>> 3341226 (cleanup/reorg/remove comments)
-
+        
     def move(self, x=None, y=None, z=None):
         """Designate lamp position in cartesian space"""
         self.pose = self.pose.move(x=x, y=y, z=z)
