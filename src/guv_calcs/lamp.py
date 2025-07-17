@@ -657,7 +657,6 @@ class Lamp:
         else:
             self.photometry.scale(scale_val / self.scaling_factor)
             self._update_scaling_factor()
-            # self._scale_mode = "factor"
         return self
 
     def scale_to_max(self, max_val):
@@ -671,7 +670,6 @@ class Lamp:
             else:
                 self.ies.photometry.scale_to_max(max_val)
             self._update_scaling_factor()
-            # self._scale_mode = "max"
         return self
 
     def scale_to_total(self, total_power):
@@ -682,7 +680,6 @@ class Lamp:
         else:
             self.ies.photometry.scale_to_total(total_power)
             self._update_scaling_factor()
-            # self._scale_mode = "total"
         return self
 
     def scale_to_center(self, center_val):
