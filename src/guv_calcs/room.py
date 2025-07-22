@@ -340,28 +340,28 @@ class Room:
         - If an object is iterable, it is recursively processed.
         - Otherwise, a warning is printed.
         """
-        self.scene.add(*args)
+        self.scene.add(*args, on_collision=on_collision, unit_mode=unit_mode)
         return self
 
     def add_lamp(self, lamp, on_collision=None, unit_mode=None):
         """
         Add a lamp to the room scene
         """
-        self.scene.add_lamp(lamp)
+        self.scene.add_lamp(lamp, on_collision=on_collision, unit_mode=unit_mode)
         return self
 
     def place_lamp(self, lamp, on_collision=None, unit_mode=None):
         """
         Position a lamp as far from other lamps and the walls as possible
         """
-        self.scene.place_lamp(lamp)
+        self.scene.place_lamp(lamp, on_collision=on_collision, unit_mode=unit_mode)
         return self
 
     def place_lamps(self, *args, on_collision=None, unit_mode=None):
         """
         Place multiple lamps in the room, as far away from each other and the walls as possible
         """
-        self.scene.place_lamps(*args)
+        self.scene.place_lamps(*args, on_collision=on_collision, unit_mode=unit_mode)
         return self
 
     def remove_lamp(self, lamp_id):
@@ -373,7 +373,7 @@ class Room:
         """
         Add a calculation zone to the room
         """
-        self.scene.add_calc_zone(calc_zone)
+        self.scene.add_calc_zone(calc_zone, on_collision=on_collision)
         return self
 
     def add_standard_zones(self, on_collision=None):

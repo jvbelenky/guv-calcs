@@ -207,14 +207,16 @@ class Scene:
         if obj_id is None:
             return self._unique_id(base_id, counter)
         else:
-            new_id = self._unique_id(obj_id, counter)
             if obj_id not in mapping:
-                return new_id
+                return obj_id
             elif policy == "error":
                 raise ValueError(f"'{obj_id}' already exists")
-            elif policy == "warn":
-                msg = f"'{obj_id}' already exists - overwriting"
-                warnings.warn(msg, stacklevel=3)
+            elif policy == "overwrite":
+                # msg = f"'{obj_id}' already exists - overwriting"
+                # warnings.warn(msg, stacklevel=3)
+                return obj_id
+            # only remaining policy is to increment
+            new_id = self._unique_id(obj_id, counter)
             return new_id
 
     def _unique_id(self, base: str, counter: defaultdict) -> str:
