@@ -325,9 +325,9 @@ class CalcVol(CalcZone):
         xr = abs(self.x2 - self.x1)
         yr = abs(self.y2 - self.y1)
         zr = abs(self.z2 - self.z1)
-        nx = min(int(xr * 10), 20)
-        ny = min(int(yr * 10), 20)
-        nz = min(int(zr * 10), 20)
+        nx = min(max(int(xr * 10),1), 20)
+        ny = min(max(int(yr * 10),1), 20)
+        nz = min(max(int(zr * 10),1), 20)
         default_xs = round(xr / nx, -int(np.floor(np.log10(xr / nx))))
         default_ys = round(yr / ny, -int(np.floor(np.log10(yr / ny))))
         default_zs = round(zr / nz, -int(np.floor(np.log10(zr / nz))))
@@ -633,8 +633,8 @@ class CalcPlane(CalcZone):
         # spacing and num points
         xr = abs(self.x2 - self.x1)
         yr = abs(self.y2 - self.y1)
-        nx = min(int(xr * 10), 50)
-        ny = min(int(yr * 10), 50)
+        nx = min(max(int(xr * 10), 1), 50)
+        ny = min(max(int(yr * 10), 1), 50)
         # default spacing
         default_xs = round(xr / nx, -int(np.floor(np.log10(xr / nx))))
         default_ys = round(yr / ny, -int(np.floor(np.log10(yr / ny))))
