@@ -12,7 +12,7 @@ class LightingCalculator:
     def __init__(self, zone):
         self.zone = zone
 
-    def compute(self, lamps, hard=False):
+    def compute(self, lamps, filters=None, hard=False):
         """
         Calculate and return irradiance values at all coordinate points within the zone.
         """
@@ -26,7 +26,9 @@ class LightingCalculator:
 
             # this step is always cheap
             self.zone.lamp_values = {
-                lamp_id: self._apply_filters(lamps[lamp_id], values.copy())
+                lamp_id: self._apply_filters(
+                    lamps[lamp_id], values.copy(), filters=filters
+                )
                 for lamp_id, values in self.zone.lamp_values_base.items()
             }
 
@@ -83,7 +85,7 @@ class LightingCalculator:
 
         return values
 
-    def _apply_filters(self, lamp, values):
+    def _apply_filters(self, lamp, values, filters=None):
         """
         TODO:
         possibly I should really be saving on calculation time
@@ -92,6 +94,11 @@ class LightingCalculator:
         update the values of a single lamp based on the calc zone properties,
         but which don't require a full recalculation
         """
+
+        # apply measured correction filters
+        if filters is not None:
+            for filt in filters:
+                values = filt.apply(lamp, values, self.zone.coords)
 
         if self.zone.calctype == "Plane":
             rel_coords = self.zone.coords - lamp.surface.position

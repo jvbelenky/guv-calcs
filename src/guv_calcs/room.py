@@ -76,6 +76,7 @@ class Room:
         )
         self.lamps = self.scene.lamps
         self.calc_zones = self.scene.calc_zones
+        self.filters = self.scene.filters
 
         ### Reflectance
         self.enable_reflectance = (
@@ -198,10 +199,15 @@ class Room:
             if zone.calctype != "Zone" and zone.enabled:
                 zone_state[key] = zone.get_calc_state()
 
+        filter_state = {}
+        for key, filt in self.scene.filters.items():
+            filter_state[key] = filt.get_calc_state()
+
         calc_state = {}
         calc_state["room"] = room_state
         calc_state["lamps"] = lamp_state
         calc_state["calc_zones"] = zone_state
+        calc_state["filters"] = filter_state
 
         return calc_state
 
@@ -403,10 +409,18 @@ class Room:
         return self
 
     def remove_calc_zone(self, zone_id):
-        """
-        Remove a calculation zone from the room
-        """
+        """Remove a calculation zone from the room"""
         self.scene.remove_calc_zone(zone_id)
+        return self
+
+    def add_filter(self, filt, on_collision=None):
+        """Add a measured correction filter to the room"""
+        self.scene.add_filter(filt=filt, on_collision=on_collision)
+        return self
+
+    def remove_filter(self, filt_id):
+        """remove a measured correction filter from the room"""
+        self.scene.remove_filter(filt_id)
         return self
 
     def set_colormap(self, colormap):
@@ -457,7 +471,10 @@ class Room:
         for name, zone in self.calc_zones.items():
             if zone.enabled:
                 zone.calculate_values(
-                    lamps=valid_lamps, ref_manager=ref_manager, hard=hard
+                    lamps=valid_lamps,
+                    ref_manager=ref_manager,
+                    filters=self.filters,
+                    hard=hard,
                 )
         # update calc states.
         self.calc_state = new_calc_state

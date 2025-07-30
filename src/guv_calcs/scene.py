@@ -5,6 +5,7 @@ from matplotlib import colormaps
 from .room_dims import RoomDimensions
 from .lamp import Lamp
 from .calc_zone import CalcZone, CalcPlane, CalcVol
+from .filter import MeasuredCorrection
 from .lamp_helpers import new_lamp_position
 
 
@@ -19,10 +20,12 @@ class Scene:
 
         self.lamps: dict[str, Lamp] = {}
         self.calc_zones: dict[str, CalcZone] = {}
+        self.filters: dict[str, MeasuredCorrection] = {}
 
         # for generating unique IDs
         self._lamp_counter = defaultdict(int)
         self._zone_counter = defaultdict(int)
+        self._filter_counter = defaultdict(int)
 
     def add(self, *args, on_collision=None, unit_mode=None):
         """
@@ -38,6 +41,8 @@ class Scene:
                 self.add_lamp(obj, on_collision=on_collision, unit_mode=unit_mode)
             elif isinstance(obj, (CalcZone, CalcPlane, CalcVol)):
                 self.add_calc_zone(obj, on_collision=on_collision)
+            elif isinstance(obj, MeasuredCorrection):
+                self.add_filter(obj, on_collision=on_collision)
             elif isinstance(obj, dict):
                 self.add(*obj.values(), on_collision=on_collision)
             elif isinstance(obj, Iterable) and not isinstance(obj, (str, bytes)):
@@ -86,15 +91,6 @@ class Scene:
         """Remove a lamp from the scene"""
         self.lamps.pop(lamp_id, None)
 
-    def set_colormap(self, colormap: str):
-        """Set the scene's colormap"""
-        if colormap not in list(colormaps):
-            warnings.warn(f"{colormap} is not a valid colormap.")
-        else:
-            self.colormap = colormap
-            for zone in self.calc_zones.values():
-                zone.colormap = self.colormap
-
     def add_calc_zone(self, zone, base_id=None, on_collision=None):
         """
         Add a calculation zone to the scene
@@ -118,6 +114,22 @@ class Scene:
     def remove_calc_zone(self, zone_id):
         """remove calculation zone from scene"""
         self.calc_zones.pop(zone_id, None)
+
+    def add_filter(self, filt, base_id="Filter", on_collision=None):
+        """add a correction filter to the scene"""
+        filter_id = self._get_id(
+            mapping=self.filters,
+            obj_id=filt.filter_id,
+            base_id=base_id,
+            counter=self._filter_counter,
+            on_collision=on_collision,
+        )
+        filt.filter_id = filter_id
+        self.filters[filter_id] = filt
+
+    def remove_filter(self, filter_id):
+        """remove a correction filter from the scene"""
+        self.filters.pop(filter_id, None)
 
     def add_standard_zones(self, standard, *, on_collision=None):
         """
@@ -216,6 +228,15 @@ class Scene:
         """
         for lamp in self.lamps.values():
             self._check_lamp_units(lamp, unit_mode=unit_mode)
+
+    def set_colormap(self, colormap: str):
+        """Set the scene's colormap"""
+        if colormap not in list(colormaps):
+            warnings.warn(f"{colormap} is not a valid colormap.")
+        else:
+            self.colormap = colormap
+            for zone in self.calc_zones.values():
+                zone.colormap = self.colormap
 
     # --------------------------- internals ----------------------------
 
