@@ -270,7 +270,7 @@ class Lamp:
     @property
     def keywords(self):
         return VALID_LAMPS
-        
+
     @classmethod
     def from_keyword(cls, key, lamp_id=None, **kwargs):
         """define a Lamp object from a predefined keyword"""
@@ -312,29 +312,6 @@ class Lamp:
 
         kwargs.setdefault("lamp_id", key)
 
-        return cls(**kwargs)
-
-    @classmethod
-    def from_index(cls, key_index=0, lamp_id=None, **kwargs):
-        """define a Lamp object from an index value"""
-        if not isinstance(key_index, int):
-            raise TypeError(f"Keyword index must be int, not {type(key_index)}")
-        if key_index < len(VALID_LAMPS):
-            key = VALID_LAMPS[key_index]
-            path = "guv_calcs.data.lamp_data"
-            fname = key.lower() + ".ies"
-            spec_fname = key.lower() + ".csv"
-            filename = resources.files(path).joinpath(fname)
-            spectra_source = resources.files(path).joinpath(spec_fname)
-            kwargs.setdefault("filedata", filename)
-            kwargs.setdefault("spectra_source", spectra_source)
-        else:
-            raise IndexError(
-                f"Only {len(VALID_LAMPS)} lamps are available. Available lamps: {VALID_LAMPS}"
-            )
-            
-        kwargs.setdefault("lamp_id", key)
-        
         return cls(**kwargs)
 
     def get_calc_state(self):
@@ -482,7 +459,7 @@ class Lamp:
     @property
     def bank(self):
         return self.pose.bank
-        
+
     def move(self, x=None, y=None, z=None):
         """Designate lamp position in cartesian space"""
         self.pose = self.pose.move(x=x, y=y, z=z)
@@ -585,7 +562,7 @@ class Lamp:
             return self.ies.photometry.max() / 10
         else:
             return self.ies.photometry.max()
-            
+
     def center(self):
         """center irradiance value"""
         if self.ies is None:
@@ -594,7 +571,7 @@ class Lamp:
             return self.ies.photometry.center() / 10
         else:
             return self.ies.photometry.center()
-            
+
     def total(self):
         """just an alias for get_total_power for now"""
         return self.get_total_power()
@@ -648,7 +625,7 @@ class Lamp:
     @scaling_factor.setter  # block direct writes
     def scaling_factor(self, _):
         raise AttributeError("scaling_factor is read-only")
-        
+
     def scale(self, scale_val):
         """scale the photometry by the given value"""
         if self.ies is None:
@@ -665,7 +642,7 @@ class Lamp:
             msg = "No .ies file provided; scaling not applied"
             warnings.warn(msg, stacklevel=3)
         else:
-            if self.intensity_units == "mW/sr":        
+            if self.intensity_units == "mW/sr":
                 self.ies.photometry.scale_to_max(max_val * 10)
             else:
                 self.ies.photometry.scale_to_max(max_val)
@@ -688,7 +665,7 @@ class Lamp:
             msg = "No .ies file provided; scaling not applied"
             warnings.warn(msg, stacklevel=3)
         else:
-            if self.intensity_units == "mW/sr":                
+            if self.intensity_units == "mW/sr":
                 self.photometry.scale_to_center(center_val * 10)
             else:
                 self.photometry.scale_to_center(center_val)
@@ -776,7 +753,7 @@ class Lamp:
 
     def _set_intensity_units(self, arg):
         """
-        TODO: this should probably just be an enum?  
+        TODO: this should probably just be an enum?
         determine the units of the radiant intensity
         """
         if arg is not None:
