@@ -129,7 +129,7 @@ class Lamp:
     ):
 
         self.lamp_id = lamp_id
-        self.name = lamp_id if name is None else str(name)
+        self.name = str(lamp_id) if name is None else str(name)
         self.enabled = True if enabled is None else enabled
 
         # Position / orientation

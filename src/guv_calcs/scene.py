@@ -59,6 +59,8 @@ class Scene:
             on_collision=on_collision,
         )
         lamp.lamp_id = lamp_id
+        if lamp.name is None:
+            lamp.name = lamp_id
         self.lamps[lamp_id] = self._check_lamp(lamp, unit_mode=unit_mode)
         return self
 
@@ -108,6 +110,8 @@ class Scene:
             on_collision=on_collision,
         )
         zone.zone_id = zone_id
+        if zone.name is None:
+            zone.name = zone_id
         zone.colormap = self.colormap
         self.calc_zones[zone_id] = self._check_zone(zone)
 
@@ -211,8 +215,8 @@ class Scene:
             if policy=="error":
                 raise ValueError(f"'{obj_id}' already exists")
             elif policy == "overwrite":
-                return obj_id # does not bump unique_id counter
-        return self._unique_id(obj_id, counter) # increment counter
+                return str(obj_id) # does not bump unique_id counter
+        return self._unique_id(str(obj_id), counter) # increment counter
 
     def _unique_id(self, base: str, counter: defaultdict) -> str:
         counter[base] += 1

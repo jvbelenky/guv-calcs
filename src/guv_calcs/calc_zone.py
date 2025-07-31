@@ -49,8 +49,8 @@ class CalcZone(object):
         show_values=None,
         colormap=None,
     ):
-        self.zone_id = str(zone_id)
-        self.name = zone_id if name is None else name
+        self.zone_id = zone_id
+        self.name = str(zone_id) if name is None else str(name)
         self.offset = True if offset is None else offset
         self.dose = False if dose is None else dose
         if self.dose:
