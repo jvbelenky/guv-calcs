@@ -272,7 +272,7 @@ class Lamp:
         return VALID_LAMPS
 
     @classmethod
-    def from_keyword(cls, key, lamp_id=None, **kwargs):
+    def from_keyword(cls, key, **kwargs):
         """define a Lamp object from a predefined keyword"""
         if not isinstance(key, str):
             raise TypeError(f"Keyword must be str, not {type(key)}")
@@ -286,13 +286,13 @@ class Lamp:
             raise KeyError(
                 f"{key} is not a valid lamp key. Valid keys are {VALID_LAMPS}"
             )
-
-        kwargs.setdefault("lamp_id", key)
+        if kwargs.get('lamp_id', None) is None:
+            kwargs.setdefault("lamp_id", key)
 
         return cls(**kwargs)
 
     @classmethod
-    def from_index(cls, key_index=0, lamp_id=None, **kwargs):
+    def from_index(cls, key_index=0, **kwargs):
         """define a Lamp object from an index value"""
 
         if not isinstance(key_index, int):
@@ -309,9 +309,9 @@ class Lamp:
             raise IndexError(
                 f"Only {len(VALID_LAMPS)} lamps are available. Available lamps: {VALID_LAMPS}"
             )
-
-        kwargs.setdefault("lamp_id", key)
-
+        if kwargs.get('lamp_id', None) is None:
+            kwargs.setdefault("lamp_id", key)
+        
         return cls(**kwargs)
 
     def get_calc_state(self):
