@@ -97,7 +97,7 @@ class LightingCalculator:
 
         # apply measured correction filters
         if filters is not None:
-            for filt in filters:
+            for filt in filters.values():
                 values = filt.apply(lamp, values, self.zone.coords)
 
         if self.zone.calctype == "Plane":

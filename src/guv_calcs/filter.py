@@ -1,31 +1,14 @@
+from abc import ABC
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 from .calc_zone import CalcPlane
 
 
-class MeasuredCorrection:
-    """
-    A position-dependent entrance-plane measured.
-
-
-    Parameters
-    ----------
-    p0 : (3,) array
-        World-space coordinates of the rectangle’s origin (corner 0,0).
-    pU : (3,) array
-        Corner at (1,0).  u-axis = pU – p0
-    pV : (3,) array
-        Corner at (0,1).  v-axis = pV – p0
-    measured : (Ny, Nx) array
-        Grid of measured values
-    """
-
-    def __init__(self, p0, pU, pV, measured, filter_id=None, name=None):
+class FilterBase(ABC):
+    def __init__(self, p0, pU, pV, values, filter_id=None, name=None):
 
         self.filter_id = str(filter_id)
         self.name = filter_id if name is None else name
-
-        self.measured = measured
 
         self.p0 = np.asarray(p0, dtype=float)
         self.u = np.asarray(pU, dtype=float) - self.p0
@@ -33,47 +16,13 @@ class MeasuredCorrection:
         # pre-compute inverse 2×2 for (u,v)-decomposition
         A = np.column_stack([self.u, self.v])  # shape (3,2)
         self.inv = np.linalg.pinv(A.T @ A) @ A.T  # maps 3-vec → (α,β)
-        # plane normal (points *into* the volume if u×v chosen that way)
+        # plane normal - should point into the volume
         self.n = np.cross(self.u, self.v)
         self.n /= np.linalg.norm(self.n)
-        # 2-D interpolator → scalar
 
-        self.x_nodes = np.linspace(0, self.u[0], measured.shape[0])
-        self.y_nodes = np.linspace(0, self.v[1], measured.shape[1])
-
-        self.plane = CalcPlane.from_vectors(
-            p0=p0,
-            pU=pU,
-            pV=pV,
-            zone_id=self.filter_id,
-            name=self.name,
-            horiz=True,
-            num_x=measured.shape[0],
-            num_y=measured.shape[1],
-        )
-
-        self.lookup = None
-
-    def calculate_values(self, lamps, ref_manager=None, hard=False):
-        """
-        calculate the modeled incidence on the plane and build a correction grid
-        """
-
-        self.plane.calculate_values(lamps=lamps, ref_manager=ref_manager, hard=hard)
-
-        if self.plane.values.shape != self.measured.shape:
-            raise ValueError(
-                f"Measured and modeled values in filter {self.name} must be the same shape"
-            )
-
-        correction = self.measured / self.plane.values
-
-        self.lookup = RegularGridInterpolator(
-            (self.x_nodes, self.y_nodes),
-            correction.astype("float32"),
-            bounds_error=False,
-            fill_value=1.0,
-        )
+        self.values = values
+        self.alpha_nodes = np.linspace(0, np.linalg.norm(self.u), values.shape[0])
+        self.beta_nodes = np.linspace(0, np.linalg.norm(self.v), values.shape[1])
 
     def apply(self, lamp, values, coords):
         """
@@ -81,7 +30,7 @@ class MeasuredCorrection:
         if the ray lamp.position → coords[i] crosses the rectangle exactly once.
         """
         if self.lookup is None:
-            raise ValueError(f"Correction filter {self.name} has not been calculated")
+            raise ValueError(f"Value grid for filter {self.name} missing")
 
         rel = coords - lamp.position  # shape (N,3)
         denom = rel @ self.n  # (N,)
@@ -101,18 +50,115 @@ class MeasuredCorrection:
         t = d0 / (d0 - d1[mask])
         hit = lamp.position + rel[good][mask] * t[:, None]  # (M,3)
 
-        # convert hit→(α,β) in rectangle basis, check if inside [0,1]²
-        ab = (self.inv @ (hit - self.p0).T).T  # (M,2)
-        inside = (ab[:, 0] >= 0) & (ab[:, 0] <= 1) & (ab[:, 1] >= 0) & (ab[:, 1] <= 1)
+        # # convert hit→(α,β) in rectangle basis, check if inside [0,1]²
+        # ab = (self.inv @ (hit - self.p0).T).T  # (M,2)
+        # inside = (ab[:, 0] >= 0) & (ab[:, 0] <= 1) & (ab[:, 1] >= 0) & (ab[:, 1] <= 1)
+        # if not inside.any():
+            # return values
+
+        # # interpolate measured on the measured grid (swap order to (x,y))
+        # factors = self.lookup(ab[inside][:, ::-1])  # (M_in,)
+        # # broadcast back to full values array
+        # idx = np.flatnonzero(good)[mask][inside]
+        # values[idx] *= factors
+        
+        ab   = (self.inv @ (hit - self.p0).T).T            # (M,2) → (α,β)
+        inside = (
+            (ab[:, 0] >= 0) & (ab[:, 0] <= 1) &
+            (ab[:, 1] >= 0) & (ab[:, 1] <= 1)
+        )
         if not inside.any():
             return values
 
-        # interpolate measured on the measured grid (swap order to (x,y))
-        factors = self.lookup(ab[inside][:, ::-1])  # (M_in,)
-        # broadcast back to full values array
-        idx = np.flatnonzero(good)[mask][inside]
-        values[idx] *= factors
+        ab_inside   = ab[inside]
+        # convert to physical distances along each axis
+        coords_lookup = np.column_stack((ab_inside[:, 1] * np.linalg.norm(self.v),   # β·|v|
+                                         ab_inside[:, 0] * np.linalg.norm(self.u)))  # α·|u|
+
+        factors = self.lookup(coords_lookup)                      # (M_in,)
+        values[np.flatnonzero(good)[mask][inside]] *= factors
         return values
 
     def get_calc_state(self):
-        return [self.p0, self.u, self.v, self.measured]
+        return [self.p0, self.u, self.v, self.values]
+       
+
+class MultFilter(FilterBase):
+    """
+    p0 : (3,) array
+        World-space coordinates of the rectangle’s origin (corner 0,0).
+    pU : (3,) array
+        Corner at (1,0).  u-axis = pU – p0
+    pV : (3,) array
+        Corner at (0,1).  v-axis = pV – p0
+    values : (Ny, Nx) array
+        Grid of measured values
+    """
+
+    def __init__(self, p0, pU, pV, values, filter_id=None, name=None):
+
+        super().__init__(
+            p0=p0, pU=pU, pV=pV, values=values, filter_id=filter_id, name=name
+        )
+
+        self.lookup = RegularGridInterpolator(
+            (self.beta_nodes, self.alpha_nodes),
+            self.values.astype("float32"),
+            bounds_error=False,
+            fill_value=1.0,
+        )
+
+    def calculate_values(self, lamps, ref_manager=None, hard=False):
+        pass
+
+
+class MeasuredCorrection(FilterBase):
+    """
+    p0 : (3,) array
+        World-space coordinates of the rectangle’s origin (corner 0,0).
+    pU : (3,) array
+        Corner at (1,0).  u-axis = pU – p0
+    pV : (3,) array
+        Corner at (0,1).  v-axis = pV – p0
+    values : (Ny, Nx) array
+        Grid of measured values
+    """
+
+    def __init__(self, p0, pU, pV, values, filter_id=None, name=None):
+
+        super().__init__(
+            p0=p0, pU=pU, pV=pV, values=values, filter_id=filter_id, name=name
+        )
+
+        self.plane = CalcPlane.from_vectors(
+            p0=p0,
+            pU=pU,
+            pV=pV,
+            zone_id=self.filter_id,
+            name=self.name,
+            horiz=True,
+            num_x=self.values.shape[0],
+            num_y=self.values.shape[1],
+        )
+
+        self.lookup = None
+
+    def calculate_values(self, lamps, ref_manager=None, hard=False):
+        """
+        calculate the modeled incidence on the plane and build a correction grid
+        """
+        self.plane.calculate_values(lamps=lamps, ref_manager=ref_manager, hard=hard)
+
+        if self.plane.values.shape != self.values.shape:
+            raise ValueError(
+                f"Measured and modeled values in filter {self.name} must be the same shape"
+            )
+
+        correction = self.values / self.plane.values
+
+        self.lookup = RegularGridInterpolator(
+            (self.beta_nodes, self.alpha_nodes),
+            correction.astype("float32"),
+            bounds_error=False,
+            fill_value=1.0,
+        )

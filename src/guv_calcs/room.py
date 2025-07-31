@@ -468,6 +468,12 @@ class Room:
             self.ref_manager.calculate_incidence(valid_lamps, hard=hard)
 
         ref_manager = self.ref_manager if self.enable_reflectance else None
+
+        # calculate incidence on any correction filters
+        for filt in self.filters.values():
+            filt.calculate_values(valid_lamps, ref_manager=ref_manager, hard=hard)
+
+        # main calculation loop
         for name, zone in self.calc_zones.items():
             if zone.enabled:
                 zone.calculate_values(

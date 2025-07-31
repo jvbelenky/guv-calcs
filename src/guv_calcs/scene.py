@@ -5,7 +5,7 @@ from matplotlib import colormaps
 from .room_dims import RoomDimensions
 from .lamp import Lamp
 from .calc_zone import CalcZone, CalcPlane, CalcVol
-from .filter import MeasuredCorrection
+from .filter import MeasuredCorrection, MultFilter
 from .lamp_helpers import new_lamp_position
 
 
@@ -41,7 +41,7 @@ class Scene:
                 self.add_lamp(obj, on_collision=on_collision, unit_mode=unit_mode)
             elif isinstance(obj, (CalcZone, CalcPlane, CalcVol)):
                 self.add_calc_zone(obj, on_collision=on_collision)
-            elif isinstance(obj, MeasuredCorrection):
+            elif isinstance(obj, (MultFilter, MeasuredCorrection)):
                 self.add_filter(obj, on_collision=on_collision)
             elif isinstance(obj, dict):
                 self.add(*obj.values(), on_collision=on_collision)

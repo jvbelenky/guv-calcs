@@ -227,7 +227,6 @@ class CalcZone(object):
         self.base_values = self.calculator.compute(
             lamps=lamps, filters=filters, obstacles=obstacles, hard=hard
         )
-
         if ref_manager is not None:
             # calculate reflectance -- warning, may be expensive!
             ref_manager.calculate_reflectance(self, hard=hard)
