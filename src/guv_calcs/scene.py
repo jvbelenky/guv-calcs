@@ -50,6 +50,7 @@ class Scene:
 
     def add_lamp(self, lamp, base_id="Lamp", on_collision=None, unit_mode=None):
         """Add a lamp to the room"""
+        
         lamp_id = self._get_id(
             mapping=self.lamps,
             obj_id=lamp.lamp_id,
@@ -206,18 +207,12 @@ class Scene:
         policy = on_collision or self.on_collision
         if obj_id is None:
             return self._unique_id(base_id, counter)
-        else:
-            if obj_id not in mapping:
-                return obj_id
-            elif policy == "error":
+        elif obj_id in mapping:
+            if policy=="error":
                 raise ValueError(f"'{obj_id}' already exists")
             elif policy == "overwrite":
-                # msg = f"'{obj_id}' already exists - overwriting"
-                # warnings.warn(msg, stacklevel=3)
-                return obj_id
-            # only remaining policy is to increment
-            new_id = self._unique_id(obj_id, counter)
-            return new_id
+                return obj_id # does not bump unique_id counter
+        return self._unique_id(obj_id, counter) # increment counter
 
     def _unique_id(self, base: str, counter: defaultdict) -> str:
         counter[base] += 1
