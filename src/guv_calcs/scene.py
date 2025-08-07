@@ -5,7 +5,7 @@ from matplotlib import colormaps
 from .room_dims import RoomDimensions
 from .lamp import Lamp
 from .calc_zone import CalcZone, CalcPlane, CalcVol
-from .filter import MeasuredCorrection, MultFilter
+from .filters import FilterBase
 from .lamp_helpers import new_lamp_position
 
 
@@ -20,7 +20,7 @@ class Scene:
 
         self.lamps: dict[str, Lamp] = {}
         self.calc_zones: dict[str, CalcZone] = {}
-        self.filters: dict[str, MeasuredCorrection] = {}
+        self.filters: dict[str, FilterBase] = {}
 
         # for generating unique IDs
         self._lamp_counter = defaultdict(int)
@@ -39,9 +39,9 @@ class Scene:
         for obj in args:
             if isinstance(obj, Lamp):
                 self.add_lamp(obj, on_collision=on_collision, unit_mode=unit_mode)
-            elif isinstance(obj, (CalcZone, CalcPlane, CalcVol)):
+            elif isinstance(obj, CalcZone):
                 self.add_calc_zone(obj, on_collision=on_collision)
-            elif isinstance(obj, (MultFilter, MeasuredCorrection)):
+            elif isinstance(obj, FilterBase):
                 self.add_filter(obj, on_collision=on_collision)
             elif isinstance(obj, dict):
                 self.add(*obj.values(), on_collision=on_collision)
@@ -125,6 +125,8 @@ class Scene:
             on_collision=on_collision,
         )
         filt.filter_id = filter_id
+        if filt.name is None:
+            filt.name = filter_id
         self.filters[filter_id] = filt
 
     def remove_filter(self, filter_id):
@@ -147,12 +149,14 @@ class Scene:
                 name="Eye Dose (8 Hours)",
                 dose=True,
                 hours=8,
+                direction=0,
             ),
             CalcPlane(
                 zone_id="SkinLimits",
                 name="Skin Dose (8 Hours)",
                 dose=True,
                 hours=8,
+                direction=0,
             ),
         ]
 

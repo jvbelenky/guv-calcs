@@ -128,8 +128,8 @@ class Lamp:
         scaling_factor=None,
     ):
 
-        self.lamp_id = lamp_id
-        self.name = str(lamp_id) if name is None else str(name)
+        self.lamp_id = lamp_id or "Lamp"
+        self.name = str(self.lamp_id) if name is None else str(name)
         self.enabled = True if enabled is None else enabled
 
         # Position / orientation
@@ -288,6 +288,11 @@ class Lamp:
             )
         if kwargs.get("lamp_id", None) is None:
             kwargs.setdefault("lamp_id", key)
+        if (
+            kwargs.get("guv_type", None) is None
+            and kwargs.get("wavelength", None) is None
+        ):
+            kwargs.setdefault("guv_type", "Krypton chloride")
 
         return cls(**kwargs)
 
@@ -311,7 +316,11 @@ class Lamp:
             )
         if kwargs.get("lamp_id", None) is None:
             kwargs.setdefault("lamp_id", key)
-
+        if (
+            kwargs.get("guv_type", None) is None
+            and kwargs.get("wavelength", None) is None
+        ):
+            kwargs.setdefault("guv_type", "Krypton chloride")
         return cls(**kwargs)
 
     def get_calc_state(self):

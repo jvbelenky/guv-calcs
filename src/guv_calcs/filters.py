@@ -5,17 +5,21 @@ from .calc_zone import CalcPlane
 
 
 class FilterBase(ABC):
-    def __init__(self, p0, pU, pV, values, filter_id=None, name=None):
+    def __init__(self, p0, pU, pV, values, filter_id=None, name=None, enabled=True):
 
-        self.filter_id = str(filter_id)
-        self.name = filter_id if name is None else name
+        self.filter_id = filter_id or "Filter"
+        self.name = str(self.filter_id) if name is None else str(name)
+        self.enabled = enabled
 
         self.p0 = np.asarray(p0, dtype=float)
-        self.u = np.asarray(pU, dtype=float) - self.p0
-        self.v = np.asarray(pV, dtype=float) - self.p0
+        self.pU = np.asarray(pU, dtype=float)
+        self.pV = np.asarray(pV, dtype=float)
+
+        self.u = self.pU - self.p0
+        self.v = self.pV - self.p0
         # pre-compute inverse 2×2 for (u,v)-decomposition
         A = np.column_stack([self.u, self.v])  # shape (3,2)
-        self.inv = np.linalg.pinv(A.T @ A) @ A.T  # maps 3-vec → (α,β)
+        self.inv = np.linalg.pinv(A.T @ A) @ A.T  # maps 3-vec → (a,b)
         # plane normal - should point into the volume
         self.n = np.cross(self.u, self.v)
         self.n /= np.linalg.norm(self.n)
@@ -50,38 +54,27 @@ class FilterBase(ABC):
         t = d0 / (d0 - d1[mask])
         hit = lamp.position + rel[good][mask] * t[:, None]  # (M,3)
 
-        # # convert hit→(α,β) in rectangle basis, check if inside [0,1]²
-        # ab = (self.inv @ (hit - self.p0).T).T  # (M,2)
-        # inside = (ab[:, 0] >= 0) & (ab[:, 0] <= 1) & (ab[:, 1] >= 0) & (ab[:, 1] <= 1)
-        # if not inside.any():
-            # return values
-
-        # # interpolate measured on the measured grid (swap order to (x,y))
-        # factors = self.lookup(ab[inside][:, ::-1])  # (M_in,)
-        # # broadcast back to full values array
-        # idx = np.flatnonzero(good)[mask][inside]
-        # values[idx] *= factors
-        
-        ab   = (self.inv @ (hit - self.p0).T).T            # (M,2) → (α,β)
-        inside = (
-            (ab[:, 0] >= 0) & (ab[:, 0] <= 1) &
-            (ab[:, 1] >= 0) & (ab[:, 1] <= 1)
-        )
+        # convert hit→(a,b) in rectangle basis, check if inside [0,1]^2
+        ab = (self.inv @ (hit - self.p0).T).T  # (M,2) → (a, b)
+        inside = (ab[:, 0] >= 0) & (ab[:, 0] <= 1) & (ab[:, 1] >= 0) & (ab[:, 1] <= 1)
         if not inside.any():
             return values
 
-        ab_inside   = ab[inside]
         # convert to physical distances along each axis
-        coords_lookup = np.column_stack((ab_inside[:, 1] * np.linalg.norm(self.v),   # β·|v|
-                                         ab_inside[:, 0] * np.linalg.norm(self.u)))  # α·|u|
+        coords_lookup = np.column_stack(
+            (
+                ab[inside][:, 1] * np.linalg.norm(self.v),  # b·|v|
+                ab[inside][:, 0] * np.linalg.norm(self.u),
+            )
+        )  # a·|u|
 
-        factors = self.lookup(coords_lookup)                      # (M_in,)
+        factors = self.lookup(coords_lookup)  # (M_in,)
         values[np.flatnonzero(good)[mask][inside]] *= factors
         return values
 
     def get_calc_state(self):
         return [self.p0, self.u, self.v, self.values]
-       
+
 
 class MultFilter(FilterBase):
     """
@@ -95,10 +88,10 @@ class MultFilter(FilterBase):
         Grid of measured values
     """
 
-    def __init__(self, p0, pU, pV, values, filter_id=None, name=None):
+    def __init__(self, p0, pU, pV, values, filter_id="MultFilter", **kwargs):
 
         super().__init__(
-            p0=p0, pU=pU, pV=pV, values=values, filter_id=filter_id, name=name
+            p0=p0, pU=pU, pV=pV, values=values, filter_id=filter_id, **kwargs
         )
 
         self.lookup = RegularGridInterpolator(
@@ -124,10 +117,10 @@ class MeasuredCorrection(FilterBase):
         Grid of measured values
     """
 
-    def __init__(self, p0, pU, pV, values, filter_id=None, name=None):
+    def __init__(self, p0, pU, pV, values, filter_id="CorrectionFilter", **kwargs):
 
         super().__init__(
-            p0=p0, pU=pU, pV=pV, values=values, filter_id=filter_id, name=name
+            p0=p0, pU=pU, pV=pV, values=values, filter_id=filter_id, **kwargs
         )
 
         self.plane = CalcPlane.from_vectors(

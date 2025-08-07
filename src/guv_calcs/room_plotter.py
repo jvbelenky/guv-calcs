@@ -48,7 +48,7 @@ class RoomPlotter:
                 fig = self._plot_vol(zone=zone, fig=fig, select_id=select_id)
         for filter_id, filt in self.room.filters.items():
             fig = self._plot_filter(filt=filt, fig=fig, select_id=select_id)
-
+            
         for obs_id, obs in self.room.obstacles.items():
             fig = self._plot_obstacle(obs=obs, fig=fig)
 
