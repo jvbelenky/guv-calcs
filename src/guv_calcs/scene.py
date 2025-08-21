@@ -50,7 +50,7 @@ class Scene:
 
     def add_lamp(self, lamp, base_id="Lamp", on_collision=None, unit_mode=None):
         """Add a lamp to the room"""
-        
+
         lamp_id = self._get_id(
             mapping=self.lamps,
             obj_id=lamp.lamp_id,
@@ -146,9 +146,9 @@ class Scene:
 
         self.add(standard_zones, on_collision=on_collision)
         # sets the height and field of view parameters
-        self.update_standard_zones(standard)
+        self.update_standard_zones(standard, preserve_spacing=True)
 
-    def update_standard_zones(self, standard):
+    def update_standard_zones(self, standard: str, preserve_spacing: bool):
         """
         update the standard safety calculation zones based on the current
         standard, units, and room dimensions
@@ -166,18 +166,18 @@ class Scene:
 
         if "SkinLimits" in self.calc_zones.keys():
             zone = self.calc_zones["SkinLimits"]
-            zone.set_dimensions(x2=self.dim.x, y2=self.dim.y)
+            zone.set_dimensions(x2=self.dim.x, y2=self.dim.y, preserve_spacing=preserve_spacing)
             zone.set_height(height)
             zone.horiz = skin_horiz
         if "EyeLimits" in self.calc_zones.keys():
             zone = self.calc_zones["EyeLimits"]
-            zone.set_dimensions(x2=self.dim.x, y2=self.dim.y)
+            zone.set_dimensions(x2=self.dim.x, y2=self.dim.y, preserve_spacing=preserve_spacing)
             zone.set_height(height)
             zone.fov_vert = fov_vert
             zone.vert = eye_vert
         if "WholeRoomFluence" in self.calc_zones.keys():
             zone = self.calc_zones["WholeRoomFluence"]
-            zone.set_dimensions(x2=self.dim.x, y2=self.dim.y, z2=self.dim.z)
+            zone.set_dimensions(x2=self.dim.x, y2=self.dim.y, z2=self.dim.z, preserve_spacing=preserve_spacing)
 
     def check_positions(self):
         """
@@ -212,11 +212,11 @@ class Scene:
         if obj_id is None:
             return self._unique_id(base_id, counter)
         elif obj_id in mapping:
-            if policy=="error":
+            if policy == "error":
                 raise ValueError(f"'{obj_id}' already exists")
             elif policy == "overwrite":
-                return str(obj_id) # does not bump unique_id counter
-        return self._unique_id(str(obj_id), counter) # increment counter
+                return str(obj_id)  # does not bump unique_id counter
+        return self._unique_id(str(obj_id), counter)  # increment counter
 
     def _unique_id(self, base: str, counter: defaultdict) -> str:
         counter[base] += 1

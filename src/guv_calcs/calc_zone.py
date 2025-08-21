@@ -325,9 +325,9 @@ class CalcVol(CalcZone):
         xr = abs(self.x2 - self.x1)
         yr = abs(self.y2 - self.y1)
         zr = abs(self.z2 - self.z1)
-        nx = min(max(int(xr * 10),1), 20)
-        ny = min(max(int(yr * 10),1), 20)
-        nz = min(max(int(zr * 10),1), 20)
+        nx = min(max(int(xr * 10), 1), 20)
+        ny = min(max(int(yr * 10), 1), 20)
+        nz = min(max(int(zr * 10), 1), 20)
         default_xs = round(xr / nx, -int(np.floor(np.log10(xr / nx))))
         default_ys = round(yr / ny, -int(np.floor(np.log10(yr / ny))))
         default_zs = round(zr / nz, -int(np.floor(np.log10(zr / nz))))
@@ -383,7 +383,7 @@ class CalcVol(CalcZone):
         """
         return []
 
-    def set_dimensions(self, x1=None, x2=None, y1=None, y2=None, z1=None, z2=None):
+    def set_dimensions(self, x1=None, x2=None, y1=None, y2=None, z1=None, z2=None, preserve_spacing=True):
         self.x1 = self.x1 if x1 is None else x1
         self.x2 = self.x2 if x2 is None else x2
         self.y1 = self.y1 if y1 is None else y1
@@ -396,9 +396,21 @@ class CalcVol(CalcZone):
         xr = abs(self.x2 - self.x1)
         yr = abs(self.y2 - self.y1)
         zr = abs(self.z2 - self.z1)
-        self.num_x = int(round(xr / self.x_spacing))
-        self.num_y = int(round(yr / self.y_spacing))
-        self.num_z = int(round(zr / self.z_spacing))
+        if preserve_spacing:
+            self.num_x = max(int(round(xr / self.x_spacing)),1)
+            self.num_y = max(int(round(yr / self.y_spacing)),1)
+            self.num_z = max(int(round(zr / self.z_spacing)),1)
+        else:
+            deg_x = -int(np.floor(np.log10(xr / self.num_x)))
+            deg_y = -int(np.floor(np.log10(yr / self.num_y)))
+            deg_z = -int(np.floor(np.log10(zr / self.num_z)))
+            default_xs = round(xr / self.num_x, deg_x)
+            default_ys = round(yr / self.num_y, deg_y)
+            default_zs = round(zr / self.num_z, deg_z)
+            self.x_spacing = self._set_spacing(self.x1, self.x2, self.num_x, default_xs)
+            self.y_spacing = self._set_spacing(self.y1, self.y2, self.num_y, default_ys)
+            self.z_spacing = self._set_spacing(self.z1, self.z2, self.num_z, default_zs)
+        
         self._update()
 
     def set_spacing(self, x_spacing=None, y_spacing=None, z_spacing=None):
@@ -718,7 +730,7 @@ class CalcPlane(CalcZone):
         self.basis = self._get_basis()
         return self
 
-    def set_dimensions(self, x1=None, x2=None, y1=None, y2=None):
+    def set_dimensions(self, x1=None, x2=None, y1=None, y2=None, preserve_spacing=True):
         """set the dimensions and update the coordinate points"""
         self.x1 = self.x1 if x1 is None else x1
         self.x2 = self.x2 if x2 is None else x2
@@ -728,8 +740,16 @@ class CalcPlane(CalcZone):
         # update number of points, keeping spacing
         xr = abs(self.x2 - self.x1)
         yr = abs(self.y2 - self.y1)
-        self.num_x = int(round(xr / self.x_spacing))
-        self.num_y = int(round(yr / self.y_spacing))
+        if preserve_spacing:
+            self.num_x = max(int(round(xr / self.x_spacing)), 1)
+            self.num_y = max(int(round(yr / self.y_spacing)), 1)
+        else:
+            deg_x = -int(np.floor(np.log10(xr / self.num_x)))
+            deg_y = -int(np.floor(np.log10(yr / self.num_y)))
+            default_xs = round(xr / self.num_x, deg_x)
+            default_ys = round(yr / self.num_y, deg_y)
+            self.x_spacing = self._set_spacing(self.x1, self.x2, self.num_x, default_xs)
+            self.y_spacing = self._set_spacing(self.y1, self.y2, self.num_y, default_ys)
         self._update()
         return self
 
@@ -737,10 +757,8 @@ class CalcPlane(CalcZone):
         """set the fineness of the grid spacing and update the coordinate points"""
         self.x_spacing = self.x_spacing if x_spacing is None else abs(x_spacing)
         self.y_spacing = self.y_spacing if y_spacing is None else abs(y_spacing)
-        numx = int(round(abs(self.x2 - self.x1) / self.x_spacing))  # + 1
-        numy = int(round(abs(self.y2 - self.y1) / self.y_spacing))  # + 1
-        self.num_x = numx
-        self.num_y = numy
+        self.num_x = int(round(abs(self.x2 - self.x1) / self.x_spacing))
+        self.num_y = int(round(abs(self.y2 - self.y1) / self.y_spacing))
         self._update()
         return self
 

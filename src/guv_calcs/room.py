@@ -32,6 +32,8 @@ class Room:
         reflectances=None,
         reflectance_x_spacings=None,
         reflectance_y_spacings=None,
+        reflectance_num_x=None,
+        reflectance_num_y=None,
         reflectance_max_num_passes=None,
         reflectance_threshold=None,
         air_changes=None,
@@ -86,6 +88,8 @@ class Room:
             reflectances=reflectances,
             x_spacings=reflectance_x_spacings,
             y_spacings=reflectance_y_spacings,
+            num_x=reflectance_num_x,
+            num_y=reflectance_num_y,
             max_num_passes=reflectance_max_num_passes,
             threshold=reflectance_threshold,
         )
@@ -282,12 +286,12 @@ class Room:
         self.scene.to_units(unit_mode=unit_mode)
         return self
 
-    def set_dimensions(self, x=None, y=None, z=None):
+    def set_dimensions(self, x=None, y=None, z=None, preserve_spacing=True):
         """set room dimensions"""
         self.dim = self.dim.with_(x=x, y=y, z=z)
         self.ref_manager.update_dimensions(self.dim.x, self.dim.y, self.dim.z)
         self.scene.dim = self.dim
-        self.scene.update_standard_zones(self.standard)
+        self.scene.update_standard_zones(self.standard, preserve_spacing=preserve_spacing)
         return self
 
     @property

@@ -13,12 +13,14 @@ class ReflectanceManager:
     reflectances: dict { str: float}
         dict with keys [`floor`, `ceiling`, `south`, `north`, `east`, `west`]
         and float values between 0 and 1. All values default 0.0
-    x_spacings: dict { str: float}
+    x_spacings, y_spacings: dict { str: float}
         dict with same keys as `reflectances` and float values greater than 0.
-        All values default 0.5. Determines spacing in the relative x direction
-    y_spacings: dict { str: float}
-        dict with same keys as `reflectances` and float values greater than 0.
-        All values default 0.5. Determines spacing in the relative y direction
+        All values default None. Determines spacing in each reflective surface.
+        Used preferentially over num_x/num_y if not None.
+    num_x, num_y: dict { str: int}
+        dict with same keys as `reflectances` and int values 1 or greater.
+        All values default 10. Determines number of points in each reflective surface.
+        Ignored if x_spacing/y_spacing is set
     max_num_passes: int, default=100
         When calculating interreflections, the maximum number of passes before
         the calculation concludes.
@@ -38,6 +40,8 @@ class ReflectanceManager:
         reflectances=None,
         x_spacings=None,
         y_spacings=None,
+        num_x=None,
+        num_y=None,
         max_num_passes=None,
         threshold=None,
     ):
@@ -46,13 +50,16 @@ class ReflectanceManager:
         self.y = y
         self.z = z
 
-        keys = ["floor", "ceiling", "south", "north", "east", "west"]
-        default_reflectances = {surface: 0.0 for surface in keys}
-        default_spacings = {surface: 0.5 for surface in keys}
+        self.keys = ["floor", "ceiling", "south", "north", "east", "west"]
+        default_reflectances = {surface: 0.0 for surface in self.keys}
+        default_spacings = {surface: None for surface in self.keys}
+        default_nums = {surface: 10 for surface in self.keys}
 
         self.reflectances = {**default_reflectances, **(reflectances or {})}
         self.x_spacings = {**default_spacings, **(x_spacings or {})}
         self.y_spacings = {**default_spacings, **(y_spacings or {})}
+        self.num_x = {**default_nums, **(num_x or {})}
+        self.num_y = {**default_nums, **(num_y or {})}
         self.max_num_passes = 100 if max_num_passes is None else int(max_num_passes)
         self.threshold = 0.02 if threshold is None else threshold
         if not isinstance(self.threshold, float):
@@ -67,15 +74,14 @@ class ReflectanceManager:
 
     def set_reflectance(self, R, wall_id=None):
         """set reflectance by wall_id or, if wall_if is None, to all walls"""
-        keys = self.reflectances.keys()
         if wall_id is None:
             # set this value for all walls
-            for wall in keys:
+            for wall in self.keys:
                 # self.reflectances[wall] = R
                 self.surfaces[wall].R = R
         else:
-            if wall_id not in keys:
-                raise KeyError(f"wall_id must be in {keys}")
+            if wall_id not in self.keys:
+                raise KeyError(f"wall_id must be in {self.keys}")
             else:
                 # self.reflectances[wall_id] = R
                 self.surfaces[wall_id].R = R
@@ -85,23 +91,33 @@ class ReflectanceManager:
 
     def set_spacing(self, x_spacing=None, y_spacing=None, wall_id=None):
         """set x and y spacing by wall_id or, if wall_if is None, to all walls"""
-        keys = self.x_spacings.keys()
         if wall_id is None:
             # set this value for all walls
-            for wall in keys:
+            for wall in self.keys:
                 self.surfaces[wall].plane.set_spacing(
                     x_spacing=x_spacing, y_spacing=y_spacing
                 )
         else:
-            if wall_id not in keys:
-                raise KeyError(f"wall_id must be in {keys}")
+            if wall_id not in self.keys:
+                raise KeyError(f"wall_id must be in {self.keys}")
             else:
                 self.surfaces[wall_id].plane.set_spacing(
                     x_spacing=x_spacing, y_spacing=y_spacing
                 )
-        for key, val in self.surfaces.items():
-            self.x_spacings[key] = val.plane.x_spacing
-            self.y_spacings[key] = val.plane.y_spacing
+        self._update_points()
+
+    def set_num_points(self, num_x=None, num_y=None, wall_id=None):
+        """set number of x and y points by wall_id or, if wall_if is None, to all walls"""
+        if wall_id is None:
+            for wall in self.keys:
+                # set for all walls
+                self.surfaces[wall].plane.set_spacing(num_x=num_x, num_y=num_y)
+        else:
+            if wall_id not in self.keys:
+                raise KeyError(f"wall_id must be in {self.keys}")
+            else:
+                self.surfaces[wall_id].plane.set_spacing(num_x=num_x, num_y=num_y)
+        self._update_points()
 
     def _initialize_surfaces(self):
 
@@ -127,15 +143,24 @@ class ReflectanceManager:
                 horiz=True,
                 x_spacing=self.x_spacings[wall],
                 y_spacing=self.y_spacings[wall],
+                num_x=self.num_x[wall],
+                num_y=self.num_y[wall],
             )
             self.surfaces[wall] = ReflectiveSurface(R=reflectance, plane=plane)
-
+        self._update_points()
         # possibly this should go here? idk
         self.managers = {}
         for wall, surface in self.surfaces.items():
             ref_manager = copy.deepcopy(self)
             del ref_manager.surfaces[wall]
             self.managers[wall] = ref_manager
+
+    def _update_points(self):
+        for key, val in self.surfaces.items():
+            self.x_spacings[key] = val.plane.x_spacing
+            self.y_spacings[key] = val.plane.y_spacing
+            self.num_x[key] = val.plane.num_x
+            self.num_y[key] = val.plane.num_y
 
     def _get_surface_dimensions(self, wall):
         """retrieve the dimensions of a particular wall based on its id"""
@@ -180,7 +205,7 @@ class ReflectanceManager:
         for wall, surface in self.surfaces.items():
             x1, x2, y1, y2, height, _, _ = self._get_surface_dimensions(wall)
             surface.plane.height = height
-            surface.plane.set_dimensions(x1, x2, y1, y2)
+            surface.plane.set_dimensions(x1, x2, y1, y2, preserve_spacing=False)
 
     def calculate_incidence(self, lamps, hard=False):
         """
