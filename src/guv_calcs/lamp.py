@@ -286,7 +286,7 @@ class Lamp:
             raise KeyError(
                 f"{key} is not a valid lamp key. Valid keys are {VALID_LAMPS}"
             )
-        if kwargs.get('lamp_id', None) is None:
+        if kwargs.get("lamp_id", None) is None:
             kwargs.setdefault("lamp_id", key)
 
         return cls(**kwargs)
@@ -309,9 +309,9 @@ class Lamp:
             raise IndexError(
                 f"Only {len(VALID_LAMPS)} lamps are available. Available lamps: {VALID_LAMPS}"
             )
-        if kwargs.get('lamp_id', None) is None:
+        if kwargs.get("lamp_id", None) is None:
             kwargs.setdefault("lamp_id", key)
-        
+
         return cls(**kwargs)
 
     def get_calc_state(self):

@@ -165,28 +165,29 @@ def plot_disinfection_data(df, fluence_dict=None, room=None, title=None):
         )
         ax2.set_ylabel("CADR-UV [cfm]")
         ax2.set_ylim(bottom=0)
-        
+
     if room is not None:
         yval = room.air_changes
         if yval < 0.1 * ax1.get_ylim()[1]:  # avoid overlapping with bottom ticks
             yval += 0.05 * ax1.get_ylim()[1]
 
         ax1.axhline(y=room.air_changes, color="red", linestyle="--", linewidth=1.5)
-        if int(room.air_changes)==room.air_changes:
+        if int(room.air_changes) == room.air_changes:
             ac = int(room.air_changes)
         else:
-            ac = round(room.air_changes,2)
-        if ac==1:
+            ac = round(room.air_changes, 2)
+        if ac == 1:
             string = f"{ac} air change\nfrom ventilation"
         else:
             string = f"{ac} air changes\nfrom ventilation"
         ax1.text(
-            1.01, yval,
+            1.01,
+            yval,
             string,
             color="red",
             va="center",
             ha="left",
-            transform=ax1.get_yaxis_transform()
+            transform=ax1.get_yaxis_transform(),
         )
 
     if title is not None:
