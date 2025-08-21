@@ -886,8 +886,9 @@ class CalcPlane(CalcZone):
 
         # num_x, num_y, *rest = [len(np.unique(val)) for val in self.coords.T if len(np.unique(val))>1]
 
-        points = [np.unique(val) for val in self.coords.T]
-        num_x, num_y, *rest = [len(val) for val in points if len(val) > 1]
+        # points = [np.unique(val) for val in self.coords.T]
+        # num_x, num_y, *rest = [len(val) for val in points if len(val) > 1]
+        num_x, num_y = self.num_x, self.num_y #tmp
 
         values = self.get_values()
         if values is None:
