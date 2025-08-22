@@ -260,6 +260,14 @@ class Room:
         )
         return self
 
+    def set_reflectance_num_points(self, num_x=None, num_y=None, wall_id=None):
+        """
+        set the number of calculation points for the reflective walls
+        If wall_id is none, the value is set for all walls.
+        """
+        self.ref_manager.set_num_points(num_x=num_x, num_y=num_y, wall_id=wall_id)
+        return self
+
     def set_max_num_passes(self, max_num_passes):
         """set the maximum number of passes for the interreflection module"""
         self.ref_manager.max_num_passes = max_num_passes
@@ -291,7 +299,9 @@ class Room:
         self.dim = self.dim.with_(x=x, y=y, z=z)
         self.ref_manager.update_dimensions(self.dim.x, self.dim.y, self.dim.z)
         self.scene.dim = self.dim
-        self.scene.update_standard_zones(self.standard, preserve_spacing=preserve_spacing)
+        self.scene.update_standard_zones(
+            self.standard, preserve_spacing=preserve_spacing
+        )
         return self
 
     @property

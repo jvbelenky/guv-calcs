@@ -111,12 +111,12 @@ class ReflectanceManager:
         if wall_id is None:
             for wall in self.keys:
                 # set for all walls
-                self.surfaces[wall].plane.set_spacing(num_x=num_x, num_y=num_y)
+                self.surfaces[wall].plane.set_num_points(num_x=num_x, num_y=num_y)
         else:
             if wall_id not in self.keys:
                 raise KeyError(f"wall_id must be in {self.keys}")
             else:
-                self.surfaces[wall_id].plane.set_spacing(num_x=num_x, num_y=num_y)
+                self.surfaces[wall_id].plane.set_num_points(num_x=num_x, num_y=num_y)
         self._update_points()
 
     def _initialize_surfaces(self):
