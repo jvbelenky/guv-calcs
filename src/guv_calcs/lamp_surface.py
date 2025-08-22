@@ -29,7 +29,7 @@ class LampSurface:
         # store original for future operations
         self.intensity_map_orig = self._load_intensity_map(intensity_map)
         # this is the working copy
-        self.intensity_map = self.intensity_map_orig
+        self.intensity_map = self._set_intensity_map()
 
         self.surface_points = None
         self.num_points_width = None
@@ -86,7 +86,7 @@ class LampSurface:
     def load_intensity_map(self, intensity_map):
         """external method for loading relative intensity map after lamp object has been instantiated"""
         self.intensity_map_orig = self._load_intensity_map(intensity_map)
-        self.intensity_map = self.intensity_map_orig
+        self.intensity_map = self._set_intensity_map()
         self._update()
 
     def plot_surface_points(self, fig=None, ax=None, title="", figsize=(6, 4)):
@@ -276,7 +276,13 @@ class LampSurface:
             num_points_u, num_points_v = 1, 1
 
         return num_points_u, num_points_v
-
+        
+    def _set_intensity_map(self):
+        if self.intensity_map_orig is not None:
+            return self.intensity_map_orig / self.intensity_map_orig.mean()
+        return self.intensity_map_orig
+        
+        
     def _load_intensity_map(self, arg):
         """check filetype and return correct intensity_map as array"""
 
@@ -335,9 +341,10 @@ class LampSurface:
                 # make interpolator based on original intensity map
                 num_points_u, num_points_v = self.intensity_map_orig.shape
                 x_orig, y_orig = self._generate_raw_points(num_points_u, num_points_v)
+                vals = self._set_intensity_map()
                 interpolator = RegularGridInterpolator(
                     (x_orig, y_orig),
-                    self.intensity_map_orig,
+                    vals,
                     bounds_error=False,
                     fill_value=None,
                 )
