@@ -383,7 +383,16 @@ class CalcVol(CalcZone):
         """
         return []
 
-    def set_dimensions(self, x1=None, x2=None, y1=None, y2=None, z1=None, z2=None, preserve_spacing=True):
+    def set_dimensions(
+        self,
+        x1=None,
+        x2=None,
+        y1=None,
+        y2=None,
+        z1=None,
+        z2=None,
+        preserve_spacing=True,
+    ):
         self.x1 = self.x1 if x1 is None else x1
         self.x2 = self.x2 if x2 is None else x2
         self.y1 = self.y1 if y1 is None else y1
@@ -397,9 +406,9 @@ class CalcVol(CalcZone):
         yr = abs(self.y2 - self.y1)
         zr = abs(self.z2 - self.z1)
         if preserve_spacing:
-            self.num_x = max(int(round(xr / self.x_spacing)),1)
-            self.num_y = max(int(round(yr / self.y_spacing)),1)
-            self.num_z = max(int(round(zr / self.z_spacing)),1)
+            self.num_x = max(int(round(xr / self.x_spacing)), 1)
+            self.num_y = max(int(round(yr / self.y_spacing)), 1)
+            self.num_z = max(int(round(zr / self.z_spacing)), 1)
         else:
             deg_x = -int(np.floor(np.log10(xr / self.num_x)))
             deg_y = -int(np.floor(np.log10(yr / self.num_y)))
@@ -410,7 +419,7 @@ class CalcVol(CalcZone):
             self.x_spacing = self._set_spacing(self.x1, self.x2, self.num_x, default_xs)
             self.y_spacing = self._set_spacing(self.y1, self.y2, self.num_y, default_ys)
             self.z_spacing = self._set_spacing(self.z1, self.z2, self.num_z, default_zs)
-        
+
         self._update()
 
     def set_spacing(self, x_spacing=None, y_spacing=None, z_spacing=None):
@@ -888,7 +897,7 @@ class CalcPlane(CalcZone):
 
         # points = [np.unique(val) for val in self.coords.T]
         # num_x, num_y, *rest = [len(val) for val in points if len(val) > 1]
-        num_x, num_y = self.num_x, self.num_y #tmp
+        num_x, num_y = self.num_x, self.num_y  # tmp
 
         values = self.get_values()
         if values is None:

@@ -276,13 +276,12 @@ class LampSurface:
             num_points_u, num_points_v = 1, 1
 
         return num_points_u, num_points_v
-        
+
     def _set_intensity_map(self):
         if self.intensity_map_orig is not None:
             return self.intensity_map_orig / self.intensity_map_orig.mean()
         return self.intensity_map_orig
-        
-        
+
     def _load_intensity_map(self, arg):
         """check filetype and return correct intensity_map as array"""
 

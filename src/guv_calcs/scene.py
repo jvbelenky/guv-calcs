@@ -166,18 +166,27 @@ class Scene:
 
         if "SkinLimits" in self.calc_zones.keys():
             zone = self.calc_zones["SkinLimits"]
-            zone.set_dimensions(x2=self.dim.x, y2=self.dim.y, preserve_spacing=preserve_spacing)
+            zone.set_dimensions(
+                x2=self.dim.x, y2=self.dim.y, preserve_spacing=preserve_spacing
+            )
             zone.set_height(height)
             zone.horiz = skin_horiz
         if "EyeLimits" in self.calc_zones.keys():
             zone = self.calc_zones["EyeLimits"]
-            zone.set_dimensions(x2=self.dim.x, y2=self.dim.y, preserve_spacing=preserve_spacing)
+            zone.set_dimensions(
+                x2=self.dim.x, y2=self.dim.y, preserve_spacing=preserve_spacing
+            )
             zone.set_height(height)
             zone.fov_vert = fov_vert
             zone.vert = eye_vert
         if "WholeRoomFluence" in self.calc_zones.keys():
             zone = self.calc_zones["WholeRoomFluence"]
-            zone.set_dimensions(x2=self.dim.x, y2=self.dim.y, z2=self.dim.z, preserve_spacing=preserve_spacing)
+            zone.set_dimensions(
+                x2=self.dim.x,
+                y2=self.dim.y,
+                z2=self.dim.z,
+                preserve_spacing=preserve_spacing,
+            )
 
     def check_positions(self):
         """
