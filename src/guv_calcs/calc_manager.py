@@ -1,5 +1,6 @@
 import numpy as np
-
+# import matplotlib.pyplot as plt
+from copy import deepcopy
 # from .trigonometry import attitude, to_polar
 from .units import convert_units
 
@@ -94,12 +95,19 @@ class LightingCalculator:
         update the values of a single lamp based on the calc zone properties,
         but which don't require a full recalculation
         """
-
+        
         # apply measured correction filters
         if filters is not None:
             for filt in filters.values():
-                values = filt.apply(lamp, values, self.zone.coords)
-
+                if lamp.surface.source_density > 0 and lamp.surface.photometric_distance:
+                    new_values = np.zeros(values.shape)
+                    for point in lamp.surface.surface_points:
+                        tmpvals = filt.apply(point, deepcopy(values), self.zone.coords)
+                        new_values += tmpvals / len(lamp.surface.surface_points)
+                    values = new_values
+                else:
+                    values = filt.apply(lamp.position, values, self.zone.coords)
+        
         if self.zone.calctype == "Plane":
             rel_coords = self.zone.coords - lamp.surface.position
             x, y, z = (rel_coords @ self.zone.basis).T

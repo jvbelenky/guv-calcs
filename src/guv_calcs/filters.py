@@ -28,7 +28,7 @@ class FilterBase(ABC):
         self.alpha_nodes = np.linspace(0, np.linalg.norm(self.u), values.shape[0])
         self.beta_nodes = np.linspace(0, np.linalg.norm(self.v), values.shape[1])
 
-    def apply(self, lamp, values, coords):
+    def apply(self, position, values, coords):
         """
         Multiply `values[i]` by the interpolated measured factor
         if the ray lamp.position → coords[i] crosses the rectangle exactly once.
@@ -36,7 +36,7 @@ class FilterBase(ABC):
         if self.lookup is None:
             raise ValueError(f"Value grid for filter {self.name} missing")
 
-        rel = coords - lamp.position  # shape (N,3)
+        rel = coords - position  # shape (N,3)
         denom = rel @ self.n  # (N,)
         # ignore rays parallel to plane - tbh this bit isnt really necessary
         good = np.abs(denom) > 1e-12
@@ -44,7 +44,7 @@ class FilterBase(ABC):
             return values
 
         # signed distance of lamp and voxel from plane
-        d0 = (lamp.position - self.p0) @ self.n
+        d0 = (position - self.p0) @ self.n
         d1 = (coords[good] - self.p0) @ self.n
         mask = (d0 > 0) & (d1 < 0)  # crossed in +→– sense
         if not mask.any():
@@ -52,14 +52,14 @@ class FilterBase(ABC):
 
         # parametric t at intersection, then hit-point world coords
         t = d0 / (d0 - d1[mask])
-        hit = lamp.position + rel[good][mask] * t[:, None]  # (M,3)
+        hit = position + rel[good][mask] * t[:, None]  # (M,3)
 
         # convert hit→(a,b) in rectangle basis, check if inside [0,1]^2
         ab = (self.inv @ (hit - self.p0).T).T  # (M,2) → (a, b)
         inside = (ab[:, 0] >= 0) & (ab[:, 0] <= 1) & (ab[:, 1] >= 0) & (ab[:, 1] <= 1)
         if not inside.any():
             return values
-
+            
         # convert to physical distances along each axis
         coords_lookup = np.column_stack(
             (
@@ -155,3 +155,27 @@ class MeasuredCorrection(FilterBase):
             bounds_error=False,
             fill_value=1.0,
         )
+
+
+class BoxObstacle:
+    def __init__(self, p_lo, p_hi, label=None, obs_id=None):
+        self.id    = obs_id or self._next_id()
+        self.label = label  or self.id
+        p_lo, p_hi = np.minimum(p_lo, p_hi), np.maximum(p_lo, p_hi)
+        x1,y1,z1 = p_lo; x2,y2,z2 = p_hi
+
+        # 6 faces, normals point outward
+        self.faces = [
+            CorrectionGridFilter(p0=[x1,y1,z1], pU=[x2,y1,z1], pV=[x1,y2,z1],
+                                 corr=np.zeros((1,1)), name=f"{self.id}_-z"),
+            CorrectionGridFilter(p0=[x1,y1,z2], pU=[x2,y1,z2], pV=[x1,y2,z2],
+                                 corr=np.zeros((1,1)), name=f"{self.id}_+z"),
+            CorrectionGridFilter(p0=[x1,y1,z1], pU=[x2,y1,z1], pV=[x1,y1,z2],
+                                 corr=np.zeros((1,1)), name=f"{self.id}_-y"),
+            CorrectionGridFilter(p0=[x1,y2,z1], pU=[x2,y2,z1], pV=[x1,y2,z2],
+                                 corr=np.zeros((1,1)), name=f"{self.id}_+y"),
+            CorrectionGridFilter(p0=[x1,y1,z1], pU=[x1,y2,z1], pV=[x1,y1,z2],
+                                 corr=np.zeros((1,1)), name=f"{self.id}_-x"),
+            CorrectionGridFilter(p0=[x2,y1,z1], pU=[x2,y2,z1], pV=[x2,y1,z2],
+                                 corr=np.zeros((1,1)), name=f"{self.id}_+x"),
+        ]
