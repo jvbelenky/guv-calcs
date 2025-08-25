@@ -2,7 +2,7 @@ from .room import Room
 from .lamp import Lamp
 from .lamp_surface import LampSurface
 from .calc_zone import CalcVol, CalcPlane
-from .filters import MeasuredCorrection, MultFilter
+from .filters import MeasuredCorrection, MultFilter, ConstFilter, BoxObstacle
 from .spectrum import Spectrum, sum_spectrum
 from .trigonometry import to_polar, to_cartesian, attitude
 from ._data import (
@@ -28,6 +28,8 @@ __all__ = [
     "CalcPlane",
     "MeasuredCorrection",
     "MultFilter",
+    "ConstFilter",
+    "BoxObstacle",
     "Spectrum",
     "sum_spectrum",
     "to_polar",

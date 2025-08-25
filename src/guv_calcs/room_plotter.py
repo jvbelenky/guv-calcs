@@ -52,6 +52,9 @@ class RoomPlotter:
         for obs_id, obs in self.room.obstacles.items():
             fig = self._plot_obstacle(obs=obs, fig=fig)
 
+        for obs_id, obs in self.room.obstacles.items():
+            fig = self._plot_obstacle(obs=obs, fig=fig)
+
         x, y, z = self.room.dim.x, self.room.dim.y, self.room.dim.z
 
         # set views
@@ -284,7 +287,6 @@ class RoomPlotter:
         return fig
 
     def _plot_obstacle(self, obs, fig):
-
         x_coords, y_coords, z_coords = self._get_box_coords(obs.lo, obs.hi)
         obs_trace = go.Scatter3d(
             x=x_coords,

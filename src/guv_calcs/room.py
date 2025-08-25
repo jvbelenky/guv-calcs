@@ -77,6 +77,7 @@ class Room:
         self.lamps = self.scene.lamps
         self.calc_zones = self.scene.calc_zones
         self.filters = self.scene.filters
+        self.obstacles = self.scene.obstacles
 
         ### Reflectance
         self.enable_reflectance = (
@@ -480,6 +481,7 @@ class Room:
                     lamps=valid_lamps,
                     ref_manager=ref_manager,
                     filters=self.filters,
+                    obstacles=self.obstacles,
                     hard=hard,
                 )
         # update calc states.

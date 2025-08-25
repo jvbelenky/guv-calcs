@@ -5,7 +5,7 @@ from matplotlib import colormaps
 from .room_dims import RoomDimensions
 from .lamp import Lamp
 from .calc_zone import CalcZone, CalcPlane, CalcVol
-from .filters import FilterBase
+from .filters import FilterBase, BoxObstacle
 from .lamp_helpers import new_lamp_position
 
 
@@ -21,11 +21,13 @@ class Scene:
         self.lamps: dict[str, Lamp] = {}
         self.calc_zones: dict[str, CalcZone] = {}
         self.filters: dict[str, FilterBase] = {}
+        self.obstacles: dict[str, BoxObstacle] = {}
 
         # for generating unique IDs
         self._lamp_counter = defaultdict(int)
         self._zone_counter = defaultdict(int)
         self._filter_counter = defaultdict(int)
+        self._obstacle_counter = defaultdict(int)
 
     def add(self, *args, on_collision=None, unit_mode=None):
         """
@@ -43,6 +45,8 @@ class Scene:
                 self.add_calc_zone(obj, on_collision=on_collision)
             elif isinstance(obj, FilterBase):
                 self.add_filter(obj, on_collision=on_collision)
+            elif isinstance(obj, BoxObstacle):
+                self.add_obstacle(obj, on_collision=on_collision)
             elif isinstance(obj, dict):
                 self.add(*obj.values(), on_collision=on_collision)
             elif isinstance(obj, Iterable) and not isinstance(obj, (str, bytes)):
@@ -132,6 +136,23 @@ class Scene:
     def remove_filter(self, filter_id):
         """remove a correction filter from the scene"""
         self.filters.pop(filter_id, None)
+
+    def add_obstacle(self, obs, base_id="Obstacle", on_collision=None):
+        """add a 3d box obstacle to the scene"""
+        obs_id = self._get_id(
+            mapping=self.obstacles,
+            obj_id=obs.obs_id,
+            base_id=base_id,
+            counter=self._obstacle_counter,
+            on_collision=on_collision,
+        )
+        obs.obs_id = obs_id
+        if obs.name is None:
+            obs.name = obs_id
+        self.obstacles[obs_id] = obs
+
+    def remove_obstacle(self, obs_id):
+        self.obstacles.pop(obs_id, None)
 
     def add_standard_zones(self, standard, *, on_collision=None):
         """
