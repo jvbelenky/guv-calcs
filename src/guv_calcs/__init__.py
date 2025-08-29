@@ -2,7 +2,8 @@ from .room import Room
 from .lamp import Lamp
 from .lamp_surface import LampSurface
 from .calc_zone import CalcVol, CalcPlane
-from .filters import MeasuredCorrection, MultFilter, ConstFilter, BoxObstacle
+from .filters import MeasuredCorrection, MultFilter, ConstFilter
+from .obstacles import BoxObstacle
 from .spectrum import Spectrum, sum_spectrum
 from .trigonometry import to_polar, to_cartesian, attitude
 from ._data import (

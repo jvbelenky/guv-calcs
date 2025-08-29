@@ -5,7 +5,8 @@ from matplotlib import colormaps
 from .room_dims import RoomDimensions
 from .lamp import Lamp
 from .calc_zone import CalcZone, CalcPlane, CalcVol
-from .filters import FilterBase, BoxObstacle
+from .filters import FilterBase
+from .obstacles import BoxObstacle
 from .lamp_helpers import new_lamp_position
 
 
