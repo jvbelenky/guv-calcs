@@ -234,10 +234,10 @@ class Room:
 
     # --------------------- Misc flags -----------------------
 
-    def set_standard(self, standard):
+    def set_standard(self, standard, preserve_spacing=True):
         """update the photobiological safety standard the Room is subject to"""
         self.standard = standard
-        self.scene.update_standard_zones(standard)
+        self.scene.update_standard_zones(standard, preserve_spacing=preserve_spacing)
         return self
 
     # --------------------- Reflectance ----------------------
@@ -283,14 +283,14 @@ class Room:
 
     # -------------- Dimensions and Units -----------------------
 
-    def set_units(self, units, unit_mode="auto"):
+    def set_units(self, units, unit_mode="auto", preserve_spacing=True):
         """set room units"""
         if units.lower() not in ["meters", "feet"]:
             raise KeyError("Valid units are `meters` or `feet`")
         self.dim = self.dim.with_(units=units)
 
         self.scene.dim = self.dim
-        self.scene.update_standard_zones(self.standard)
+        self.scene.update_standard_zones(self.standard, preserve_spacing=preserve_spacing)
         self.scene.to_units(unit_mode=unit_mode)
         return self
 
