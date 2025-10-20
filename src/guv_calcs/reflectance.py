@@ -131,6 +131,7 @@ class ReflectanceManager:
                 ref_surface,
                 direction,
             ) = self._get_surface_dimensions(wall)
+
             plane = CalcPlane(
                 zone_id=wall,
                 x1=x1,
@@ -206,6 +207,7 @@ class ReflectanceManager:
             x1, x2, y1, y2, height, _, _ = self._get_surface_dimensions(wall)
             surface.plane.height = height
             surface.plane.set_dimensions(x1, x2, y1, y2, preserve_spacing=False)
+        self._update_points()
 
     def calculate_incidence(self, lamps, hard=False):
         """

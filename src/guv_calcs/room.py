@@ -290,7 +290,9 @@ class Room:
         self.dim = self.dim.with_(units=units)
 
         self.scene.dim = self.dim
-        self.scene.update_standard_zones(self.standard, preserve_spacing=preserve_spacing)
+        self.scene.update_standard_zones(
+            self.standard, preserve_spacing=preserve_spacing
+        )
         self.scene.to_units(unit_mode=unit_mode)
         return self
 

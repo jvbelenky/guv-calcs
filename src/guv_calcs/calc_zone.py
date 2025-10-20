@@ -205,6 +205,11 @@ class CalcZone(object):
                 val = testval  # if no rounded value works use the original value
         return val
 
+    def _check_spacing(self, spacing, dim):
+        if spacing is not None:
+            if spacing > dim:
+                raise ValueError("Spacing value cannot be larger than dimension")
+
     def calculate_values(self, lamps, ref_manager=None, hard=False):
         """
         Calculate all the values for all the lamps
@@ -426,12 +431,18 @@ class CalcVol(CalcZone):
         """
         set the spacing desired in the dimension
         """
+        xr = abs(self.x2 - self.x1)
+        yr = abs(self.y2 - self.y1)
+        zr = abs(self.z2 - self.z1)
+        self._check_spacing(x_spacing, xr)
+        self._check_spacing(y_spacing, yr)
+        self._check_spacing(z_spacing, zr)
         self.x_spacing = self.x_spacing if x_spacing is None else abs(x_spacing)
         self.y_spacing = self.y_spacing if y_spacing is None else abs(y_spacing)
         self.z_spacing = self.z_spacing if z_spacing is None else abs(z_spacing)
-        numx = int(round(abs(self.x2 - self.x1) / self.x_spacing))
-        numy = int(round(abs(self.y2 - self.y1) / self.y_spacing))
-        numz = int(round(abs(self.z2 - self.z1) / self.z_spacing))
+        numx = int(round(xr / self.x_spacing))
+        numy = int(round(yr / self.y_spacing))
+        numz = int(round(zr / self.z_spacing))
         self.num_x = numx
         self.num_y = numy
         self.num_z = numz
@@ -665,15 +676,23 @@ class CalcPlane(CalcZone):
 
         if x_spacing is None:  # set from num_points if spacing is not provided
             self.num_x = default_num_x if num_x is None else int(num_x)
+            if self.num_x < 1:
+                self.num_x = 1
             self.x_spacing = self._set_spacing(self.x1, self.x2, self.num_x, default_xs)
         else:
             self.x_spacing = x_spacing
+            if self.x_spacing > xr:
+                self.x_spacing = xr
             self.num_x = int(round(xr / self.x_spacing))
         if y_spacing is None:
             self.num_y = default_num_y if num_y is None else int(num_y)
+            if self.num_y < 1:
+                self.num_y = 1
             self.y_spacing = self._set_spacing(self.y1, self.y2, self.num_y, default_ys)
         else:
             self.y_spacing = y_spacing
+            if self.y_spacing > yr:
+                self.y_spacing = yr
             self.num_y = int(round(yr / self.y_spacing))
 
         self._update()
@@ -764,10 +783,14 @@ class CalcPlane(CalcZone):
 
     def set_spacing(self, x_spacing=None, y_spacing=None):
         """set the fineness of the grid spacing and update the coordinate points"""
+        xr = abs(self.x2 - self.x1)
+        yr = abs(self.y2 - self.y1)
+        self._check_spacing(x_spacing, xr)
+        self._check_spacing(y_spacing, yr)
         self.x_spacing = self.x_spacing if x_spacing is None else abs(x_spacing)
         self.y_spacing = self.y_spacing if y_spacing is None else abs(y_spacing)
-        self.num_x = int(round(abs(self.x2 - self.x1) / self.x_spacing))
-        self.num_y = int(round(abs(self.y2 - self.y1) / self.y_spacing))
+        self.num_x = int(round(xr / self.x_spacing))
+        self.num_y = int(round(yr / self.y_spacing))
         self._update()
         return self
 
