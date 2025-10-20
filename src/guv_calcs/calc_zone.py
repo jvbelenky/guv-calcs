@@ -103,14 +103,11 @@ class CalcZone(object):
         data["zone_id"] = self.zone_id
         data["name"] = self.name
         data["offset"] = self.offset
-        data["fov_vert"] = self.fov_vert
-        data["fov_horiz"] = self.fov_horiz
-        data["vert"] = self.vert
-        data["horiz"] = self.horiz
         data["dose"] = self.dose
         data["hours"] = self.hours
         data["enabled"] = self.enabled
         data["show_values"] = self.show_values
+        data["colormap"] = self.colormap
         data["x1"] = self.x1
         data["x2"] = self.x2
         data["x_spacing"] = self.x_spacing
@@ -121,6 +118,12 @@ class CalcZone(object):
         # data["num_y"] = self.num_y
         if isinstance(self, CalcPlane):
             data["height"] = self.height
+            data["fov_vert"] = self.fov_vert
+            data["fov_horiz"] = self.fov_horiz
+            data["vert"] = self.vert
+            data["horiz"] = self.horiz
+            data["ref_surface"] = self.ref_surface
+            data["direction"] = self.direction
             data["calctype"] = "Plane"
         elif isinstance(self, CalcVol):
             data["z1"] = self.z1
