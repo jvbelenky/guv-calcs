@@ -940,8 +940,8 @@ class CalcPlane(CalcZone):
         if len(np.unique(xpoints)) == 1 and len(np.unique(ypoints)) == 1:
             xpoints = self.coords.T[0].reshape(num_x, num_y)[0].tolist()
             ypoints = self.coords.T[1].reshape(num_x, num_y).T[0].tolist()
-            vals = vals.T
-            zvals = zvals.T
+            vals = np.array(vals).T.tolist()
+            zvals = zvals.T.tolist()
 
         rows = [[""] + xpoints]
 
