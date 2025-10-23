@@ -708,13 +708,15 @@ class Lamp:
 
     def set_width(self, width):
         """change x-axis extent of lamp emissive surface"""
-        self.ies.update(width=width)
+        if self.ies is not None:
+            self.ies.update(width=width)
         self.surface.set_width(width)
         return self
 
     def set_length(self, length):
         """change y-axis extent of lamp emissive surface"""
-        self.ies.update(length=length)
+        if self.ies is not None:
+            self.ies.update(length=length)
         self.surface.set_length(length)
         return self
 
@@ -724,7 +726,6 @@ class Lamp:
         property is rightly height not depth.
         change the z-axis offset of where the lamp's emissive surface is
         """
-        self.ies.update(depth=depth)
         self.surface.set_depth(depth)
 
     # ------------------------ Plotting ------------------------------
