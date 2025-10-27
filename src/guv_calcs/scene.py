@@ -192,11 +192,15 @@ class Scene:
         """
         verify the positions of all objects in the scene and return any warning messages
         """
-        msgs = []
+        lamps, zones = {}, {} 
         for lamp_id, lamp in self.lamps.items():
-            msgs.append(self._check_lamp_position(lamp))
+            lamps[lamp_id] = self._check_lamp_position(lamp)
         for zone_id, zone in self.calc_zones.items():
-            msgs.append(self._check_zone_position(zone))
+            zones[zone_id] = self._check_zone_position(zone)
+            
+        msgs = {}
+        msgs["lamps"] = lamps
+        msgs["calc_zones"] = zones
         return msgs
 
     def get_valid_lamps(self):
@@ -260,10 +264,9 @@ class Scene:
         return self._check_position(lamp.position, lamp.name)
 
     def _check_zone_position(self, calc_zone):
-        if isinstance(calc_zone, CalcPlane):
-            dimensions = [calc_zone.x2, calc_zone.y2]
-        elif isinstance(calc_zone, CalcVol):
-            dimensions = [calc_zone.x2, calc_zone.y2, calc_zone.z2]
+        if isinstance(calc_zone, (CalcPlane, CalcZone)):
+            x, y, z = calc_zone.coords.T
+            dimensions = x.max(), y.max(), z.max()       
         elif isinstance(calc_zone, CalcZone):
             # this is a hack; a generic CalcZone is just a placeholder
             dimensions = self.dim.dimensions()

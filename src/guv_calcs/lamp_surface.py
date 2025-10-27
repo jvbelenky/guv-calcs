@@ -73,14 +73,13 @@ class LampSurface:
 
     def set_ies(self, ies):
         """
-        populate length/width/depth units values from an IESFile object
+        populate length/width units values from an IESFile object
         """
         if ies is not None:
             units_dict = {1: "feet", 2: "meters"}
             self.units = units_dict[ies.units]
             self.width = ies.width
             self.length = ies.length
-            self.depth = ies.height
             self._update()
 
     def load_intensity_map(self, intensity_map):
