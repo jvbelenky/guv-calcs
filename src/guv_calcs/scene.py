@@ -264,7 +264,7 @@ class Scene:
         return self._check_position(lamp.position, lamp.name)
 
     def _check_zone_position(self, calc_zone):
-        if isinstance(calc_zone, (CalcPlane, CalcZone)):
+        if isinstance(calc_zone, (CalcPlane, CalcVol)):
             x, y, z = calc_zone.coords.T
             dimensions = x.max(), y.max(), z.max()       
         elif isinstance(calc_zone, CalcZone):
