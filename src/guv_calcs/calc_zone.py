@@ -214,9 +214,7 @@ class CalcZone(object):
             if spacing > dim:
                 raise ValueError("Spacing value cannot be larger than dimension")
 
-    def calculate_values(
-        self, lamps, filters=None, obstacles=None, ref_manager=None, hard=False
-    ):
+    def calculate_values(self, lamps, ref_manager=None, hard=False):
         """
         Calculate all the values for all the lamps
         """
