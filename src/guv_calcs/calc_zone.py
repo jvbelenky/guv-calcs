@@ -5,6 +5,7 @@ import copy
 import numpy as np
 import matplotlib.pyplot as plt
 import plotly.graph_objs as go
+import numbers
 from .calc_manager import LightingCalculator
 from .io import rows_to_bytes
 
@@ -213,7 +214,9 @@ class CalcZone(object):
             if spacing > dim:
                 raise ValueError("Spacing value cannot be larger than dimension")
 
-    def calculate_values(self, lamps, ref_manager=None, hard=False):
+    def calculate_values(
+        self, lamps, filters=None, obstacles=None, ref_manager=None, hard=False
+    ):
         """
         Calculate all the values for all the lamps
         """
@@ -221,7 +224,9 @@ class CalcZone(object):
         new_calc_state = self.get_calc_state()
 
         # updates self.lamp_values_base and self.lamp_values
-        self.base_values = self.calculator.compute(lamps=lamps, hard=hard)
+        self.base_values = self.calculator.compute(
+            lamps=lamps, filters=filters, obstacles=obstacles, hard=hard
+        )
 
         if ref_manager is not None:
             # calculate reflectance -- warning, may be expensive!
@@ -702,6 +707,45 @@ class CalcPlane(CalcZone):
         self.values = np.zeros(self.num_points)
         self.reflected_values = np.zeros(self.num_points)
 
+    @classmethod
+    def from_vectors(cls, p0, pU, pV, **kwargs):
+        p0 = np.asarray(p0, float)
+        u = np.asarray(pU, float) - p0
+        v = np.asarray(pV, float) - p0
+
+        # Decide which Cartesian plane we’re in (largest component of n̂)
+        n = np.cross(u, v)
+        axis = np.argmax(np.abs(n))
+
+        if axis == 2:
+            ref_surface = "xy"
+            x1, x2 = np.unique(sorted([p0[0], pU[0], pV[0]]))
+            y1, y2 = np.unique(sorted([p0[1], pU[1], pV[1]]))
+            height = p0[2]
+        elif axis == 1:
+            ref_surface = "xz"
+            x1, x2 = np.unique(sorted([p0[0], pU[0], pV[0]]))
+            y1, y2 = np.unique(sorted([p0[2], pU[2], pV[2]]))
+            height = p0[1]
+        else:
+            ref_surface = "yz"
+            x1, x2 = np.unique(sorted([p0[1], pU[1], pV[1]]))
+            y1, y2 = np.unique(sorted([p0[2], pU[2], pV[2]]))
+            height = p0[0]
+
+        direction = int(np.sign(n[axis])) if n[axis] != 0 else 1
+
+        return cls(
+            x1=x1,
+            x2=x2,
+            y1=y1,
+            y2=y2,
+            height=height,
+            ref_surface=ref_surface,
+            direction=direction,
+            **kwargs
+        )
+
     def _get_basis(self):
         """
         Return an orthonormal basis (u, v, n) for the surface:
@@ -731,7 +775,7 @@ class CalcPlane(CalcZone):
 
     def set_height(self, height):
         """set height of calculation plane. currently we only support vertical planes"""
-        if type(height) not in [float, int]:
+        if not isinstance(height, numbers.Number):
             raise TypeError("Height must be numeric")
         self.height = height
         self._update()

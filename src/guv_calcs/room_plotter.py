@@ -16,7 +16,13 @@ class RoomPlotter:
         select_id=None,
         title="",
     ):
-        """plot all"""
+        """
+        plot all
+
+        TODO:
+        - Cleaner color selection
+        - maybe cleaner update control?
+        """
         if fig is None:
             fig = go.Figure()
 
@@ -24,7 +30,8 @@ class RoomPlotter:
         lamp_ids = list(self.room.lamps.keys())
         aim_ids = [lampid + "_aim" for lampid in lamp_ids]
         zone_ids = list(self.room.calc_zones.keys())
-        for active_ids in [lamp_ids, aim_ids, zone_ids]:
+        filter_ids = list(self.room.filters.keys())
+        for active_ids in [lamp_ids, aim_ids, zone_ids, filter_ids]:
             self._remove_traces_by_ids(fig, active_ids)
 
         # plot lamps
@@ -39,6 +46,11 @@ class RoomPlotter:
                     fig = self._plot_plane(zone=zone, fig=fig, select_id=select_id)
             elif isinstance(zone, CalcVol):
                 fig = self._plot_vol(zone=zone, fig=fig, select_id=select_id)
+        for filter_id, filt in self.room.filters.items():
+            fig = self._plot_filter(filt=filt, fig=fig, select_id=select_id)
+
+        for obs_id, obs in self.room.obstacles.items():
+            fig = self._plot_obstacle(obs=obs, fig=fig)
 
         x, y, z = self.room.dim.x, self.room.dim.y, self.room.dim.z
 
@@ -242,7 +254,7 @@ class RoomPlotter:
             Y = np.full_like(X, zone.height)
         elif zone.ref_surface == "yz":
             Y, Z = np.meshgrid(zone.xp, zone.yp, indexing="ij")
-            X = np.full_like(X, zone.height)
+            X = np.full_like(Y, zone.height)
         zone_value_trace = go.Surface(
             x=X,
             y=Y,
@@ -271,47 +283,34 @@ class RoomPlotter:
             )
         return fig
 
+    def _plot_obstacle(self, obs, fig):
+
+        x_coords, y_coords, z_coords = self._get_box_coords(obs.lo, obs.hi)
+        obs_trace = go.Scatter3d(
+            x=x_coords,
+            y=y_coords,
+            z=z_coords,
+            mode="lines",
+            line=dict(color="#000000", width=3),
+            name=obs.name,
+            customdata=["obstacle_" + obs.obs_id],
+        )
+        traces = [trace.name for trace in fig.data]
+        if obs_trace.name not in traces:
+            fig.add_trace(obs_trace)
+        else:
+            self._update_trace_by_id(
+                fig,
+                obs.obs_id,
+                x=x_coords,
+                y=y_coords,
+                z=z_coords,
+            )
+        return fig
+
     def _plot_vol(self, zone, fig, select_id=None):
-        # Define the vertices of the rectangular prism
-        (x1, y1, z1), (x2, y2, z2) = zone.dimensions
-        vertices = [
-            (x1, y1, z1),  # 0
-            (x2, y1, z1),  # 1
-            (x2, y2, z1),  # 2
-            (x1, y2, z1),  # 3
-            (x1, y1, z2),  # 4
-            (x2, y1, z2),  # 5
-            (x2, y2, z2),  # 6
-            (x1, y2, z2),  # 7
-        ]
 
-        # Define edges by vertex indices
-        edges = [
-            (0, 1),
-            (1, 2),
-            (2, 3),
-            (3, 0),  # Bottom face
-            (4, 5),
-            (5, 6),
-            (6, 7),
-            (7, 4),  # Top face
-            (0, 4),
-            (1, 5),
-            (2, 6),
-            (3, 7),  # Side edges
-        ]
-
-        # Create lists for x, y, z coordinates
-        x_coords = []
-        y_coords = []
-        z_coords = []
-
-        # Append coordinates for each edge, separated by None to create breaks
-        for v1, v2 in edges:
-            x_coords.extend([vertices[v1][0], vertices[v2][0], None])
-            y_coords.extend([vertices[v1][1], vertices[v2][1], None])
-            z_coords.extend([vertices[v1][2], vertices[v2][2], None])
-
+        x_coords, y_coords, z_coords = self._get_box_coords(*zone.dimensions)
         zonecolor = self._set_color(select_id, label=zone.zone_id, enabled=zone.enabled)
         # Create a single trace for all edges
         zonetrace = go.Scatter3d(
@@ -374,3 +373,128 @@ class RoomPlotter:
                 )
 
         return fig
+
+    def _get_box_coords(self, lo, hi):
+        (x1, y1, z1), (x2, y2, z2) = lo, hi
+        # Define the vertices of the rectangular prism
+        vertices = [
+            (x1, y1, z1),  # 0
+            (x2, y1, z1),  # 1
+            (x2, y2, z1),  # 2
+            (x1, y2, z1),  # 3
+            (x1, y1, z2),  # 4
+            (x2, y1, z2),  # 5
+            (x2, y2, z2),  # 6
+            (x1, y2, z2),  # 7
+        ]
+
+        # Define edges by vertex indices
+        edges = [
+            (0, 1),
+            (1, 2),
+            (2, 3),
+            (3, 0),  # Bottom face
+            (4, 5),
+            (5, 6),
+            (6, 7),
+            (7, 4),  # Top face
+            (0, 4),
+            (1, 5),
+            (2, 6),
+            (3, 7),  # Side edges
+        ]
+
+        # Create lists for x, y, z coordinates
+        x_coords = []
+        y_coords = []
+        z_coords = []
+
+        # Append coordinates for each edge, separated by None to create breaks
+        for v1, v2 in edges:
+            x_coords.extend([vertices[v1][0], vertices[v2][0], None])
+            y_coords.extend([vertices[v1][1], vertices[v2][1], None])
+            z_coords.extend([vertices[v1][2], vertices[v2][2], None])
+
+        return x_coords, y_coords, z_coords
+
+    def _plot_filter(self, filt, fig, select_id):
+
+        ny, nx = filt.values.shape
+        a = np.linspace(0, 1, nx)
+        b = np.linspace(0, 1, ny)
+        A, B = np.meshgrid(a, b, indexing="xy")
+
+        # world coordinates
+        pts = filt.p0 + np.outer(A.ravel(), filt.u) + np.outer(B.ravel(), filt.v)
+        X = pts[:, 0].reshape(ny, nx)
+        Y = pts[:, 1].reshape(ny, nx)
+        Z = pts[:, 2].reshape(ny, nx)
+
+        filtertrace = go.Surface(
+            x=X,
+            y=Y,
+            z=Z,
+            surfacecolor=filt.values,
+            cmin=filt.values.min(),
+            cmax=filt.values.max(),
+            colorscale="Greys",
+            opacity=0.8,
+            showscale=False,
+            colorbar=None,
+            name=f"Filter-{filt.name}",
+            customdata=["filter_" + filt.filter_id],
+            showlegend=True,
+        )
+
+        traces = [trace.name for trace in fig.data]
+        if filtertrace.name not in traces:
+            fig.add_trace(filtertrace)
+        else:
+            self._update_trace_by_id(
+                fig,
+                filt.filter_id,
+                x=X,
+                y=Y,
+                z=Z,
+                surfacecolor=filt.values,
+                cmin=filt.values.min(),
+                cmax=filt.values.max(),
+            )
+
+        return fig
+
+    # def _plot_filter(self, filt, fig, select_id):
+
+    # pUV = filt.pU + (filt.pV - filt.p0)
+    # corners = np.array([filt.p0, filt.pU, pUV, filt.pV, filt.p0])
+
+    # tmpcolor = self._set_color(
+    # select_id, label=filt.filter_id, enabled=filt.enabled
+    # )
+    # # override -- red if selected, dark grey otherwise
+    # filtcolor = "#FF0000" if tmpcolor=="#cc61ff" else "#5E5E5E"
+
+    # filtertrace = go.Scatter3d(
+    # x=corners[:, 0],
+    # y=corners[:, 1],
+    # z=corners[:, 2],
+    # mode="lines",
+    # line=dict(color=filtcolor, width=5),
+    # name=filt.name,
+    # customdata=["filter_" + filt.filter_id],
+    # )
+
+    # traces = [trace.name for trace in fig.data]
+
+    # if filtertrace.name not in traces:
+    # fig.add_trace(filtertrace)
+    # else:
+    # self._update_trace_by_id(
+    # fig,
+    # filt.filter_id,
+    # x=corners[:, 0],
+    # y=corners[:, 1],
+    # z=corners[:, 2],
+    # line=dict(color=filtcolor, width=5, dash="dot"),
+    # )
+    # return fig
