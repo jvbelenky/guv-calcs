@@ -30,8 +30,7 @@ class RoomPlotter:
         lamp_ids = list(self.room.lamps.keys())
         aim_ids = [lampid + "_aim" for lampid in lamp_ids]
         zone_ids = list(self.room.calc_zones.keys())
-        filter_ids = list(self.room.filters.keys())
-        for active_ids in [lamp_ids, aim_ids, zone_ids, filter_ids]:
+        for active_ids in [lamp_ids, aim_ids, zone_ids]:
             self._remove_traces_by_ids(fig, active_ids)
 
         # plot lamps
@@ -46,6 +45,7 @@ class RoomPlotter:
                     fig = self._plot_plane(zone=zone, fig=fig, select_id=select_id)
             elif isinstance(zone, CalcVol):
                 fig = self._plot_vol(zone=zone, fig=fig, select_id=select_id)
+<<<<<<< HEAD
         for filter_id, filt in self.room.filters.items():
             fig = self._plot_filter(filt=filt, fig=fig, select_id=select_id)
             
@@ -54,6 +54,8 @@ class RoomPlotter:
 
         for obs_id, obs in self.room.obstacles.items():
             fig = self._plot_obstacle(obs=obs, fig=fig)
+=======
+>>>>>>> be6a919 (not sure how this snuck in there  but removing it)
 
         x, y, z = self.room.dim.x, self.room.dim.y, self.room.dim.z
 
@@ -309,7 +311,7 @@ class RoomPlotter:
                 z=z_coords,
             )
         return fig
-
+    
     def _plot_vol(self, zone, fig, select_id=None):
 
         x_coords, y_coords, z_coords = self._get_box_coords(*zone.dimensions)
@@ -418,85 +420,3 @@ class RoomPlotter:
             z_coords.extend([vertices[v1][2], vertices[v2][2], None])
 
         return x_coords, y_coords, z_coords
-
-    def _plot_filter(self, filt, fig, select_id):
-
-        ny, nx = filt.values.shape
-        a = np.linspace(0, 1, nx)
-        b = np.linspace(0, 1, ny)
-        A, B = np.meshgrid(a, b, indexing="xy")
-
-        # world coordinates
-        pts = filt.p0 + np.outer(A.ravel(), filt.u) + np.outer(B.ravel(), filt.v)
-        X = pts[:, 0].reshape(ny, nx)
-        Y = pts[:, 1].reshape(ny, nx)
-        Z = pts[:, 2].reshape(ny, nx)
-
-        filtertrace = go.Surface(
-            x=X,
-            y=Y,
-            z=Z,
-            surfacecolor=filt.values,
-            cmin=filt.values.min(),
-            cmax=filt.values.max(),
-            colorscale="Greys",
-            opacity=0.8,
-            showscale=False,
-            colorbar=None,
-            name=f"Filter-{filt.name}",
-            customdata=["filter_" + filt.filter_id],
-            showlegend=True,
-        )
-
-        traces = [trace.name for trace in fig.data]
-        if filtertrace.name not in traces:
-            fig.add_trace(filtertrace)
-        else:
-            self._update_trace_by_id(
-                fig,
-                filt.filter_id,
-                x=X,
-                y=Y,
-                z=Z,
-                surfacecolor=filt.values,
-                cmin=filt.values.min(),
-                cmax=filt.values.max(),
-            )
-
-        return fig
-
-    # def _plot_filter(self, filt, fig, select_id):
-
-    # pUV = filt.pU + (filt.pV - filt.p0)
-    # corners = np.array([filt.p0, filt.pU, pUV, filt.pV, filt.p0])
-
-    # tmpcolor = self._set_color(
-    # select_id, label=filt.filter_id, enabled=filt.enabled
-    # )
-    # # override -- red if selected, dark grey otherwise
-    # filtcolor = "#FF0000" if tmpcolor=="#cc61ff" else "#5E5E5E"
-
-    # filtertrace = go.Scatter3d(
-    # x=corners[:, 0],
-    # y=corners[:, 1],
-    # z=corners[:, 2],
-    # mode="lines",
-    # line=dict(color=filtcolor, width=5),
-    # name=filt.name,
-    # customdata=["filter_" + filt.filter_id],
-    # )
-
-    # traces = [trace.name for trace in fig.data]
-
-    # if filtertrace.name not in traces:
-    # fig.add_trace(filtertrace)
-    # else:
-    # self._update_trace_by_id(
-    # fig,
-    # filt.filter_id,
-    # x=corners[:, 0],
-    # y=corners[:, 1],
-    # z=corners[:, 2],
-    # line=dict(color=filtcolor, width=5, dash="dot"),
-    # )
-    # return fig
