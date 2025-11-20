@@ -314,7 +314,7 @@ class RoomPlotter:
     
     def _plot_vol(self, zone, fig, select_id=None):
 
-        x_coords, y_coords, z_coords = self._get_box_coords(*zone.dimensions)
+        x_coords, y_coords, z_coords = self._get_box_coords(*np.array(zone.dimensions).T)
         zonecolor = self._set_color(select_id, label=zone.zone_id, enabled=zone.enabled)
         # Create a single trace for all edges
         zonetrace = go.Scatter3d(
