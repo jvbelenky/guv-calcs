@@ -81,7 +81,7 @@ class LightingCalculator:
             if lamp.surface.source_density > 0 and lamp.surface.photometric_distance:
                 values = self._calculate_nearfield(lamp, R, values)
 
-            if any(~np.isfinite(arr)):  # mask any nans and infs near light source
+            if any(~np.isfinite(values)):  # mask any nans and infs near light source
                 values = np.ma.masked_invalid(values)
 
             values = values.astype("float32")
