@@ -33,9 +33,12 @@ class RectGrid:
 
         if len(self.mins) < 1:
             raise ValueError("Minimum of one dimension required")
-            
+
         if type(self.offset) is not bool:
             raise TypeError("must be either True or False")
+
+    def update(self, **changes):
+        return replace(self, **changes)
 
     @property
     def axes(self):
@@ -44,7 +47,12 @@ class RectGrid:
         num_points = self.n_pts or (None,) * len(self.mins)
         for lo, hi, spacing, n_pts in zip(self.mins, self.maxs, spacings, num_points):
             axis = Axis1D(
-                lo=lo, hi=hi, spacing_init=spacing, n_pts_init=n_pts, offset=self.offset, fallback_n_pts=self.fallback_n_pts
+                lo=lo,
+                hi=hi,
+                spacing_init=spacing,
+                n_pts_init=n_pts,
+                offset=self.offset,
+                fallback_n_pts=self.fallback_n_pts,
             )
             axes.append(axis)
         return axes
@@ -57,8 +65,9 @@ class RectGrid:
     def num_points(self):
         return np.array([len(pt) for pt in self.points])
 
-    def update(self, **changes):
-        return replace(self, **changes)
+    @property
+    def spacings(self):
+        return np.array([axis.spacing for axis in self.axes])
 
     @property
     def dimensions(self):
@@ -102,24 +111,24 @@ class RectGrid:
 
     @property
     def x_spacing(self):
-        return self.axes[0].spacing if len(self.axes) > 0 else None
+        return self.spacings[0] if len(self.spacings) > 0 else None
 
     @property
     def y_spacing(self):
-        return self.axes[1].spacing if len(self.axes) > 1 else None
+        return self.spacings[1] if len(self.spacings) > 1 else None
 
     @property
     def z_spacing(self):
-        return self.axes[2].spacing if len(self.axes) > 2 else None
-        
+        return self.spacings[2] if len(self.spacings) > 2 else None
+
     @property
     def xp(self):
         return self.points[0] if len(self.points) > 0 else None
-        
+
     @property
     def yp(self):
         return self.points[1] if len(self.points) > 1 else None
-        
+
     @property
     def zp(self):
         return self.points[2] if len(self.points) > 2 else None
@@ -127,8 +136,8 @@ class RectGrid:
 
 @dataclass(frozen=True, slots=True)
 class VolGrid(RectGrid):
-    fallback_n_pts: int = 20    
-    
+    fallback_n_pts: int = 20
+
     @property
     def coords(self):
         X, Y, Z = [

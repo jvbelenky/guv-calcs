@@ -573,3 +573,7 @@ class Room:
     def plotly(self, fig=None, select_id=None, title=""):
         """return a plotly figure of all the room's components"""
         return self._plotter.plotly(fig=fig, select_id=select_id, title=title)
+
+    def plot(self, fig=None, select_id=None, title=""):
+        """alias for plotly"""
+        return self._plotter.plotly(fig=fig, select_id=select_id, title=title)
