@@ -97,8 +97,10 @@ class CalcZone(object):
         data["enabled"] = self.enabled
         data["show_values"] = self.show_values
         data["colormap"] = self.colormap
+        data["calctype"] = "Zone"
 
         data.update(self._extra_dict())
+        return data
 
     def _extra_dict(self):
         return {}
@@ -289,7 +291,7 @@ class CalcVol(CalcZone):
             "z1": self.geometry.z1,
             "z2": self.geometry.z2,
             "z_spacing": self.geometry.z_spacing,
-            "calctype": "Volume",
+            "calctype": self.calctype,
         }
         zone_data.update(data)
         return zone_data
@@ -557,7 +559,7 @@ class CalcPlane(CalcZone):
             "horiz": self.horiz,
             "ref_surface": self.geometry.ref_surface,
             "direction": self.geometry.direction,
-            "calctype": "Plane",
+            "calctype": self.calctype,
         }
         zone_data.update(data)
         return zone_data
