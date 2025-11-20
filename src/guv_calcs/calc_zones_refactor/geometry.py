@@ -46,14 +46,14 @@ class ZoneGeometry(ABC):
 
     # ---------- (de)serialisation ----------
     def to_dict(self) -> Dict[str, Any]:
-    """Round-trip safe – stores only *constructor* fields, never derived data."""
-    data = asdict(self)
-    # Remove derived / non-init fields
-    for f in fields(self):
-        if f.init is False:
-            data.pop(f.name, None)
-            data["class"] = self.__class__.__name__
-    return data
+        """Round-trip safe – stores only *constructor* fields, never derived data."""
+        data = asdict(self)
+        # Remove derived / non-init fields
+        for f in fields(self):
+            if f.init is False:
+                data.pop(f.name, None)
+                data["class"] = self.__class__.__name__
+        return data
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "ZoneGeometry":
@@ -87,7 +87,7 @@ class PlanarGeometry(ZoneGeometry):
     @property
     def normal(self):
         if self.normal is None:
-        return self._get_normal()
+            return self._get_normal()
         return self.normal
 
     @property

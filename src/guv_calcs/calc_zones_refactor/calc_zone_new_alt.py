@@ -10,7 +10,7 @@ def calc_surface(
     column_spacing,
     view_normal=None,
     **zone_args
-    ):
+):
 
     # stub--to be filled in later...
     if wall.lower() in ["north", "south"]:
@@ -23,55 +23,56 @@ def calc_surface(
         ref_surface = "xy"
         x, y = room_dims.x, room_dims.y
         geometry = RectGrid(
-        x1=0,
-        x2=x,
-        y1=0,
-        y2=y,
-        x_spacing=column_spacing,
-        y_spacing=row_spacing,
-        offset=offset,
+            x1=0,
+            x2=x,
+            y1=0,
+            y2=y,
+            x_spacing=column_spacing,
+            y_spacing=row_spacing,
+            offset=offset,
         )
 
     return CalcPlane(
         geometry=geometry, view_normal=view_normal, **zone_args
-        )  # encapsulate the vert/horiz stuff with a CalcType preset
+    )  # encapsulate the vert/horiz stuff with a CalcType preset
 
 
 class CalcPlane(CalcZone):
     def __init__(geometry, view_normal, vert, horiz, fov_vert, fov_horiz, **zone_args):
 
-    super.__init__(**zone_args)
+        super.__init__(**zone_args)
 
-    self.geometry = geometry
-    self.view_normal = view_normal
-    self.vert = vert
-    self.horiz = horiz
-    self.fov_vert = fov_vert
-    self.fov_horiz = fov_horiz
+        self.geometry = geometry
+        self.view_normal = view_normal
+        self.vert = vert
+        self.horiz = horiz
+        self.fov_vert = fov_vert
+        self.fov_horiz = fov_horiz
+
 
 # stub...more to go here
 
 
 class CalcZone:
     def __init__(
-    zone_id: str | None = None,
-    name: str | None = None,
-    dose: bool = False,
-    hours: int | float = 8,
-    enabled: bool = True,
-    show_values: bool = True,
+        zone_id: str | None = None,
+        name: str | None = None,
+        dose: bool = False,
+        hours: int | float = 8,
+        enabled: bool = True,
+        show_values: bool = True,
     ):
 
-    self.zone_id = zone_id
-    self.name = name
-    self.dose = dose
-    self.hours = hours
-    self.enabled = enabled
-    self.show_values = show_values
+        self.zone_id = zone_id
+        self.name = name
+        self.dose = dose
+        self.hours = hours
+        self.enabled = enabled
+        self.show_values = show_values
 
-    self.units = "mJ/cm²" if self.dose else "uW/cm²"
-    self.calculator = LightingCalculator(self)
-    self.results = ZoneResults()
+        self.units = "mJ/cm²" if self.dose else "uW/cm²"
+        self.calculator = LightingCalculator(self)
+        self.results = ZoneResults()
 
     @property
     def values(self):

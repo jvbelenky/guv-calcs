@@ -84,12 +84,12 @@ class RectGrid(PlanarGeometry):
             lo=self.x1 if x1 is None else x1,
             hi=self.x2 if x2 is None else x2,
             n_pts=None,
-            )
+        )
         self._yp = self._yp.update(
             lo=self.y1 if y1 is None else y1,
             hi=self.y2 if y2 is None else y2,
             n_pts=None,
-            )
+        )
         self._update()
 
     def set_spacing(self, x_spacing=None, y_spacing=None):
@@ -99,11 +99,11 @@ class RectGrid(PlanarGeometry):
         self._xp = self._xp.update(
             spacing=self.x_spacing if x_spacing is None else x_spacing,
             n_pts=None,
-            )
+        )
         self._yp = self._yp.update(
             spacing=self.y_spacing if y_spacing is None else y_spacing,
             n_pts=None,
-            )
+        )
         self._update()
 
     def set_num_points(self, num_x=None, num_y=None):
@@ -113,11 +113,11 @@ class RectGrid(PlanarGeometry):
         self._xp = self._xp.update(
             spacing=None,
             n_pts=self.num_x if num_x is None else self.num_x,
-            )
+        )
         self._yp = self._yp.update(
             spacing=None,
             n_pts=self.num_y if num_y is None else self.num_y,
-            )
+        )
         self._update()
 
     def _update(self) -> None:

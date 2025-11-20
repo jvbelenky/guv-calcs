@@ -116,6 +116,7 @@ class Volume(Zone):
         """"""
         pass  # tmp
 
+
 class CalcPlaneBase:
     def __init__(self, coords, normal, vert, horiz, fov_vert, fov_horiz):
 
@@ -277,17 +278,13 @@ class CalcPlaneBase:
 
         title = "" if title is None else title
         values = self.get_values()
-        xp, yp = [
-            np.unique(val) for val in self.coords.T if len(np.unique(val)) > 1
-        ]
+        xp, yp = [np.unique(val) for val in self.coords.T if len(np.unique(val)) > 1]
         if values is not None:
             vmin = values.min() if vmin is None else vmin
             vmax = values.max() if vmax is None else vmax
             extent = [xp[0], xp[-1], yp[0], yp[-1]]
             values = values.T[::-1]
-            img = ax.imshow(
-                values, extent=extent, vmin=vmin, vmax=vmax, cmap="plasma"
-            )
+            img = ax.imshow(values, extent=extent, vmin=vmin, vmax=vmax, cmap="plasma")
             cbar = fig.colorbar(img, pad=0.03)
             ax.set_title(title)
             cbar.set_label(self.units, loc="center")

@@ -11,18 +11,19 @@ class RectGrid:
     coords: np.ndarray
     num_points: np.ndarray
 
+
 def build_rect_grid(
-        mins,
-        maxs,
-        num_points,
-        spacing,
-        offset,
-    ):
+    mins,
+    maxs,
+    num_points,
+    spacing,
+    offset,
+):
     # mins, maxs are tuples of length 2 or 3
     # num_points and spacing are tuples of same length
-    
+
     dims = len(mins)
-    
+
     axes = []
     for i in range(dims):
         pt1, pt2 = mins[i], maxs[i]
