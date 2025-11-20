@@ -1,20 +1,15 @@
 import inspect
-import warnings
 import json
 import copy
 import numpy as np
-import matplotlib.pyplot as plt
-import plotly.graph_objs as go
-import numbers
 from .calc_manager import LightingCalculator
-from .io import rows_to_bytes
 from .rect_grid import VolGrid, PlaneGrid
+from .calc_zone_io import export_plane, export_volume
+from .calc_zone_plot import plot_plane, plot_volume
 
 
 class CalcZone(object):
     """
-    TODO: dummy this out?
-
     Base class representing a calculation zone.
 
     This class provides a template for setting up zones within which various
@@ -23,7 +18,7 @@ class CalcZone(object):
 
     NOTE: I changed this from an abstract base class to an object superclass
     to make it more convenient to work with the website, but this class doesn't really
-    work on its own
+    work on its own--it should really be an abstract base class
 
     Parameters:
     --------
@@ -116,17 +111,11 @@ class CalcZone(object):
         keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
         return cls(**{k: v for k, v in data.items() if k in keys})
 
-    def set_dimensions(self, dimensions):
-        raise NotImplementedError
+    def export(self, fname=None):
+        pass
 
-    def set_spacing(self, spacing):
-        raise NotImplementedError
-
-    def set_num_points(self, spacing):
-        raise NotImplementedError
-
-    def _write_rows(self):
-        raise NotImplementedError
+    def plot(self):
+        pass
 
     def set_value_type(self, dose):
         """
@@ -180,31 +169,14 @@ class CalcZone(object):
         return
         """
         if self.values is None:
-            values = None
-        else:
-            if self.dose:
-                values = self.values * 3.6 * self.hours
-            else:
-                values = self.values
-        return values
+            return None
+        if self.dose:
+            return self.values * 3.6 * self.hours
+        return self.values
 
-    def export(self, fname=None):
-        """
-        export the calculation zone's results to a .csv file
-        if the spacing has been updated but the values not recalculated,
-        exported values will be blank.
-        """
-        try:
-            rows = self._write_rows()  # implemented in subclass
-            csv_bytes = rows_to_bytes(rows)
-
-            if fname is not None:
-                with open(fname, "wb") as csvfile:
-                    csvfile.write(csv_bytes)
-            else:
-                return csv_bytes
-        except NotImplementedError:
-            pass
+    def get_calc_state(self):
+        """if different, these parameters indicate zone must be recalculated"""
+        return [self.geometry]
 
     def copy(self, zone_id):
         """
@@ -266,8 +238,8 @@ class CalcVol(CalcZone):
             offset=offset or True,
         )
 
-        self.values = np.zeros(self.geometry.num_points).astype("float32")
-        self.reflected_values = np.zeros(self.geometry.num_points).astype("float32")
+        self.values = np.zeros(self.geometry.num_points, dtype="float32")
+        self.reflected_values = np.zeros(self.geometry.num_points, dtype="float32")
 
     # attribute passthrough to geometry -------------
     def __getattr__(self, name):
@@ -296,6 +268,7 @@ class CalcVol(CalcZone):
         zone_data.update(data)
         return zone_data
 
+<<<<<<< HEAD
     def __repr__(self):
         return super().__repr__() + (
             f"dimensions=(x=({self.x1},{self.x2}), y=({self.y1},{self.y2}), z=({self.z1},{self.z2})), "
@@ -322,13 +295,15 @@ class CalcVol(CalcZone):
             self.geometry.z_spacing,
         ]
 
+=======
+>>>>>>> f07924c (move plotting and io out)
     def get_update_state(self):
-        """
-        return a set of parameters that, if changed, indicate that the
-        calc zone need not be be recalculated, but may need updating
-        Currently there are no relevant update parameters for a calc volume
-        """
+        """if changes, calc zone needs updating but not recalculating"""
         return []
+
+    def export(self, fname=None):
+        """export values to csv"""
+        return export_volume(self, fname=fname)
 
     def set_dimensions(
         self,
@@ -344,17 +319,13 @@ class CalcVol(CalcZone):
         maxs = (x2 or self.geometry.x2, y2 or self.geometry.y2, z2 or self.geometry.z2)
 
         if preserve_spacing:
-            spacings = (
-                self.geometry.x_spacing,
-                self.geometry.y_spacing,
-                self.geometry.z_spacing,
-            )
             self.geometry = self.geometry.update(
-                mins=mins, maxs=maxs, spacings=spacings
+                mins=mins, maxs=maxs, spacings=self.geometry.spacings
             )
         else:
-            n_pts = (self.geometry.num_x, self.geometry.num_y, self.geometry.num_z)
-            self.geometry = self.geometry.update(mins=mins, maxs=maxs, n_pts=n_pts)
+            self.geometry = self.geometry.update(
+                mins=mins, maxs=maxs, n_pts=self.geometry.num_points
+            )
         return self
 
     def set_spacing(self, x_spacing=None, y_spacing=None, z_spacing=None):
@@ -380,97 +351,17 @@ class CalcVol(CalcZone):
         )
         self.geometry = self.geometry.update(n_pts=n_pts)
         return self
-    
+
     def set_offset(self, offset):
         self.geometry = self.geometry.update(offset=offset)
 
-    def _write_rows(self):
-        """
-        export solution to csv file
-        designed to be in the same format as the Acuity Visual export
-        """
+    def plot(self, **kwargs):
+        """plot fluence values as isosurface"""
+        return plot_volume(self, **kwargs)
 
-        header = """Data format notes:
-        
-        Data consists of numZ horizontal grids of fluence rate values; each grid contains numX by numY points.
-
-        numX; numY; numZ are given on the first line of data.
-        The next line contains numX values; indicating the X-coordinate of each grid column.
-        The next line contains numY values; indicating the Y-coordinate of each grid row.
-        The next line contains numZ values; indicating the Z-coordinate of each horizontal grid.
-        A blank line separates the position data from the first horizontal grid of fluence rate values.
-        A blank line separates each subsequent horizontal grid of fluence rate values.
-
-        fluence rate values are given in µW/cm²
-        """
-
-        lines = header.split("\n")
-        rows = [[line] for line in lines]
-        rows += [self.geometry.num_points]
-        rows += self.geometry.points
-        values = self.get_values()
-        for i in range(self.geometry.num_z):
-            rows += [""]
-            if values is None:
-                rows += [[""] * self.geometry.num_x] * self.geometry.num_y
-            elif values.shape != (
-                self.geometry.num_x,
-                self.geometry.num_y,
-                self.geometry.num_z,
-            ):
-                rows += [[""] * self.geometry.num_x] * self.geometry.num_y
-            else:
-                rows += values.T[i].tolist()
-        return rows
-
-    def plot_volume(
-        self,
-        title=None,
-    ):
-        """
-        Plot the fluence values as an isosurface using Plotly.
-        """
-
-        if self.values is None:
-            raise ValueError("No values calculated for this volume.")
-
-        X, Y, Z = np.meshgrid(*self.geometry.points, indexing="ij")
-        x, y, z = X.flatten(), Y.flatten(), Z.flatten()
-        values = self.values.flatten()
-        isomin = self.values.mean() / 2
-        fig = go.Figure()
-        fig.add_trace(
-            go.Isosurface(
-                x=x,
-                y=y,
-                z=z,
-                value=values,
-                isomin=isomin,
-                surface_count=3,
-                opacity=0.25,
-                showscale=False,
-                colorbar=None,
-                colorscale=self.colormap,
-                caps=dict(x_show=False, y_show=False, z_show=False),
-                name=self.name + " Values",
-            )
-        )
-        fig.update_layout(
-            title=dict(
-                text=self.name if title is None else title,
-                x=0.5,  # center horizontally
-                y=0.85,  # lower this value to move the title down (default is 0.95)
-                xanchor="center",
-                yanchor="top",
-                font=dict(size=18),
-            ),
-            scene=dict(
-                xaxis_title="x", yaxis_title="y", zaxis_title="z", aspectmode="data"
-            ),
-            height=450,
-        )
-        fig.update_scenes(camera_projection_type="orthographic")
-        return fig
+    def plot_volume(self, **kwargs):
+        """alias for plot() -- kept in for compatibility"""
+        return self.plot(**kwargs)
 
 
 class CalcPlane(CalcZone):
@@ -531,8 +422,8 @@ class CalcPlane(CalcZone):
         self.vert = False if vert is None else vert
         self.horiz = False if horiz is None else horiz
 
-        self.values = np.zeros(self.geometry.num_points)
-        self.reflected_values = np.zeros(self.geometry.num_points)
+        self.values = np.zeros(self.geometry.num_points, dtype="float32")
+        self.reflected_values = np.zeros(self.geometry.num_points, dtype="float32")
 
     # attribute passthrough to geometry -------------
     def __getattr__(self, name):
@@ -553,12 +444,13 @@ class CalcPlane(CalcZone):
             "y1": self.geometry.x1,
             "y2": self.geometry.x2,
             "y_spacing": self.geometry.y_spacing,
+            "height": self.height,
+            "ref_surface": self.geometry.ref_surface,
+            "direction": self.geometry.direction,
             "fov_vert": self.fov_vert,
             "fov_horiz": self.fov_horiz,
             "vert": self.vert,
             "horiz": self.horiz,
-            "ref_surface": self.geometry.ref_surface,
-            "direction": self.geometry.direction,
             "calctype": self.calctype,
         }
         zone_data.update(data)
@@ -615,6 +507,17 @@ class CalcPlane(CalcZone):
             **kwargs,
         )
 
+    def get_update_state(self):
+        """
+        return a set of parameters that, if changed, indicate that the
+        calc zone need not be be recalculated, but may need updating
+        """
+        return [self.fov_vert, self.fov_horiz, self.vert, self.horiz]
+
+    def export(self, fname=None):
+        """export values to csv"""
+        return export_plane(self, fname=fname)
+
     def set_height(self, height):
         """set height of calculation plane. currently we only support vertical planes"""
         self.geometry = self.geometry.update(height=height)
@@ -665,111 +568,14 @@ class CalcPlane(CalcZone):
         n_pts = (num_x or self.geometry.num_x, num_y or self.geometry.num_y)
         self.geometry = self.geometry.update(n_pts=n_pts)
         return self
-        
+
     def set_offset(self, offset):
         self.geometry = self.geometry.update(offset=offset)
 
-    def get_calc_state(self):
-        """
-        return a set of paramters that, if changed, indicate that
-        this calc zone must be recalculated
-        """
-        return [
-            self.geometry.offset,
-            self.geometry.x1,
-            self.geometry.x2,
-            self.geometry.x_spacing,
-            self.geometry.y1,
-            self.geometry.y2,
-            self.geometry.y_spacing,
-            self.geometry.height,
-            self.geometry.ref_surface,
-            self.geometry.direction,  # only for reflectance...possibly can be optimized
-        ]
-
-    def get_update_state(self):
-        """
-        return a set of parameters that, if changed, indicate that the
-        calc zone need not be be recalculated, but may need updating
-        """
-        return [self.fov_vert, self.fov_horiz, self.vert, self.horiz]
-
-    def plot_plane(self, fig=None, ax=None, vmin=None, vmax=None, title=None):
+    def plot(self, **kwargs):
         """Plot the image of the radiation pattern"""
-        if fig is None:
-            if ax is None:
-                fig, ax = plt.subplots()
-            else:
-                fig = plt.gcf()
-        else:
-            if ax is None:
-                ax = fig.axes[0]
+        return plot_plane(self, **kwargs)
 
-        title = "" if title is None else title
-        values = self.get_values()
-        if values is not None:
-            vmin = values.min() if vmin is None else vmin
-            vmax = values.max() if vmax is None else vmax
-            extent = [
-                self.geometry.x1,
-                self.geometry.x2,
-                self.geometry.y1,
-                self.geometry.y2,
-            ]
-
-            values = values.T[::-1]
-            img = ax.imshow(
-                values, extent=extent, vmin=vmin, vmax=vmax, cmap=self.colormap
-            )
-            cbar = fig.colorbar(img, pad=0.03)
-            ax.set_title(title)
-            cbar.set_label(self.units, loc="center")
-        return fig, ax
-
-    def _write_rows(self):
-        """
-        export solution to csv
-        """
-
-        # if self.ref_surface == "xy":
-        # xpoints = self.points[0].tolist()
-        # ypoints = self.points[1].tolist()
-        # elif self.ref_surface == "xz":
-        # xpoints = self.points[0].tolist()
-        # ypoints = [self.height] * self.num_y
-        # elif self.ref_surface == "yz":
-        # xpoints = [self.height] * self.num_x
-        # ypoints = self.points[1].tolist()
-
-        # num_x, num_y, *rest = [len(np.unique(val)) for val in self.coords.T if len(np.unique(val))>1]
-
-        # points = [np.unique(val) for val in self.coords.T]
-        # num_x, num_y, *rest = [len(val) for val in points if len(val) > 1]
-        num_x, num_y = self.geometry.num_x, self.geometry.num_y  # tmp
-
-        values = self.get_values()
-        if values is None:
-            vals = [[-1] * num_y] * num_x
-        elif values.shape != (num_x, num_y):
-            vals = [[-1] * num_y] * num_x
-        else:
-            vals = values
-        zvals = self.geometry.coords.T[2].reshape(num_x, num_y).T[::-1]
-
-        xpoints = self.geometry.coords.T[0].reshape(num_x, num_y).T[0].tolist()
-        ypoints = self.geometry.coords.T[1].reshape(num_x, num_y)[0].tolist()
-
-        if len(np.unique(xpoints)) == 1 and len(np.unique(ypoints)) == 1:
-            xpoints = self.geometry.coords.T[0].reshape(num_x, num_y)[0].tolist()
-            ypoints = self.geometry.coords.T[1].reshape(num_x, num_y).T[0].tolist()
-            vals = np.array(vals).T.tolist()
-            zvals = zvals.T.tolist()
-
-        rows = [[""] + xpoints]
-
-        rows += np.concatenate(([np.flip(ypoints)], vals)).T.tolist()
-        rows += [""]
-        # zvals
-
-        rows += [[""] + list(line) for line in zvals]
-        return rows
+    def plot_plane(self, **kwargs):
+        """alias for plot() -- kept in for compatibility"""
+        return self.plot(**kwargs)
