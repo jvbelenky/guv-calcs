@@ -69,7 +69,7 @@ class ReflectanceManager:
 
         self.zone_dict = {}  # will contain all values from all contributions
         self.surfaces = {}
-        self.managers = {}
+        # self.managers = {}
         self._initialize_surfaces()
 
     def _eq_dict(self):
@@ -178,12 +178,12 @@ class ReflectanceManager:
             )
             self.surfaces[wall] = ReflectiveSurface(R=reflectance, plane=plane)
         self._update_points()
-        # possibly this should go here? idk
-        self.managers = {}
-        for wall, surface in self.surfaces.items():
-            ref_manager = copy.deepcopy(self)
-            del ref_manager.surfaces[wall]
-            self.managers[wall] = ref_manager
+        # # possibly this should go here? idk
+        # self.managers = {}
+        # for wall, surface in self.surfaces.items():
+            # ref_manager = copy.deepcopy(self)
+            # del ref_manager.surfaces[wall]
+            # self.managers[wall] = ref_manager
 
     def _update_points(self):
         for key, val in self.surfaces.items():
@@ -266,12 +266,14 @@ class ReflectanceManager:
         while percent > self.threshold and i < self.max_num_passes:
             pc = []
             for wall, surface in self.surfaces.items():
-
+                # print(i,wall)
+                # print(dct[wall].shape, surface.plane.reflected_values.shape)
+                    
                 init = surface.plane.values.mean()
-
                 surface.calculate_incidence(
                     lamps, ref_manager=managers[wall], hard=hard
                 )
+                # print(surface.plane.reflected_values.shape)
 
                 dct[wall] += surface.plane.reflected_values
 
@@ -284,7 +286,9 @@ class ReflectanceManager:
             managers = self._update_managers(managers)
             i = i + 1
         for wall, surface in self.surfaces.items():
-            surface.plane.values = dct[wall]
+            # surface.plane.result.clear()
+            surface.plane.base_values = dct[wall]
+            # surface.plane.values = dct[wall]
 
     def _update_managers(self, managers: dict) -> dict:
         """Update all interreflection managers with newly calculated surface incidences"""
@@ -299,12 +303,11 @@ class ReflectanceManager:
                 # create new plane
                 new_plane = copy.deepcopy(self.surfaces[subwall].plane)
                 # replace the total values with only the reflected values
-                new_plane.values = new_plane.reflected_values
+                new_plane.base_values = new_plane.reflected_values
                 # Replace the object instead of deleting in-place
                 manager.surfaces[subwall] = ReflectiveSurface(
                     R=self.surfaces[subwall].R, plane=new_plane
                 )
-
         return managers  # Updated in place
 
     def _create_managers(self):
@@ -324,6 +327,13 @@ class ReflectanceManager:
             # assign planes
             for subwall, surface in ref_manager.surfaces.items():
                 new_plane = copy.deepcopy(self.surfaces[subwall].plane)
+                # old_plane = self.surfaces[subwall].plane
+                # # print(old_plane.base_values.shape, old_plane.reflected_values.shape)
+                # new_plane = old_plane.copy()
+                # print(subwall)
+                # print(old_plane.base_values.shape, old_plane.reflected_values.shape)
+                # print(new_plane.base_values.shape, new_plane.reflected_values.shape)
+                # new_plane.result.base_values = old_plane.values
                 ref_manager.surfaces[subwall].plane = new_plane
             # remove the surface being reflected upon
             del ref_manager.surfaces[wall]
@@ -397,8 +407,8 @@ class ReflectiveSurface:
         return self.plane.get_calc_state()
 
     def get_update_state(self):
-        """"""
-        return self.plane.get_update_state() + [self.plane.values.sum()]
+        """check if surface needs updating"""
+        return self.plane.get_update_state() + (self.plane.values.sum(),)
 
     def calculate_reflectance(self, zone, hard=False):
         """
@@ -430,7 +440,6 @@ class ReflectiveSurface:
         SURF_UPDATE = surface_update_state != self.zone_dict[zone.zone_id].get(
             "surface_update_state"
         )
-
         RECALCULATE = NEW_ZONE or ZONE_RECALC or SURF_RECALC or hard
         UPDATE = RECALCULATE or NEW_ZONE or ZONE_UPDATE or SURF_UPDATE or hard
 
@@ -470,7 +479,8 @@ class ReflectiveSurface:
         """apply field-of-view based calculations"""
 
         # clean nans
-        if np.isnan(values).any():
+        
+        if (~np.isfinite(values)).any():
             values = np.ma.masked_invalid(values)
 
         if zone.calctype == "Plane":

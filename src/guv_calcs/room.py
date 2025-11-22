@@ -222,8 +222,8 @@ class Room:
 
         room_state = [  # temp..this should be put with the ref_manager eventually
             self.enable_reflectance,
-            tuple(self.ref_manager.x_spacings),
-            tuple(self.ref_manager.y_spacings),
+            tuple(self.ref_manager.x_spacings.values()),
+            tuple(self.ref_manager.y_spacings.values()),
             self.ref_manager.max_num_passes,
             self.ref_manager.threshold,
         ]
