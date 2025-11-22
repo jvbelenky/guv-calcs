@@ -1,17 +1,23 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, field
 import numbers
 import numpy as np
 from .axis import Axis1D
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RectGrid:
     mins: tuple
     maxs: tuple
     fallback_n_pts: int
+    spacing: tuple | None = None
     n_pts: tuple | None = None
-    spacings: tuple | None = None
     offset: bool = True
+    _cache: dict = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     def __post_init__(self):
 
@@ -24,8 +30,8 @@ class RectGrid:
             if len(self.n_pts) != len(self.mins):
                 raise ValueError("n_pts dimensions do not match min/max dimensions")
 
-        if self.spacings is not None:
-            if len(self.spacings) != len(self.mins):
+        if self.spacing is not None:
+            if len(self.spacing) != len(self.mins):
                 raise ValueError("spacing dimensions do not match min/max dimensions")
 
         if len(self.mins) > 3:
@@ -42,8 +48,11 @@ class RectGrid:
 
     @property
     def axes(self):
+        if self._cache.get("axes") is not None:
+            return self._cache["axes"]
+
         axes = []
-        spacings = self.spacings or (None,) * len(self.mins)
+        spacings = self.spacing or (None,) * len(self.mins)
         num_points = self.n_pts or (None,) * len(self.mins)
         for lo, hi, spacing, n_pts in zip(self.mins, self.maxs, spacings, num_points):
             axis = Axis1D(
@@ -55,19 +64,12 @@ class RectGrid:
                 fallback_n_pts=self.fallback_n_pts,
             )
             axes.append(axis)
+        self._cache["axes"] = axes
         return axes
 
     @property
     def points(self):
         return [axis.points for axis in self.axes]
-
-    @property
-    def num_points(self):
-        return np.array([len(pt) for pt in self.points])
-
-    @property
-    def spacings(self):
-        return np.array([axis.spacing for axis in self.axes])
 
     @property
     def dimensions(self):
@@ -98,6 +100,10 @@ class RectGrid:
         return self.dimensions[2][1] if len(self.dimensions) > 2 else None
 
     @property
+    def num_points(self):
+        return np.array([len(pt) for pt in self.points])
+
+    @property
     def num_x(self):
         return self.num_points[0] if len(self.num_points) > 0 else None
 
@@ -108,6 +114,10 @@ class RectGrid:
     @property
     def num_z(self):
         return self.num_points[2] if len(self.num_points) > 2 else None
+
+    @property
+    def spacings(self):
+        return np.array([axis.spacing for axis in self.axes])
 
     @property
     def x_spacing(self):
@@ -134,7 +144,7 @@ class RectGrid:
         return self.points[2] if len(self.points) > 2 else None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class VolGrid(RectGrid):
     fallback_n_pts: int = 20
 
@@ -148,7 +158,7 @@ class VolGrid(RectGrid):
         return np.unique(coords, axis=0)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PlaneGrid(RectGrid):
     fallback_n_pts: int = 50
     height: float = 0

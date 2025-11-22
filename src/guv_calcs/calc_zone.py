@@ -1,11 +1,60 @@
 import inspect
 import json
-import copy
 import numpy as np
+from dataclasses import dataclass
 from .calc_manager import LightingCalculator
 from .rect_grid import VolGrid, PlaneGrid
 from .calc_zone_io import export_plane, export_volume
 from .calc_zone_plot import plot_plane, plot_volume
+
+
+@dataclass(frozen=True)
+class ZoneView:
+    coords: np.ndarray
+    num_points: np.ndarray
+    calc_state: tuple
+    update_state: tuple
+    calctype: str
+    fov_vert: int | None = None
+    fov_horiz: int | None = None
+    vert: bool | None = None
+    horiz: bool | None = None
+    direction: int | None = None
+    basis: np.ndarray | None = None
+
+    def is_plane(self):
+        if self.calctype.lower() == "plane":
+            return True
+        return False
+
+    def is_volume(self):
+        if self.calctype.lower() == "volume":
+            return True
+        return False
+
+
+@dataclass
+class ZoneResult:
+    base_values: np.ndarray | None = None
+    reflected_values: np.ndarray | None = None
+
+    def set_init_dimensions(self, num_points):
+        self.base_values = np.zeros(num_points, dtype="float32")
+        self.reflected_values = np.zeros(num_points, dtype="float32")
+        return self
+
+    def clear(self):
+        if self.base_values is not None:
+            self.set_init_dimensions(self.base_values.shape)
+        return self
+
+    @property
+    def values(self):
+        if self.base_values is None:
+            return None
+        if self.reflected_values is None:
+            return self.base_values
+        return self.base_values + self.reflected_values
 
 
 class CalcZone(object):
@@ -57,16 +106,50 @@ class CalcZone(object):
         self.show_values = True if show_values is None else show_values
         self.colormap = colormap
 
-        self.calculator = LightingCalculator(self)
-
         # these will all be calculated after spacing is set, which is set in the subclass
         self.calctype = "Zone"
         self.geometry = None
-        self.values = None
-        self.reflected_values = None
-        self.lamp_values = {}
-        self.lamp_values_base = {}
-        self.calc_state = None
+        self.calculator = LightingCalculator()
+        self.result = ZoneResult()
+
+    def __getattr__(self, name):
+        """
+        attribute passthrough to result/calculator cache/geometry - called if normal lookup fails
+        """
+        result = self.__dict__.get("result", None)
+        if result is not None and hasattr(result, name):
+            return getattr(result, name)
+
+        calculator = self.__dict__.get("calculator", None)
+        if calculator is not None:
+            cache = calculator.__dict__.get("cache", None)
+            if cache is not None and hasattr(cache, name):
+                return getattr(cache, name)
+
+        geometry = self.__dict__.get("geometry", None)
+        if geometry is not None and hasattr(geometry, name):
+            return getattr(geometry, name)
+
+        raise AttributeError(name)
+
+    def get_calc_state(self):
+        """if changes, these parameters indicate zone must be recalculated"""
+        if self.geometry is None:
+            return None
+        return (
+            self.geometry.dimensions,
+            tuple(self.geometry.spacings),
+            self.geometry.offset,
+        )
+
+    def get_update_state(self):
+        """if changes, calc zone needs updating but not recalculating"""
+        return ()
+
+    @classmethod
+    def from_dict(cls, data):
+        keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
+        return cls(**{k: v for k, v in data.items() if k in keys})
 
     def __eq__(self, other):
         if not isinstance(other, CalcZone):
@@ -106,16 +189,23 @@ class CalcZone(object):
         with open(filename, "w") as json_file:
             json_file.write(json.dumps(data))
 
-    @classmethod
-    def from_dict(cls, data):
-        keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
-        return cls(**{k: v for k, v in data.items() if k in keys})
-
     def export(self, fname=None):
         pass
 
     def plot(self):
         pass
+
+    def copy(self, **kwargs):
+        """
+        create a fresh copy of this calc zone
+        """
+        dct = self.to_dict()
+        # replace dict with keyword args if any
+        for key, val in dct.items():
+            new_val = kwargs.get(key, None)
+            if new_val is not None:
+                dct[key] = new_val
+        return type(self).from_dict(dct)
 
     def set_value_type(self, dose):
         """
@@ -144,23 +234,24 @@ class CalcZone(object):
         Calculate all the values for all the lamps
         """
 
-        new_calc_state = self.get_calc_state()
+        if self.calctype == "Zone":
+            return None
 
         # updates self.lamp_values_base and self.lamp_values
-        self.base_values = self.calculator.compute(
-            lamps=lamps, filters=filters, obstacles=obstacles, hard=hard
-        )
+        base_values = self.calculator.compute(lamps=lamps, zv=self.to_view(), hard=hard)
+
         if ref_manager is not None:
             # calculate reflectance -- warning, may be expensive!
             ref_manager.calculate_reflectance(self, hard=hard)
             # add in reflected values, if applicable
-            self.reflected_values = ref_manager.get_total_reflectance(self)
+            reflected_values = ref_manager.get_total_reflectance(self)
         else:
-            self.reflected_values = np.zeros(self.geometry.num_points).astype("float32")
+            reflected_values = np.zeros(self.geometry.num_points).astype("float32")
 
-        # sum
-        self.values = self.base_values + self.reflected_values
-        self.calc_state = new_calc_state
+        self.result.base_values = base_values
+        self.result.reflected_values = reflected_values
+
+        self.calc_state = self.get_calc_state()
 
         return self.get_values()
 
@@ -173,23 +264,6 @@ class CalcZone(object):
         if self.dose:
             return self.values * 3.6 * self.hours
         return self.values
-
-    def get_calc_state(self):
-        """if different, these parameters indicate zone must be recalculated"""
-        return [self.geometry]
-
-    def copy(self, zone_id):
-        """
-        return a copy of this CalcZone with the same attributes and a new zone_id
-        """
-        zone = copy.deepcopy(self)
-        zone.zone_id = zone_id
-        # clear calculated values
-        zone.values = None
-        zone.reflected_values = None
-        zone.lamp_values = {}
-        zone.lamp_values_base = {}
-        return zone
 
 
 class CalcVol(CalcZone):
@@ -219,6 +293,7 @@ class CalcVol(CalcZone):
         hours=None,
         enabled=None,
         show_values=None,
+        colormap=None,
     ):
 
         super().__init__(
@@ -234,20 +309,14 @@ class CalcVol(CalcZone):
             mins=(x1 or 0, y1 or 0, z1 or 0),
             maxs=(x2 or 6, y2 or 4, z2 or 2.7),
             n_pts=(num_x, num_y, num_z),
-            spacings=(x_spacing, y_spacing, z_spacing),
-            offset=offset or True,
+            spacing=(x_spacing, y_spacing, z_spacing),
+            offset=True if offset is None else bool(offset),
         )
 
-        self.values = np.zeros(self.geometry.num_points, dtype="float32")
-        self.reflected_values = np.zeros(self.geometry.num_points, dtype="float32")
+        self.result.set_init_dimensions(self.geometry.num_points)
 
-    # attribute passthrough to geometry -------------
-    def __getattr__(self, name):
-        # called only if normal attribute lookup fails
-        geometry = self.__dict__.get("geometry", None)
-        if geometry is not None and hasattr(geometry, name):
-            return getattr(geometry, name)
-        raise AttributeError(name)
+        # self.values = np.zeros(self.geometry.num_points, dtype="float32")
+        # self.reflected_values = np.zeros(self.geometry.num_points, dtype="float32")
 
     def _extra_dict(self):
 
@@ -256,9 +325,9 @@ class CalcVol(CalcZone):
         data = {
             "x1": self.geometry.x1,
             "x2": self.geometry.x2,
-            "x_spacing": self.geometry.y_spacing,
-            "y1": self.geometry.x1,
-            "y2": self.geometry.x2,
+            "x_spacing": self.geometry.x_spacing,
+            "y1": self.geometry.y1,
+            "y2": self.geometry.y2,
             "y_spacing": self.geometry.y_spacing,
             "z1": self.geometry.z1,
             "z2": self.geometry.z2,
@@ -268,6 +337,7 @@ class CalcVol(CalcZone):
         zone_data.update(data)
         return zone_data
 
+<<<<<<< HEAD
 <<<<<<< HEAD
     def __repr__(self):
         return super().__repr__() + (
@@ -295,11 +365,23 @@ class CalcVol(CalcZone):
             self.geometry.z_spacing,
         ]
 
-=======
->>>>>>> f07924c (move plotting and io out)
+    def get_calc_state(self):
+        """if changes, calc zone needs recalculating"""
+        return super().get_calc_state() + ()
+
     def get_update_state(self):
         """if changes, calc zone needs updating but not recalculating"""
-        return []
+        return ()
+
+    def to_view(self):
+        """take a snapshot of the zone's state"""
+        return ZoneView(
+            coords=self.geometry.coords,
+            num_points=self.geometry.num_points,
+            calc_state=self.get_calc_state(),
+            update_state=self.get_update_state(),
+            calctype=self.calctype,
+        )
 
     def export(self, fname=None):
         """export values to csv"""
@@ -317,14 +399,13 @@ class CalcVol(CalcZone):
     ):
         mins = (x1 or self.geometry.x1, y1 or self.geometry.y1, z1 or self.geometry.z1)
         maxs = (x2 or self.geometry.x2, y2 or self.geometry.y2, z2 or self.geometry.z2)
-
         if preserve_spacing:
             self.geometry = self.geometry.update(
-                mins=mins, maxs=maxs, spacings=self.geometry.spacings
+                mins=mins, maxs=maxs, spacing=tuple(self.geometry.spacings)
             )
         else:
             self.geometry = self.geometry.update(
-                mins=mins, maxs=maxs, n_pts=self.geometry.num_points
+                mins=mins, maxs=maxs, n_pts=tuple(self.geometry.num_points)
             )
         return self
 
@@ -332,12 +413,12 @@ class CalcVol(CalcZone):
         """
         set the spacing desired in the dimension
         """
-        spacings = (
+        spacing = (
             x_spacing or self.geometry.x_spacing,
             y_spacing or self.geometry.y_spacing,
             z_spacing or self.geometry.z_spacing,
         )
-        self.geometry = self.geometry.update(spacings=spacings)
+        self.geometry = self.geometry.update(spacing=spacing)
         return self
 
     def set_num_points(self, num_x=None, num_y=None, num_z=None):
@@ -394,6 +475,7 @@ class CalcPlane(CalcZone):
         hours=None,
         enabled=None,
         show_values=None,
+        colormap=None,
     ):
 
         super().__init__(
@@ -410,8 +492,8 @@ class CalcPlane(CalcZone):
             mins=(x1 or 0, y1 or 0),
             maxs=(x2 or 6, y2 or 4),
             n_pts=(num_x, num_y),
-            spacings=(x_spacing, y_spacing),
-            offset=offset or True,
+            spacing=(x_spacing, y_spacing),
+            offset=True if offset is None else bool(offset),
             height=height or 0,
             ref_surface=ref_surface or "xy",
             direction=direction or 1,
@@ -422,16 +504,9 @@ class CalcPlane(CalcZone):
         self.vert = False if vert is None else vert
         self.horiz = False if horiz is None else horiz
 
-        self.values = np.zeros(self.geometry.num_points, dtype="float32")
-        self.reflected_values = np.zeros(self.geometry.num_points, dtype="float32")
-
-    # attribute passthrough to geometry -------------
-    def __getattr__(self, name):
-        # called only if normal attribute lookup fails
-        geometry = self.__dict__.get("geometry", None)
-        if geometry is not None and hasattr(geometry, name):
-            return getattr(geometry, name)
-        raise AttributeError(name)
+        self.result.set_init_dimensions(self.geometry.num_points)
+        # self.values = np.zeros(self.geometry.num_points, dtype="float32")
+        # self.reflected_values = np.zeros(self.geometry.num_points, dtype="float32")
 
     def _extra_dict(self):
 
@@ -440,11 +515,11 @@ class CalcPlane(CalcZone):
         data = {
             "x1": self.geometry.x1,
             "x2": self.geometry.x2,
-            "x_spacing": self.geometry.y_spacing,
-            "y1": self.geometry.x1,
-            "y2": self.geometry.x2,
+            "x_spacing": self.geometry.x_spacing,
+            "y1": self.geometry.y1,
+            "y2": self.geometry.y2,
             "y_spacing": self.geometry.y_spacing,
-            "height": self.height,
+            "height": self.geometry.height,
             "ref_surface": self.geometry.ref_surface,
             "direction": self.geometry.direction,
             "fov_vert": self.fov_vert,
@@ -507,12 +582,38 @@ class CalcPlane(CalcZone):
             **kwargs,
         )
 
+    def get_calc_state(self):
+        """if changes, calc_zone needs recalculating"""
+        return super().get_calc_state() + (
+            self.geometry.height,
+            self.geometry.ref_surface,
+        )
+
     def get_update_state(self):
-        """
-        return a set of parameters that, if changed, indicate that the
-        calc zone need not be be recalculated, but may need updating
-        """
-        return [self.fov_vert, self.fov_horiz, self.vert, self.horiz]
+        """if changes, calc_zone needs updating but not recalculating"""
+        return super().get_update_state() + (
+            self.fov_vert,
+            self.fov_horiz,
+            self.vert,
+            self.horiz,
+            self.direction,
+        )
+
+    def to_view(self):
+        """take a snapshot of the zone's state"""
+        return ZoneView(
+            coords=self.geometry.coords,
+            num_points=self.geometry.num_points,
+            calc_state=self.get_calc_state(),
+            update_state=self.get_update_state(),
+            calctype=self.calctype,
+            fov_vert=self.fov_vert,
+            fov_horiz=self.fov_horiz,
+            vert=self.vert,
+            horiz=self.horiz,
+            direction=self.direction,
+            basis=self.basis,
+        )
 
     def export(self, fname=None):
         """export values to csv"""
@@ -543,22 +644,22 @@ class CalcPlane(CalcZone):
         mins = (x1 or self.geometry.x1, y1 or self.geometry.y1)
         maxs = (x2 or self.geometry.x2, y2 or self.geometry.y2)
         if preserve_spacing:
-            spacings = (self.geometry.x_spacing, self.geometry.y_spacing)
             self.geometry = self.geometry.update(
-                mins=mins, maxs=maxs, spacings=spacings
+                mins=mins, maxs=maxs, spacing=tuple(self.geometry.spacings)
             )
         else:  # preserve num_points instead
-            n_pts = (self.geometry.num_x, self.geometry.num_y)
-            self.geometry = self.geometry.update(mins=mins, maxs=maxs, n_pts=n_pts)
+            self.geometry = self.geometry.update(
+                mins=mins, maxs=maxs, n_pts=tuple(self.geometry.num_points)
+            )
         return self
 
     def set_spacing(self, x_spacing=None, y_spacing=None):
         """set the fineness of the grid spacing and update the coordinate points"""
-        spacings = (
+        spacing = (
             x_spacing or self.geometry.x_spacing,
             y_spacing or self.geometry.y_spacing,
         )
-        self.geometry = self.geometry.update(spacings=spacings)
+        self.geometry = self.geometry.update(spacing=spacing)
         return self
 
     def set_num_points(self, num_x=None, num_y=None):
