@@ -337,8 +337,6 @@ class CalcVol(CalcZone):
         zone_data.update(data)
         return zone_data
 
-<<<<<<< HEAD
-<<<<<<< HEAD
     def __repr__(self):
         return super().__repr__() + (
             f"dimensions=(x=({self.x1},{self.x2}), y=({self.y1},{self.y2}), z=({self.z1},{self.z2})), "
