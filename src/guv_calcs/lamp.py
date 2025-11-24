@@ -232,7 +232,8 @@ class Lamp:
             phot = "None"
         else:
             p = self.ies.photometry
-            phot = f"Photometry(thetas={p.thetas.size}, phis={p.phis.size})"
+            maxval = p.values.max().round(2)
+            phot = f"Photometry(thetas={p.thetas.size}, phis={p.phis.size}, maxval={maxval})"
         spec = False if self.spectra is None else True
 
         return (
