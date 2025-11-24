@@ -732,7 +732,7 @@ class CalcPlane(CalcZone):
         return super().__repr__() + (
             f"dimensions=({a}=({self.x1},{self.x2}), {b}=({self.y1},{self.y2})), "
             f"height={self.height}, "
-            f"grid={self.num_x} x {self.num_y}, "
+            f"grid={self.num_x}x{self.num_y}, "
             f"offset={self.offset}, "
             f"field_of_view=({self.fov_horiz}° horiz, {self.fov_vert}° vert), "
             f"flags=(vert={self.vert}, horiz={self.horiz}, dir={self.direction}), "
