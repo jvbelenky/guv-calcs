@@ -208,6 +208,50 @@ class Lamp:
 
     # ------------------------ Basics ------------------------------
 
+    def _eq_dict(self):
+        dct = self.to_dict()
+        dct.pop('filename')
+        dct.pop('filedata')               
+        return dct
+
+    def __eq__(self, other):
+        if not isinstance(other, Lamp):
+            return NotImplemented
+        
+        if self.ies.header != other.ies.header:
+            return False
+            
+        if self.ies.photometry != other.ies.photometry:
+            return False
+        
+        return self._eq_dict() == other._eq_dict()
+        
+    def __repr__(self):
+        # compact photometry tag
+        if self.ies is None:
+            phot = "None"
+        else:
+            p = self.ies.photometry
+            phot = (
+                f"Photometry(thetas={p.thetas.size}, phis={p.phis.size})"
+            )
+        spec = False if self.spectra is None else True        
+            
+        return (
+            f"Lamp(id={self.lamp_id!r}, name={self.name!r}, "
+            f"pos=({self.pose.x:.3g}, {self.pose.y:.3g}, {self.pose.z:.3g}), "
+            f"aim=({self.pose.aimx:.3g}, {self.pose.aimy:.3g}, {self.pose.aimz:.3g}), "
+            f"phot={phot}, "
+            f"units={self.intensity_units!r}, "
+            f"scaling_factor={self.scaling_factor}, "
+            f"wavelength={self.wavelength}, "
+            f"spectra_provided={spec}, "
+            f"surface=({self.surface.width}×{self.surface.length}×{self.surface.depth} {self.surface.units}), "
+            f"source_density={self.surface.source_density}, "
+            f"enabled={self.enabled})"
+        )
+
+
     def to_dict(self):
         """
         save just the minimum number of parameters required to re-instantiate the lamp
@@ -272,55 +316,45 @@ class Lamp:
         return VALID_LAMPS
 
     @classmethod
-    def from_keyword(cls, key, **kwargs):
-        """define a Lamp object from a predefined keyword"""
+    def _prepare_from_key(cls, key: str, kwargs: dict) -> dict:
+        """Common logic for from_keyword / from_index."""
         if not isinstance(key, str):
             raise TypeError(f"Keyword must be str, not {type(key)}")
-        if key.lower() in VALID_LAMPS:
-            path = "guv_calcs.data.lamp_data"
-            fn = resources.files(path).joinpath(key.lower() + ".ies")
-            sn = resources.files(path).joinpath(key.lower() + ".csv")
-            kwargs.setdefault("filedata", fn)
-            kwargs.setdefault("spectra_source", sn)
-        else:
+        if key.lower() not in VALID_LAMPS:
             raise KeyError(
                 f"{key} is not a valid lamp key. Valid keys are {VALID_LAMPS}"
             )
+        path = "guv_calcs.data.lamp_data"
+        fn = resources.files(path).joinpath(key.lower() + ".ies")
+        sn = resources.files(path).joinpath(key.lower() + ".csv")
+        kwargs.setdefault("filedata", fn)
+        kwargs.setdefault("spectra_source", sn)
         if kwargs.get("lamp_id", None) is None:
             kwargs.setdefault("lamp_id", key)
-        if (
-            kwargs.get("guv_type", None) is None
-            and kwargs.get("wavelength", None) is None
-        ):
-            kwargs.setdefault("guv_type", "Krypton chloride")
+            
+        if kwargs.get("guv_type", None) is None and kwargs.get("wavelength", None) is None:
+            kwargs.setdefault("guv_type", "krypton chloride") 
 
+        return kwargs
+
+    @classmethod
+    def from_keyword(cls, key, **kwargs):
+        """define a Lamp object from a predefined keyword"""
+        kwargs = cls._prepare_from_key(key, kwargs)
         return cls(**kwargs)
 
     @classmethod
     def from_index(cls, key_index=0, **kwargs):
         """define a Lamp object from an index value"""
-
         if not isinstance(key_index, int):
             raise TypeError(f"Keyword index must be int, not {type(key_index)}")
-
-        if key_index < len(VALID_LAMPS):
-            key = VALID_LAMPS[key_index]
-            path = "guv_calcs.data.lamp_data"
-            fn = resources.files(path).joinpath(key.lower() + ".ies")
-            sn = resources.files(path).joinpath(key.lower() + ".csv")
-            kwargs.setdefault("filedata", fn)
-            kwargs.setdefault("spectra_source", sn)
-        else:
+        if key_index >= len(VALID_LAMPS):
             raise IndexError(
-                f"Only {len(VALID_LAMPS)} lamps are available. Available lamps: {VALID_LAMPS}"
+                f"Only {len(VALID_LAMPS)} lamps are available. "
+                f"Available lamps: {VALID_LAMPS}"
             )
-        if kwargs.get("lamp_id", None) is None:
-            kwargs.setdefault("lamp_id", key)
-        if (
-            kwargs.get("guv_type", None) is None
-            and kwargs.get("wavelength", None) is None
-        ):
-            kwargs.setdefault("guv_type", "Krypton chloride")
+        key = VALID_LAMPS[key_index]
+        kwargs = cls._prepare_from_key(key, kwargs)
         return cls(**kwargs)
 
     def get_calc_state(self):
@@ -390,15 +424,15 @@ class Lamp:
         """external method for loading relative intensity map after lamp object has been instantiated"""
         self.surface.load_intensity_map(intensity_map)
 
-    def save_ies(self, fname=None, original=False):
+    def save_ies(self, fname=None, original=False, precision=2):
         """
         Save the current lamp paramters as an .ies file; alternatively, save the original ies file.
         """
         if self.ies is not None:
             if original:
-                iesbytes = self._base_ies.write(which="orig")
+                iesbytes = self._base_ies.write(which="orig", precision=precision)
             else:
-                iesbytes = self.ies.write(which="orig")
+                iesbytes = self.ies.write(which="orig", precision=precision)
 
             # write to file if provided, otherwise
             if fname is not None:

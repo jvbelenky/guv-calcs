@@ -1,5 +1,6 @@
 import warnings
 import inspect
+import copy
 from .lamp import Lamp
 from .calc_zone import CalcPlane, CalcVol
 from .room_plotter import RoomPlotter
@@ -103,6 +104,39 @@ class Room:
         self.calc_state = {}
         self.update_state = {}
 
+    def _eq_dict(self):
+        data = self.to_dict()
+
+        # Strip volatile / representation-only fields from lamps
+        for lamp_data in data["lamps"].values():
+            lamp_data.pop("filedata", None)
+            lamp_data.pop("filename", None)
+
+        return data
+
+    def __eq__(self, other):
+        if not isinstance(other, Room):
+            return NotImplemented
+            
+        if self.lamps != other.lamps:
+            return False
+            
+        for lamp_id in self.lamps.keys():
+            if self.lamps[lamp_id] != other.lamps[lamp_id]:
+                return False        
+            
+        return self._eq_dict() == other._eq_dict()
+        
+    def __repr__(self):
+        return (f"Room(x={self.dim.x}, y={self.dim.y}, z={self.dim.z}, "
+            f"units='{self.units}', lamps={[k for k,v in self.lamps.items()]}, "
+            f"calc_zones={[k for k,v in self.calc_zones.items()]}), "
+            f"enable_reflectance={self.enable_reflectance}, "    
+            f"reflectances={self.ref_manager.reflectances}")
+            
+    def copy(self):
+        return copy.deepcopy(self)
+    
     def to_dict(self):
         data = {}
         data["x"] = self.dim.x
