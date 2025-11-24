@@ -98,6 +98,20 @@ class CalcZone(object):
         self.lamp_values_base = {}
         self.calc_state = None
 
+    def __eq__(self, other):
+        if not isinstance(other, CalcZone):
+            return NotImeplemented
+            
+        return self.to_dict() == other.to_dict()
+        
+    def __repr__(self):
+        return (
+            f"Calc{self.calctype}(id={self.zone_id!r}, name={self.name!r}, "
+            f"enabled={self.enabled}, "
+            f"dose={self.dose}, "
+            f"dose_hours={self.hours}, "
+            )
+
     def to_dict(self):
 
         data = {}
@@ -365,6 +379,14 @@ class CalcVol(CalcZone):
         self._update()
         self.values = np.zeros(self.num_points).astype("float32")
         self.reflected_values = np.zeros(self.num_points).astype("float32")
+
+    def __repr__(self):
+        return super().__repr__() + (
+            f"dimensions=(x=({self.x1},{self.x2}), y=({self.y1},{self.y2}), z=({self.z1},{self.z2})), "
+            f"grid={self.num_x}x{self.num_y}x{self.num_z}, "
+            f"offset={self.offset}, "
+            f"enabled={self.enabled})"
+        )
 
     def get_calc_state(self):
         """
@@ -702,6 +724,18 @@ class CalcPlane(CalcZone):
         self._update()
         self.values = np.zeros(self.num_points)
         self.reflected_values = np.zeros(self.num_points)
+
+    def __repr__(self):
+        a = self.ref_surface[0]
+        b = self.ref_surface[1]
+        return super().__repr__() + (
+            f"dimensions=({a}=({self.x1},{self.x2}), {b}=({self.y1},{self.y2})), "
+            f"height={self.height}, "
+            f"grid={self.num_x} x {self.num_y}, "
+            f"offset={self.offset}, "
+            f"field_of_view=({self.fov_horiz}° horiz, {self.fov_vert}° vert), "
+            f"flags=(vert={self.vert}, horiz={self.horiz}, dir={self.direction}), "
+        )
 
     @classmethod
     def from_vectors(cls, p0, pU, pV, **kwargs):
