@@ -257,9 +257,9 @@ class ReflectanceManager:
         managers = self._create_managers()
 
         # for storing the progressively increasing reflectance values
-        dct = {}
-        for wall, surface in self.surfaces.items():
-            dct[wall] = surface.plane.values
+        # dct = {}
+        # for wall, surface in self.surfaces.items():
+            # dct[wall] = surface.plane.values
 
         i = 0  # increases to self.max_num_passes
         percent = 1  # falls to self.threshold
@@ -275,9 +275,10 @@ class ReflectanceManager:
                 )
                 # print(surface.plane.reflected_values.shape)
 
-                dct[wall] += surface.plane.reflected_values
+                # dct[wall] += surface.plane.reflected_values
 
                 final = surface.plane.values.mean()
+                # print(i, wall, final-init)
                 if final > 0:
                     pc.append((abs(final - init) / final))
                 else:
@@ -285,9 +286,9 @@ class ReflectanceManager:
             percent = np.mean(pc)
             managers = self._update_managers(managers)
             i = i + 1
-        for wall, surface in self.surfaces.items():
-            # surface.plane.result.clear()
-            surface.plane.base_values = dct[wall]
+        # for wall, surface in self.surfaces.items():
+            # # surface.plane.result.clear()
+            # surface.plane.dummy = dct[wall]
             # surface.plane.values = dct[wall]
 
     def _update_managers(self, managers: dict) -> dict:
@@ -296,14 +297,19 @@ class ReflectanceManager:
             subwalls = list(manager.surfaces.keys())  # Create a static copy of keys
             for subwall in subwalls:
                 # Update the values without modifying the dictionary structure
-                np.copyto(
-                    manager.surfaces[subwall].plane.values,
-                    self.surfaces[subwall].plane.values,
-                )
+                # print(wall, subwall, manager.surfaces[subwall].plane.values.shape)
+                # np.copyto(
+                    # manager.surfaces[subwall].plane.result.base_values,
+                    # self.surfaces[subwall].plane.result.base_values,
+                # )
+                # np.copyto(
+                    # manager.surfaces[subwall].plane.result.reflected_values,
+                    # self.surfaces[subwall].plane.result.reflected_values,
+                # )
                 # create new plane
                 new_plane = copy.deepcopy(self.surfaces[subwall].plane)
                 # replace the total values with only the reflected values
-                new_plane.base_values = new_plane.reflected_values
+                # new_plane.dummy = new_plane.result.reflected_values
                 # Replace the object instead of deleting in-place
                 manager.surfaces[subwall] = ReflectiveSurface(
                     R=self.surfaces[subwall].R, plane=new_plane
