@@ -141,12 +141,14 @@ class Room:
         data["y"] = self.dim.y
         data["z"] = self.dim.z
         data["units"] = self.units
+        
         data["enable_reflectance"] = self.enable_reflectance
         data["reflectances"] = self.ref_manager.reflectances
         data["reflectance_x_spacings"] = self.ref_manager.x_spacings
         data["reflectance_y_spacings"] = self.ref_manager.y_spacings
         data["reflectance_max_num_passes"] = self.ref_manager.max_num_passes
         data["reflectance_threshold"] = self.ref_manager.threshold
+        
         data["standard"] = self.standard
         data["air_changes"] = self.air_changes
         data["ozone_decay_constant"] = self.ozone_decay_constant
