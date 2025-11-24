@@ -96,7 +96,7 @@ class ReflectanceManager:
             f"ReflectanceManager(dim=({self.x},{self.y},{self.z}), "
             f"R={self.reflectances}, "
             f"x_spacings={self.x_spacings}, "
-            f"y_spacings={self.y_spacings}, " 
+            f"y_spacings={self.y_spacings}, "
             f"passes={self.max_num_passes}, "
             f"threshold={self.threshold})"
         )
@@ -379,20 +379,14 @@ class ReflectiveSurface:
         self.plane = plane
         self.num_passes = 0  # init
         self.zone_dict = {}
-        
+
     def __eq__(self, other):
         if not isinstance(other, ReflectiveSurface):
             return NotImplemented
-        return (
-            self.R == other.R and
-            self.plane.to_dict() == other.plane.to_dict()
-        )
+        return self.R == other.R and self.plane.to_dict() == other.plane.to_dict()
 
     def __repr__(self):
-        return (
-            f"ReflectiveSurface(R={self.R:.3g}, "
-            f"surface={self.plane.__repr__()})"
-        )
+        return f"ReflectiveSurface(R={self.R:.3g}, " f"surface={self.plane.__repr__()})"
 
     def calculate_incidence(self, lamps, ref_manager=None, hard=False):
         """calculate incoming radiation onto all surfaces"""

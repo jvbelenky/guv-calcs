@@ -210,33 +210,31 @@ class Lamp:
 
     def _eq_dict(self):
         dct = self.to_dict()
-        dct.pop('filename')
-        dct.pop('filedata')               
+        dct.pop("filename")
+        dct.pop("filedata")
         return dct
 
     def __eq__(self, other):
         if not isinstance(other, Lamp):
             return NotImplemented
-        
+
         if self.ies.header != other.ies.header:
             return False
-            
+
         if self.ies.photometry != other.ies.photometry:
             return False
-        
+
         return self._eq_dict() == other._eq_dict()
-        
+
     def __repr__(self):
         # compact photometry tag
         if self.ies is None:
             phot = "None"
         else:
             p = self.ies.photometry
-            phot = (
-                f"Photometry(thetas={p.thetas.size}, phis={p.phis.size})"
-            )
-        spec = False if self.spectra is None else True        
-            
+            phot = f"Photometry(thetas={p.thetas.size}, phis={p.phis.size})"
+        spec = False if self.spectra is None else True
+
         return (
             f"Lamp(id={self.lamp_id!r}, name={self.name!r}, "
             f"pos=({self.pose.x:.3g}, {self.pose.y:.3g}, {self.pose.z:.3g}), "
@@ -250,7 +248,6 @@ class Lamp:
             f"source_density={self.surface.source_density}, "
             f"enabled={self.enabled})"
         )
-
 
     def to_dict(self):
         """
@@ -334,7 +331,6 @@ class Lamp:
             
         if kwargs.get("guv_type", None) is None and kwargs.get("wavelength", None) is None:
             kwargs.setdefault("guv_type", "krypton chloride") 
-
         return kwargs
 
     @classmethod

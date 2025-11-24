@@ -117,40 +117,42 @@ class Room:
     def __eq__(self, other):
         if not isinstance(other, Room):
             return NotImplemented
-            
+
         if self.lamps != other.lamps:
             return False
-            
+
         for lamp_id in self.lamps.keys():
             if self.lamps[lamp_id] != other.lamps[lamp_id]:
-                return False        
-            
+                return False
+
         return self._eq_dict() == other._eq_dict()
-        
+
     def __repr__(self):
-        return (f"Room(x={self.dim.x}, y={self.dim.y}, z={self.dim.z}, "
+        return (
+            f"Room(x={self.dim.x}, y={self.dim.y}, z={self.dim.z}, "
             f"units='{self.units}', lamps={[k for k,v in self.lamps.items()]}, "
             f"calc_zones={[k for k,v in self.calc_zones.items()]}), "
-            f"enable_reflectance={self.enable_reflectance}, "    
-            f"reflectances={self.ref_manager.reflectances}")
-            
+            f"enable_reflectance={self.enable_reflectance}, "
+            f"reflectances={self.ref_manager.reflectances}"
+        )
+
     def copy(self):
         return copy.deepcopy(self)
-    
+
     def to_dict(self):
         data = {}
         data["x"] = self.dim.x
         data["y"] = self.dim.y
         data["z"] = self.dim.z
         data["units"] = self.units
-        
+
         data["enable_reflectance"] = self.enable_reflectance
         data["reflectances"] = self.ref_manager.reflectances
         data["reflectance_x_spacings"] = self.ref_manager.x_spacings
         data["reflectance_y_spacings"] = self.ref_manager.y_spacings
         data["reflectance_max_num_passes"] = self.ref_manager.max_num_passes
         data["reflectance_threshold"] = self.ref_manager.threshold
-        
+
         data["standard"] = self.standard
         data["air_changes"] = self.air_changes
         data["ozone_decay_constant"] = self.ozone_decay_constant

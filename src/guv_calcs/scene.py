@@ -230,12 +230,12 @@ class Scene:
         """
         verify the positions of all objects in the scene and return any warning messages
         """
-        lamps, zones = {}, {} 
+        lamps, zones = {}, {}
         for lamp_id, lamp in self.lamps.items():
             lamps[lamp_id] = self._check_lamp_position(lamp)
         for zone_id, zone in self.calc_zones.items():
             zones[zone_id] = self._check_zone_position(zone)
-            
+
         msgs = {}
         msgs["lamps"] = lamps
         msgs["calc_zones"] = zones
@@ -313,7 +313,7 @@ class Scene:
     def _check_zone_position(self, calc_zone):
         if isinstance(calc_zone, (CalcPlane, CalcVol)):
             x, y, z = calc_zone.coords.T
-            dimensions = x.max(), y.max(), z.max()       
+            dimensions = x.max(), y.max(), z.max()
         elif isinstance(calc_zone, CalcZone):
             # this is a hack; a generic CalcZone is just a placeholder
             dimensions = self.dim.dimensions()

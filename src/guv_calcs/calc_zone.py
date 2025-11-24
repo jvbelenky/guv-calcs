@@ -100,17 +100,17 @@ class CalcZone(object):
 
     def __eq__(self, other):
         if not isinstance(other, CalcZone):
-            return NotImeplemented
-            
+            return NotImplemented
+
         return self.to_dict() == other.to_dict()
-        
+
     def __repr__(self):
         return (
             f"Calc{self.calctype}(id={self.zone_id!r}, name={self.name!r}, "
             f"enabled={self.enabled}, "
             f"dose={self.dose}, "
             f"dose_hours={self.hours}, "
-            )
+        )
 
     def to_dict(self):
 
@@ -774,7 +774,7 @@ class CalcPlane(CalcZone):
             height=height,
             ref_surface=ref_surface,
             direction=direction,
-            **kwargs
+            **kwargs,
         )
 
     def _get_basis(self):
