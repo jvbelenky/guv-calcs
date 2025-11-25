@@ -240,9 +240,7 @@ class CalcZone(object):
 
         if ref_manager is not None:
             # calculate reflectance -- warning, may be expensive!
-            ref_manager.calculate_reflectance(self, hard=hard)
-            # add in reflected values, if applicable
-            reflected_values = ref_manager.get_total_reflectance(self)
+            reflected_values = ref_manager.calculate_reflectance(self, hard=hard)
         else:
             reflected_values = np.zeros(self.geometry.num_points).astype("float32")
 

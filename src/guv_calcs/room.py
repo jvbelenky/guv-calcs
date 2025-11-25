@@ -257,7 +257,7 @@ class Room:
         """
 
         room_state = [
-            tuple(self.ref_manager.reflectances),
+            tuple(self.ref_manager.reflectances.values()),
             self.units,
         ]
 
