@@ -161,11 +161,9 @@ class VolGrid(RectGrid):
 
     @property
     def coords(self):
-        X, Y, Z = [
-            grid.reshape(-1) for grid in np.meshgrid(*self.points, indexing="ij")
-        ]
+        mesh = np.meshgrid(*self.points, indexing="ij")
+        X, Y, Z = [grid.reshape(-1) for grid in mesh]
         coords = np.array((X, Y, Z)).T
-
         return np.unique(coords, axis=0)
 
 
