@@ -6,11 +6,11 @@ from .axis import Axis1D
 
 @dataclass(frozen=True)
 class RectGrid:
-    mins: tuple
-    maxs: tuple
+    mins: tuple[float, ...]
+    maxs: tuple[float, ...]
     fallback_n_pts: int
-    spacing: tuple | None = None
-    n_pts: tuple | None = None
+    spacing: tuple[float, ...] | None = None
+    n_pts: tuple[int, ...] | None = None
     offset: bool = True
     _cache: dict = field(
         default_factory=dict,
@@ -74,6 +74,10 @@ class RectGrid:
     @property
     def dimensions(self):
         return tuple((axis.lo, axis.hi) for axis in self.axes)
+
+    @property
+    def spans(self):
+        return tuple(abs(axis.hi - axis.lo) for axis in self.axes)
 
     @property
     def x1(self):
@@ -142,6 +146,13 @@ class RectGrid:
     @property
     def zp(self):
         return self.points[2] if len(self.points) > 2 else None
+
+    def get_calc_state(self):
+        dims = tuple(val for dim in self.dimensions for val in dim)
+        return dims + tuple(self.spacings) + (self.offset,)
+
+    def get_update_state(self):
+        return ()
 
 
 @dataclass(frozen=True)
@@ -224,3 +235,9 @@ class PlaneGrid(RectGrid):
         basis = np.stack([u, v, n], axis=1)
 
         return basis
+
+    def get_calc_state(self):
+        return super().get_calc_state() + (self.height, self.ref_surface)
+
+    def get_update_state(self):
+        return super().get_update_state() + (self.direction,)

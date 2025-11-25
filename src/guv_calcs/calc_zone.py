@@ -135,16 +135,14 @@ class CalcZone(object):
     def get_calc_state(self):
         """if changes, these parameters indicate zone must be recalculated"""
         if self.geometry is None:
-            return None
-        return (
-            self.geometry.dimensions,
-            tuple(self.geometry.spacings),
-            self.geometry.offset,
-        )
+            return ()
+        return self.geometry.get_calc_state()
 
     def get_update_state(self):
         """if changes, calc zone needs updating but not recalculating"""
-        return ()
+        if self.geometry is None:
+            return ()
+        return self.geometry.get_update_state()
 
     @classmethod
     def from_dict(cls, data):
@@ -306,8 +304,8 @@ class CalcVol(CalcZone):
         )
         self.calctype = "Volume"
         self.geometry = VolGrid(
-            mins=(x1 or 0, y1 or 0, z1 or 0),
-            maxs=(x2 or 6, y2 or 4, z2 or 2.7),
+            mins=(x1 or 0.0, y1 or 0.0, z1 or 0.0),
+            maxs=(x2 or 6.0, y2 or 4.0, z2 or 2.7),
             n_pts=(num_x, num_y, num_z),
             spacing=(x_spacing, y_spacing, z_spacing),
             offset=True if offset is None else bool(offset),
@@ -344,32 +342,6 @@ class CalcVol(CalcZone):
             f"offset={self.offset}, "
             f"enabled={self.enabled})"
         )
-
-    def get_calc_state(self):
-        """
-        return a set of paramters that, if changed, indicate that
-        this calc zone must be recalculated
-        """
-        return [
-            self.geometry.offset,
-            self.geometry.x1,
-            self.geometry.x2,
-            self.geometry.y1,
-            self.geometry.y2,
-            self.geometry.z1,
-            self.geometry.z2,
-            self.geometry.x_spacing,
-            self.geometry.y_spacing,
-            self.geometry.z_spacing,
-        ]
-
-    def get_calc_state(self):
-        """if changes, calc zone needs recalculating"""
-        return super().get_calc_state() + ()
-
-    def get_update_state(self):
-        """if changes, calc zone needs updating but not recalculating"""
-        return ()
 
     def to_view(self):
         """take a snapshot of the zone's state"""
@@ -487,8 +459,8 @@ class CalcPlane(CalcZone):
         self.calctype = "Plane"
 
         self.geometry = PlaneGrid(
-            mins=(x1 or 0, y1 or 0),
-            maxs=(x2 or 6, y2 or 4),
+            mins=(x1 or 0.0, y1 or 0.0),
+            maxs=(x2 or 6.0, y2 or 4.0),
             n_pts=(num_x, num_y),
             spacing=(x_spacing, y_spacing),
             offset=True if offset is None else bool(offset),
@@ -578,13 +550,6 @@ class CalcPlane(CalcZone):
             ref_surface=ref_surface,
             direction=direction,
             **kwargs,
-        )
-
-    def get_calc_state(self):
-        """if changes, calc_zone needs recalculating"""
-        return super().get_calc_state() + (
-            self.geometry.height,
-            self.geometry.ref_surface,
         )
 
     def get_update_state(self):
