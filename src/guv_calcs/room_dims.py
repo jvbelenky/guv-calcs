@@ -9,11 +9,25 @@ class RoomDimensions:
     z: float
     units: str = "meters"
 
+    @property
     def volume(self) -> float:
         return self.x * self.y * self.z
 
+    @property
     def dimensions(self) -> np.ndarray:
         return np.array([self.x, self.y, self.z])
+
+    @property
+    def faces(self) -> dict:
+        # x1, x2, y1, y2, height, ref_surface, direction
+        return {
+            "floor": (0, self.x, 0, self.y, 0, "xy", 1),
+            "ceiling": (0, self.x, 0, self.y, self.z, "xy", -1),
+            "south": (0, self.x, 0, self.z, 0, "xz", 1),
+            "north": (0, self.x, 0, self.z, self.y, "xz", -1),
+            "west": (0, self.y, 0, self.z, 0, "yz", 1),
+            "east": (0, self.y, 0, self.z, self.x, "yz", -1),
+        }
 
     def with_(self, *, x=None, y=None, z=None, units=None):
         return replace(

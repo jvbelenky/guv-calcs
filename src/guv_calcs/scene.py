@@ -7,6 +7,7 @@ from .lamp import Lamp
 from .calc_zone import CalcZone, CalcPlane, CalcVol
 from .filters import FilterBase
 from .obstacles import BoxObstacle
+from .reflectance import ReflectiveSurface, init_room_surfaces
 from .lamp_helpers import new_lamp_position
 
 
@@ -21,15 +22,13 @@ class Scene:
 
         self.lamps: dict[str, Lamp] = {}
         self.calc_zones: dict[str, CalcZone] = {}
+        
         self.filters: dict[str, FilterBase] = {}
         self.obstacles: dict[str, BoxObstacle] = {}
 
-        # for generating unique IDs
-        self._lamp_counter = defaultdict(int)
-        self._zone_counter = defaultdict(int)
-        self._filter_counter = defaultdict(int)
-        self._obstacle_counter = defaultdict(int)
+        self.surfaces: dict[str, ReflectiveSurface] = {}
 
+    # ------------------------ Global --------------------------
     def add(self, *args, on_collision=None, unit_mode=None):
         """
         Add objects to the Scene.
@@ -48,6 +47,8 @@ class Scene:
                 self.add_filter(obj, on_collision=on_collision)
             elif isinstance(obj, BoxObstacle):
                 self.add_obstacle(obj, on_collision=on_collision)
+            elif isinstance(obj, ReflectiveSurface):
+                self.add_surface(obj, on_collision=on_collision)
             elif isinstance(obj, dict):
                 self.add(*obj.values(), on_collision=on_collision)
             elif isinstance(obj, Iterable) and not isinstance(obj, (str, bytes)):
@@ -58,6 +59,50 @@ class Scene:
                 msg = f"Cannot add object of type {type(obj).__name__} to Room."
                 warnings.warn(msg, stacklevel=3)
 
+    def update(
+        self,
+        dim: RoomDimensions,
+        standard: str,
+        preserve_spacing: bool = True,
+        unit_mode=None,
+    ):
+        """update the dimensions and any objects that depend on the dimensions"""
+        self.dim = dim
+        self.update_standard_zones(standard, preserve_spacing=preserve_spacing)
+        self.update_standard_surfaces()
+        self.to_units(unit_mode=unit_mode or self.unit_mode)
+
+    def set_colormap(self, colormap: str):
+        """Set the scene's colormap"""
+        if colormap not in list(colormaps):
+            warnings.warn(f"{colormap} is not a valid colormap.")
+        else:
+            self.colormap = colormap
+            for zone in self.calc_zones.values():
+                zone.colormap = self.colormap
+            for surface in self.surfaces.values():
+                surface.plane.colormap = self.colormap
+
+    def check_positions(self):
+        """
+        verify the positions of all objects in the scene and return any warning messages
+        """
+        lamps, zones, surfaces = {}, {}, {}
+        for lamp_id, lamp in self.lamps.items():
+            lamps[lamp_id] = self._check_lamp_position(lamp)
+        for zone_id, zone in self.calc_zones.items():
+            zones[zone_id] = self._check_zone_position(zone)
+        for surface_id, surface in self.surfaces.items():
+            surfaces[surface_id] = self._check_zone_position(surface.plane)
+
+        msgs = {}
+        msgs["lamps"] = lamps
+        msgs["calc_zones"] = zones
+        msgs["surfaces"] = surfaces
+        return msgs
+
+    # ------------------ Lamps -----------------------
+
     def add_lamp(self, lamp, base_id="Lamp", on_collision=None, unit_mode=None):
         """Add a lamp to the room"""
 
@@ -65,7 +110,6 @@ class Scene:
             mapping=self.lamps,
             obj_id=lamp.lamp_id,
             base_id=base_id,
-            counter=self._lamp_counter,
             on_collision=on_collision,
         )
         lamp.lamp_id = lamp_id
@@ -96,6 +140,21 @@ class Scene:
         """Remove a lamp from the scene"""
         self.lamps.pop(lamp_id, None)
 
+    def get_valid_lamps(self):
+        """return all the lamps that can participate in a calculation"""
+        return {
+            k: v for k, v in self.lamps.items() if v.enabled and v.filedata is not None
+        }
+
+    def to_units(self, unit_mode=None):
+        """
+        ensure that all lamps in the state have the correct units, or raise an error
+        in strict mode
+        """
+        for lamp in self.lamps.values():
+            self._check_lamp_units(lamp, unit_mode=unit_mode)
+
+    # -------------- Zones ------------------
     def add_calc_zone(self, zone, base_id=None, on_collision=None):
         """
         Add a calculation zone to the scene
@@ -107,7 +166,6 @@ class Scene:
             mapping=self.calc_zones,
             obj_id=zone.zone_id,
             base_id=base_id,
-            counter=self._zone_counter,
             on_collision=on_collision,
         )
         zone.zone_id = zone_id
@@ -226,34 +284,102 @@ class Scene:
                 preserve_spacing=preserve_spacing,
             )
 
-    def check_positions(self):
-        """
-        verify the positions of all objects in the scene and return any warning messages
-        """
-        lamps, zones = {}, {}
-        for lamp_id, lamp in self.lamps.items():
-            lamps[lamp_id] = self._check_lamp_position(lamp)
-        for zone_id, zone in self.calc_zones.items():
-            zones[zone_id] = self._check_zone_position(zone)
+    # ------------------- Surfaces ----------------------
 
-        msgs = {}
-        msgs["lamps"] = lamps
-        msgs["calc_zones"] = zones
-        return msgs
+    def add_surface(self, surface, base_id="Surface", on_collision=None):
+        """add a reflective surface to the room"""
+        surface_id = self._get_id(
+            mapping=self.surfaces,
+            obj_id=surface.plane.zone_id,
+            base_id=base_id,
+            on_collision=on_collision,
+        )
+        surface.plane.zone_id = surface_id
+        surface.plane.colormap = self.colormap
+        self.surfaces[surface_id] = self._check_surface(surface)
 
-    def get_valid_lamps(self):
-        """return all the lamps that can participate in a calculation"""
-        return {
-            k: v for k, v in self.lamps.items() if v.enabled and v.filedata is not None
-        }
+    def remove_surface(self, surface_id):
+        """remove reflective surface from the room"""
+        self.surfaces.pop(surface_id, None)
 
-    def to_units(self, unit_mode=None):
-        """
-        ensure that all lamps in the state have the correct units, or raise an error
-        in strict mode
-        """
-        for lamp in self.lamps.values():
-            self._check_lamp_units(lamp, unit_mode=unit_mode)
+    def init_standard_surfaces(
+        self,
+        reflectances=None,
+        x_spacings=None,
+        y_spacings=None,
+        num_x=None,
+        num_y=None,
+    ):
+        """add surfaces to the scene corresponding to the 6 faces of a rectangular room"""
+        room_surfaces = init_room_surfaces(
+            dims=self.dim,
+            reflectances=reflectances,
+            x_spacings=x_spacings,
+            y_spacings=y_spacings,
+            num_x=num_x,
+            num_y=num_y,
+        )
+        for key, val in room_surfaces.items():
+            self.add_surface(val)
+
+    def update_standard_surfaces(self):
+        """update the 6 faces of the room with the new dimensions"""
+        keys = self.dim.faces.keys()
+        room_surfaces = init_room_surfaces(
+            dims=self.dim,
+            reflectances={key: self.surfaces[key].R for key in keys},
+            x_spacings={key: self.surfaces[key].x_spacing for key in keys},
+            y_spacings={key: self.surfaces[key].y_spacing for key in keys},
+            num_x={key: self.surfaces[key].num_x for key in keys},
+            num_y={key: self.surfaces[key].num_y for key in keys},
+        )
+        for key, val in room_surfaces.items():
+            self.add_surface(val, on_collision="overwrite")
+
+    def set_reflectance(self, R, wall_id=None):
+        """set reflectance by wall_id or, if wall_if is None, to all walls"""
+        keys = self.surfaces.keys()
+        if wall_id is None:
+            # set this value for all walls
+            for wall in keys:
+                # self.reflectances[wall] = R
+                self.surfaces[wall].set_reflectance(R)
+        else:
+            if wall_id not in keys:
+                raise KeyError(f"wall_id must be in {keys}")
+            else:
+                # self.reflectances[wall_id] = R
+                self.surfaces[wall_id].set_reflectance(R)
+
+    def set_spacing(self, x_spacing=None, y_spacing=None, wall_id=None):
+        """set x and y spacing by wall_id or, if wall_if is None, to all walls"""
+        keys = self.surfaces.keys()
+        if wall_id is None:
+            # set this value for all walls
+            for wall in keys:
+                self.surfaces[wall_id].set_spacing(
+                    x_spacing=x_spacing, y_spacing=y_spacing
+                )
+        else:
+            if wall_id not in keys:
+                raise KeyError(f"wall_id must be in {keys}")
+            else:
+                self.surfaces[wall_id].set_spacing(
+                    x_spacing=x_spacing, y_spacing=y_spacing
+                )
+
+    def set_num_points(self, num_x=None, num_y=None, wall_id=None):
+        """set number of x and y points by wall_id or, if wall_if is None, to all walls"""
+        keys = self.surfaces.keys()
+        if wall_id is None:
+            for wall in keys:
+                # set for all walls
+                self.surfaces[wall_id].set_num_points(num_x=num_x, num_y=num_y)
+        else:
+            if wall_id not in keys:
+                raise KeyError(f"wall_id must be in {keys}")
+            else:
+                self.surfaces[wall_id].set_num_points(num_x=num_x, num_y=num_y)
 
     def set_colormap(self, colormap: str):
         """Set the scene's colormap"""
@@ -266,21 +392,63 @@ class Scene:
 
     # --------------------------- internals ----------------------------
 
-    def _get_id(self, mapping, obj_id, base_id, counter, on_collision=None):
-        """generate an ID for a lamp or calc zone object"""
+    def _get_id(self, mapping, obj_id, base_id, on_collision=None):
+        """Generate an ID for a lamp, zone, or surface object.
+
+        - If obj_id is None: generate a unique ID based on base_id.
+        - If obj_id is provided and not in mapping: use it as-is.
+        - If obj_id is provided and in mapping:
+            * 'error'      -> raise
+            * 'overwrite'  -> reuse obj_id
+            * 'increment'  -> generate a unique variant of obj_id
+        """
         policy = on_collision or self.on_collision
+
+        # No explicit id → generate from base_id
         if obj_id is None:
-            return self._unique_id(base_id, counter)
-        elif obj_id in mapping:
+            return self._unique_id(str(base_id), mapping)
+
+        obj_id = str(obj_id)
+
+        # Existing id
+        if obj_id in mapping:
             if policy == "error":
                 raise ValueError(f"'{obj_id}' already exists")
             elif policy == "overwrite":
-                return str(obj_id)  # does not bump unique_id counter
-        return self._unique_id(str(obj_id), counter)  # increment counter
+                # explicitly replace existing entry; no renaming
+                return obj_id
+            # default: increment policy → find a free variant of obj_id
+            return self._unique_id(obj_id, mapping)
 
-    def _unique_id(self, base: str, counter: defaultdict) -> str:
-        counter[base] += 1
-        return base if counter[base] == 1 else f"{base}-{counter[base]}"
+        # No collision → accept obj_id unchanged
+        return obj_id
+
+    def _unique_id(self, base: str, mapping: dict) -> str:
+        """
+        Return a unique id based on `base`, using existing keys in `mapping`.
+
+        - If `base` is unused, return `base`.
+        - Otherwise look for keys like `base`, `base-2`, `base-3`, ... and
+          return the next free suffix (e.g. 'Lamp-5' if Lamp, Lamp-2..Lamp-4 exist).
+        """
+        if base not in mapping:
+            return base
+
+        prefix = base + "-"
+        max_suffix = 1  # 1 corresponds to plain `base` being present
+
+        for key in mapping.keys():
+            if key == base:
+                max_suffix = max(max_suffix, 1)
+            elif key.startswith(prefix):
+                rest = key[len(prefix) :]
+                if rest.isdigit():
+                    n = int(rest)
+                    if n > max_suffix:
+                        max_suffix = n
+
+        # Next free number
+        return f"{base}-{max_suffix + 1}"
 
     def _check_lamp(self, lamp, unit_mode=None):
         """check lamp position and units"""
@@ -304,8 +472,14 @@ class Scene:
     def _check_zone(self, zone):
         if not isinstance(zone, (CalcZone, CalcPlane, CalcVol)):
             raise TypeError(f"Must be CalcZone, CalcPlane, or CalcVol not {type(zone)}")
-        # self._check_zone_position(zone)
+        self._check_zone_position(zone)
         return zone
+
+    def _check_surface(self, surface):
+        if not isinstance(surface, ReflectiveSurface):
+            raise TypeError(f"Must be ReflectiveSurface, not {type(surface)}")
+        self._check_zone_position(surface.plane)
+        return surface
 
     def _check_lamp_position(self, lamp):
         return self._check_position(lamp.position, lamp.name)
@@ -316,7 +490,7 @@ class Scene:
             dimensions = x.max(), y.max(), z.max()
         elif isinstance(calc_zone, CalcZone):
             # this is a hack; a generic CalcZone is just a placeholder
-            dimensions = self.dim.dimensions()
+            dimensions = self.dim.dimensions
         return self._check_position(dimensions, calc_zone.name)
 
     def _check_position(self, dimensions, obj_name):
@@ -324,7 +498,7 @@ class Scene:
         Method to check if an object's dimensions exceed the room's boundaries.
         """
         msg = None
-        for coord, roomcoord in zip(dimensions, self.dim.dimensions()):
+        for coord, roomcoord in zip(dimensions, self.dim.dimensions):
             if coord > roomcoord:
                 msg = f"{obj_name} exceeds room boundaries!"
                 warnings.warn(msg, stacklevel=2)
