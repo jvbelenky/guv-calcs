@@ -417,7 +417,7 @@ class SurfaceZoneCache:
 
 
 def init_room_surfaces(
-    dims: "RoomDimensions",
+    dims: RoomDimensions,
     reflectances: dict = None,
     x_spacings: dict = None,
     y_spacings: dict = None,

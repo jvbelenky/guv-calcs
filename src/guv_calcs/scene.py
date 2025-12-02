@@ -1,5 +1,4 @@
 from collections.abc import Iterable
-from collections import defaultdict
 import warnings
 from matplotlib import colormaps
 from .room_dims import RoomDimensions
@@ -59,18 +58,14 @@ class Scene:
                 msg = f"Cannot add object of type {type(obj).__name__} to Room."
                 warnings.warn(msg, stacklevel=3)
 
-    def update(
-        self,
-        dim: RoomDimensions,
-        standard: str,
-        preserve_spacing: bool = True,
-        unit_mode=None,
-    ):
+    def update_dimensions(self, x=None, y=None, z=None):
         """update the dimensions and any objects that depend on the dimensions"""
-        self.dim = dim
-        self.update_standard_zones(standard, preserve_spacing=preserve_spacing)
+        self.dim = self.dim.with_(x=x, y=y, z=z)
         self.update_standard_surfaces()
-        self.to_units(unit_mode=unit_mode or self.unit_mode)
+
+    def update_units(self, units, unit_mode=None):
+        self.dim = self.dim.with_(units=units)
+        self.to_units(unit_mode)
 
     def set_colormap(self, colormap: str):
         """Set the scene's colormap"""
@@ -328,10 +323,10 @@ class Scene:
         room_surfaces = init_room_surfaces(
             dims=self.dim,
             reflectances={key: self.surfaces[key].R for key in keys},
-            x_spacings={key: self.surfaces[key].x_spacing for key in keys},
-            y_spacings={key: self.surfaces[key].y_spacing for key in keys},
-            num_x={key: self.surfaces[key].num_x for key in keys},
-            num_y={key: self.surfaces[key].num_y for key in keys},
+            x_spacings={key: self.surfaces[key].plane.x_spacing for key in keys},
+            y_spacings={key: self.surfaces[key].plane.y_spacing for key in keys},
+            num_x={key: self.surfaces[key].plane.num_x for key in keys},
+            num_y={key: self.surfaces[key].plane.num_y for key in keys},
         )
         for key, val in room_surfaces.items():
             self.add_surface(val, on_collision="overwrite")
@@ -342,13 +337,11 @@ class Scene:
         if wall_id is None:
             # set this value for all walls
             for wall in keys:
-                # self.reflectances[wall] = R
                 self.surfaces[wall].set_reflectance(R)
         else:
             if wall_id not in keys:
                 raise KeyError(f"wall_id must be in {keys}")
             else:
-                # self.reflectances[wall_id] = R
                 self.surfaces[wall_id].set_reflectance(R)
 
     def set_spacing(self, x_spacing=None, y_spacing=None, wall_id=None):
@@ -357,7 +350,7 @@ class Scene:
         if wall_id is None:
             # set this value for all walls
             for wall in keys:
-                self.surfaces[wall_id].set_spacing(
+                self.surfaces[wall].set_spacing(
                     x_spacing=x_spacing, y_spacing=y_spacing
                 )
         else:
@@ -374,7 +367,7 @@ class Scene:
         if wall_id is None:
             for wall in keys:
                 # set for all walls
-                self.surfaces[wall_id].set_num_points(num_x=num_x, num_y=num_y)
+                self.surfaces[wall].set_num_points(num_x=num_x, num_y=num_y)
         else:
             if wall_id not in keys:
                 raise KeyError(f"wall_id must be in {keys}")

@@ -8,7 +8,7 @@ from .room_dims import RoomDimensions
 from .disinfection_calculator import DisinfectionCalculator
 from .reflectance import ReflectanceManager, ReflectiveSurface
 from .scene import Scene
-from .io import load_room, save_room, export_room_zip, generate_report
+from .io import load_room_data, save_room_data, export_room_zip, generate_report
 
 UNIT_DEFAULTS = {"meters": [6.0, 4.0, 2.7], "feet": [20.0, 13.0, 9.0]}
 VALID_UNITS = UNIT_DEFAULTS.keys()
@@ -31,11 +31,11 @@ class Room:
         units: str = "meters",
         standard: str = "ANSI IES RP 27.1-22 (ACGIH Limits)",
         enable_reflectance: bool = True,
-        reflectances: dict | None = None,
-        reflectance_x_spacings: dict | None = None,
-        reflectance_y_spacings: dict | None = None,
-        reflectance_num_x: dict | None = None,
-        reflectance_num_y: dict | None = None,
+        # reflectances: dict | None = None,
+        # reflectance_x_spacings: dict | None = None,
+        # reflectance_y_spacings: dict | None = None,
+        # reflectance_num_x: dict | None = None,
+        # reflectance_num_y: dict | None = None,
         reflectance_max_num_passes: int = 100,
         reflectance_threshold: float = 0.02,
         air_changes: float = 1.0,
@@ -51,12 +51,25 @@ class Room:
             raise KeyError(f"Invalid unit {units}")
         default = UNIT_DEFAULTS[units.lower()]
 
-        self.dim = RoomDimensions(
+        dim = RoomDimensions(
             x if x is not None else default[0],
             y if y is not None else default[1],
             z if z is not None else default[2],
             "meters" if units is None else units.lower(),
         )
+
+        ### Scene - dimensions, lamps, zones, and reflective surfaces
+        self.scene = Scene(
+            dim=dim,
+            on_collision=on_collision,
+            unit_mode=unit_mode,
+            colormap=colormap,
+        )
+        # may be overriden if loaded serially
+        self.scene.init_standard_surfaces()
+        self.surfaces = self.scene.surfaces
+        self.lamps = self.scene.lamps
+        self.calc_zones = self.scene.calc_zones
 
         ### Misc flags
         self.standard = standard
@@ -64,28 +77,8 @@ class Room:
         self.ozone_decay_constant = ozone_decay_constant
         self.precision = precision
 
-        ### Scene - lamps, zones, and reflective surfaces
-        self.scene = Scene(
-            dim=self.dim,
-            on_collision=on_collision,
-            unit_mode=unit_mode,
-            colormap=colormap,
-        )
-        # may be overriden by any registered surfaces
-        self.scene.init_standard_surfaces(
-            reflectances=reflectances,
-            x_spacings=reflectance_x_spacings,
-            y_spacings=reflectance_y_spacings,
-            num_x=reflectance_num_x,
-            num_y=reflectance_num_y,
-        )
-        self.lamps = self.scene.lamps
-        self.calc_zones = self.scene.calc_zones
-        self.surfaces = self.scene.surfaces
-
         ### Reflectance
         self.enable_reflectance = enable_reflectance
-
         self.ref_manager = ReflectanceManager(
             surfaces=self.surfaces,
             max_num_passes=reflectance_max_num_passes,
@@ -113,6 +106,7 @@ class Room:
         if not isinstance(other, Room):
             return NotImplemented
 
+        # are these two even necessary?
         if self.lamps != other.lamps:
             return False
 
@@ -134,6 +128,10 @@ class Room:
     def copy(self):
         return copy.deepcopy(self)
 
+    def save(self, fname=None):
+        """save all relevant parameters to a json file"""
+        return save_room_data(self, fname)
+
     def to_dict(self):
         data = {}
         data["x"] = self.dim.x
@@ -145,8 +143,8 @@ class Room:
         # data["reflectances"] = self.ref_manager.reflectances
         # data["reflectance_x_spacings"] = self.ref_manager.x_spacings
         # data["reflectance_y_spacings"] = self.ref_manager.y_spacings
-        # data["reflectance_max_num_passes"] = self.ref_manager.max_num_passes
-        # data["reflectance_threshold"] = self.ref_manager.threshold
+        data["reflectance_max_num_passes"] = self.ref_manager.max_num_passes
+        data["reflectance_threshold"] = self.ref_manager.threshold
 
         data["standard"] = self.standard
         data["air_changes"] = self.air_changes
@@ -163,36 +161,33 @@ class Room:
         return data
 
     @classmethod
+    def load(cls, filedata):
+        """load a room from a json object"""
+        dct = load_room_data(filedata)
+        return cls.from_dict(dct)
+
+    @classmethod
     def from_dict(cls, data: dict):
         """recreate a room from a dict"""
 
         room_kwargs = list(inspect.signature(cls.__init__).parameters.keys())[1:]
-        
-        # room has been created with default surfaces, they can be overwritten
+
         room = cls(**{k: v for k, v in data.items() if k in room_kwargs})
 
-        for surface_id, surface in data["surfaces"].items():
-            room.add_surface(ReflectiveSurface.from_dict(surface), on_collision='overwrite')
+        for surface_id, surface in data.get("surfaces", {}).items():
+            surf = ReflectiveSurface.from_dict(surface)
+            room.add_surface(surf, on_collision="overwrite")
 
-        for lampid, lamp in data["lamps"].items():
+        for lampid, lamp in data.get("lamps", {}).items():
             room.add_lamp(Lamp.from_dict(lamp))
 
-        for zoneid, zone in data["calc_zones"].items():
+        for zoneid, zone in data.get("calc_zones", {}).items():
             if zone["calctype"] == "Plane":
                 room.add_calc_zone(CalcPlane.from_dict(zone))
             elif zone["calctype"] == "Volume":
-                room.add_calc_zone(CalcVol.from_dict(zone))      
+                room.add_calc_zone(CalcVol.from_dict(zone))
 
         return room
-
-    def save(self, fname=None):
-        """save all relevant parameters to a json file"""
-        return save_room(self, fname)
-
-    @classmethod
-    def load(cls, filedata):
-        """load a room from a json object"""
-        return load_room(filedata)
 
     def export_zip(
         self,
@@ -298,8 +293,8 @@ class Room:
     def set_standard(self, standard, preserve_spacing=True):
         """update the photobiological safety standard the Room is subject to"""
         self.standard = standard
-        self.scene.update(
-            dim=self.dim, standard=self.standard, preserve_spacing=preserve_spacing
+        self.scene.update_standard_zones(
+            standard=self.standard, preserve_spacing=preserve_spacing
         )
         return self
 
@@ -350,35 +345,39 @@ class Room:
         """set room units"""
         if units.lower() not in VALID_UNITS:
             raise KeyError("Valid units are `meters` or `feet`")
-        self.dim = self.dim.with_(units=units)
-        self.scene.update(
-            self.dim, preserve_spacing=preserve_spacing, unit_mode=unit_mode
+        self.scene.update_units(units, unit_mode=unit_mode)
+        self.scene.update_standard_zones(
+            standard=self.standard, preserve_spacing=preserve_spacing
         )
         return self
 
     def set_dimensions(self, x=None, y=None, z=None, preserve_spacing=True):
         """set room dimensions"""
-        self.dim = self.dim.with_(x=x, y=y, z=z)
-        self.scene.update(
-            dim=self.dim, standard=self.standard, preserve_spacing=preserve_spacing
+        self.scene.update_dimensions(x=x, y=y, z=z)
+        self.scene.update_standard_zones(
+            standard=self.standard, preserve_spacing=preserve_spacing
         )
         return self
 
     @property
+    def dim(self) -> RoomDimensions:
+        return self.scene.dim
+
+    @property
     def units(self) -> str:
-        return self.dim.units
+        return self.scene.dim.units
 
     @property
     def x(self) -> float:
-        return self.dim.x
+        return self.scene.dim.x
 
     @property
     def y(self) -> float:
-        return self.dim.y
+        return self.scene.dim.y
 
     @property
     def z(self) -> float:
-        return self.dim.z
+        return self.scene.dim.z
 
     @units.setter
     def units(self, value: str):
@@ -398,11 +397,11 @@ class Room:
 
     @property
     def dimensions(self) -> tuple[float, float, float]:
-        return (self.dim.x, self.dim.y, self.dim.z)
+        return (self.scene.dim.x, self.scene.dim.y, self.scene.dim.z)
 
     @property
     def volume(self) -> float:
-        return self.dim.volume
+        return self.scene.dim.volume
 
     # -------------------- Scene: lamps, zones, surfaces ---------------------
 

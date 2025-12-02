@@ -6,29 +6,51 @@ import json
 import zipfile
 import io
 import csv
+from packaging.version import Version
 import plotly.io as pio
 from plotly.graph_objs._figure import Figure as plotly_fig
 from matplotlib.figure import Figure as mpl_fig
+from .room_dims import RoomDimensions
 
 # -------------- Loading a room from file -------------------
 
 
-def load_room(filedata):
+def load_room_data(filedata):
     """
     TODO: wow this is hideous this should really just be a class method
     load a room object from json filedata
     """
-    from .room import Room
+    # from .room import Room
 
     load_data = _parse_loadfile(filedata)
     saved_version = load_data["guv-calcs_version"]
     current_version = get_version(Path(__file__).parent / "_version.py")
     if saved_version != current_version:
-        warnings.warn(
-            f"This file was saved with guv-calcs {saved_version}, while you have {current_version} installed."
-        )
+        msg = f"This file was saved with guv-calcs {saved_version}, while you have {current_version} installed."
+        warnings.warn(msg)
+
     room_dict = load_data["data"]
-    return Room.from_dict(room_dict)
+
+    if Version(saved_version) < Version("0.4.33"):
+        from .reflectance import init_room_surfaces
+
+        # reserialize reflective surfaces for older schema versions
+        dims = RoomDimensions(
+            x=room_dict.get("x"),
+            y=room_dict.get("y"),
+            z=room_dict.get("z"),
+        )
+        surfaces = init_room_surfaces(
+            dims=dims,
+            reflectances=room_dict.get("reflectances", None),
+            x_spacings=room_dict.get("x_spacings", None),
+            y_spacings=room_dict.get("y_spacings", None),
+        )
+        room_dict["surfaces"] = {}
+        for key, val in surfaces.items():
+            room_dict["surfaces"][key] = val.to_dict()
+
+    return room_dict
 
 
 def _parse_loadfile(filedata):
@@ -63,7 +85,7 @@ def _load_file(path):
     return dct
 
 
-def save_room(room, fname):
+def save_room_data(room, fname):
     """save all relevant parameters to a json file"""
     savedata = {}
     version = get_version(Path(__file__).parent / "_version.py")
