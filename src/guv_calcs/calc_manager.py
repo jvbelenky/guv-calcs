@@ -1,5 +1,5 @@
 import numpy as np
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
 # import matplotlib.pyplot as plt
 from copy import deepcopy
@@ -9,27 +9,48 @@ from .units import convert_units
 
 
 @dataclass(frozen=True)
+class LampCacheEntry:
+    base_values: np.ndarray | None
+    values: np.ndarray | None
+    calc_state: tuple | None
+    update_state: tuple | None
+
+
+@dataclass(frozen=True)
 class ZoneCache:
-    lamp_values_base: dict = field(default_factory=dict)
-    lamp_values: dict = field(default_factory=dict)
+    lamp_cache: dict = field(default_factory=dict)
     calc_state: tuple | None = None
     update_state: tuple | None = None
 
-    def update(self, **changes):
-        return replace(self, **changes)
+    def needs_recalc(self, calc_state, lamp_id, lamp_calc_state):
+        if calc_state != self.calc_state:
+            return True  # zone has changed
+        if self.lamp_cache.get(lamp_id) is None:
+            return True  # new lamp
+        if self.lamp_cache.get(lamp_id).calc_state != lamp_calc_state:
+            return True  # lamp has changed
+        return False
 
-    @classmethod
-    def clear(cls):
-        return cls()
+    def needs_update(self, update_state, lamp_id, lamp_update_state):
+        if update_state != self.update_state:
+            return True  # zone has changed
+        if self.lamp_cache.get(lamp_id) is None:
+            return True  # new lamp
+        if self.lamp_cache.get(lamp_id).update_state != lamp_update_state:
+            return True
+        return False
 
-    def needs_recalc(self, calc_state):
-        return calc_state != self.calc_state
+    def base_values(self, lamp_id):
+        entry = self.lamp_cache.get(lamp_id)
+        if entry is not None:
+            return entry.base_values
+        return None
 
-    def needs_update(self, update_state):
-        return update_state != self.update_state
-
-    def new_lamp(self, lamp_id):
-        return self.lamp_values_base.get(lamp_id) is None
+    def values(self, lamp_id):
+        entry = self.lamp_cache.get(lamp_id)
+        if entry is not None:
+            return entry.values
+        return None
 
 
 class LightingCalculator:
@@ -46,44 +67,43 @@ class LightingCalculator:
         """
 
         if len(lamps) == 0:
-            self.cache = self.cache.clear()
+            self.cache = ZoneCache()
             return np.zeros(zv.num_points, dtype="float32")
 
-        # this will only recalculate if the lamp has changed
-        lamp_values_base = {}
+        lamp_cache = {}
         for lamp_id, lamp in lamps.items():
-            result = self.calculate_lamp(lamp, zv, hard=hard)
-            lamp_values_base[lamp_id] = result
-
-        # this step is always cheap
-        lamp_values = {}
-        for lamp_id, values in lamp_values_base.items():
-            result = self.apply_filters(lamps[lamp_id], values.copy(), zv)
-            lamp_values[lamp_id] = result
-
-        # sum across lamp values
-        base_values = self.aggregate(lamps, lamp_values, zv)
-
+            # potentially expensive
+            base_values = self.calculate_lamp(lamp, zv, hard=hard)
+            # always cheap
+            values = self.apply_filters(lamp, base_values.copy(), zv)
+            lamp_cache[lamp_id] = LampCacheEntry(
+                base_values=base_values,
+                values=values,
+                calc_state=lamp.calc_state,
+                update_state=lamp.update_state,
+            )
         # update cache
-        self.cache = self.cache.update(
-            lamp_values_base=lamp_values_base,
-            lamp_values=lamp_values,
+        self.cache = ZoneCache(
+            lamp_cache=lamp_cache,
             calc_state=zv.calc_state,
             update_state=zv.update_state,
         )
 
-        return base_values
+        # sum across lamp values
+        return self.aggregate(lamps, zv)
 
     def calculate_lamp(self, lamp, zv, hard: bool):
         """
         Calculate the zone values for a single lamp
         """
 
-        NEW_LAMP = self.cache.new_lamp(lamp.lamp_id)
-        LAMP_RECALC = lamp.calc_state != lamp.get_calc_state()
-        ZONE_RECALC = self.cache.needs_recalc(zv.calc_state)
+        RECALC = self.cache.needs_recalc(
+            calc_state=zv.calc_state,
+            lamp_id=lamp.lamp_id,
+            lamp_calc_state=lamp.calc_state,
+        )
 
-        if hard or NEW_LAMP or LAMP_RECALC or ZONE_RECALC:
+        if hard or RECALC:
             # get coords
             rel_coords = zv.coords - lamp.surface.position
             Theta, Phi, R = lamp.transform_to_lamp(rel_coords, which="polar")
@@ -103,8 +123,8 @@ class LightingCalculator:
 
             return values.astype("float32")
         # if no recalculation required use cached version
-        return self.cache.lamp_values_base[lamp.lamp_id]
-        
+        return self.cache.base_values(lamp.lamp_id)
+
     def apply_filters(self, lamp, values, zv):
         # apply measured correction filters
         if filters is not None:
@@ -161,15 +181,6 @@ class LightingCalculator:
 
         return values.reshape(*zv.num_points)
 
-    def aggregate(self, lamps, lamp_values, zv):
-        """sum across lamp_values"""
-
-        if zv.is_plane() and zv.fov_horiz < 360 and len(lamps) > 1:
-            base_values = self.calculate_horizontal_fov(lamps, lamp_values, zv)
-        else:
-            base_values = sum(lamp_values.values())
-        return base_values.reshape(*zv.num_points).astype("float32")
-
     def calculate_nearfield(self, lamp, R, values, zv):
         """
         calculate the values within the photometric distance
@@ -200,6 +211,17 @@ class LightingCalculator:
 
         return values
 
+    def aggregate(self, lamps, zv):
+        """sum across lamp_values"""
+
+        lamp_values = [self.cache.values(lamp_id) for lamp_id in lamps.keys()]
+
+        if zv.is_plane() and zv.fov_horiz < 360 and len(lamps) > 1:
+            base_values = self.calculate_horizontal_fov(lamps, lamp_values, zv)
+        else:
+            base_values = sum(lamp_values)
+        return base_values.reshape(*zv.num_points).astype("float32")
+
     def calculate_horizontal_fov(self, lamps, lamp_values, zv):
         """
         Vectorized function to compute the largest possible value for all lamps
@@ -224,8 +246,7 @@ class LightingCalculator:
         adjacency = diffs <= zv.fov_horiz / 2  # Shape (N, M, M)
 
         # current values to be transformed
-        vals = lamp_values.values()
-        values = np.array([val.reshape(-1) for val in vals]).T
+        values = np.array([val.reshape(-1) for val in lamp_values]).T
         # Sum the values for all connected components (using the adjacency mask)
         value_sums = adjacency @ values[:, :, None]  # Shape (N, M, 1)
         # Remove the last singleton dimension,

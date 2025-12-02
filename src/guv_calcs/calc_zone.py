@@ -132,17 +132,19 @@ class CalcZone(object):
 
         raise AttributeError(name)
 
-    def get_calc_state(self):
+    @property
+    def calc_state(self):
         """if changes, these parameters indicate zone must be recalculated"""
         if self.geometry is None:
             return ()
-        return self.geometry.get_calc_state()
+        return self.geometry.calc_state
 
-    def get_update_state(self):
+    @property
+    def update_state(self):
         """if changes, calc zone needs updating but not recalculating"""
         if self.geometry is None:
             return ()
-        return self.geometry.get_update_state()
+        return self.geometry.update_state
 
     @classmethod
     def from_dict(cls, data):
@@ -235,7 +237,6 @@ class CalcZone(object):
         if self.calctype == "Zone":
             return None
 
-        # updates self.lamp_values_base and self.lamp_values
         base_values = self.calculator.compute(lamps=lamps, zv=self.to_view(), hard=hard)
 
         if ref_manager is not None:
@@ -246,8 +247,6 @@ class CalcZone(object):
 
         self.result.base_values = base_values
         self.result.reflected_values = reflected_values
-
-        self.calc_state = self.get_calc_state()
 
         return self.get_values()
 
@@ -346,8 +345,8 @@ class CalcVol(CalcZone):
         return ZoneView(
             coords=self.geometry.coords,
             num_points=self.geometry.num_points,
-            calc_state=self.get_calc_state(),
-            update_state=self.get_update_state(),
+            calc_state=self.calc_state,
+            update_state=self.update_state,
             calctype=self.calctype,
         )
 
@@ -550,9 +549,10 @@ class CalcPlane(CalcZone):
             **kwargs,
         )
 
-    def get_update_state(self):
+    @property
+    def update_state(self):
         """if changes, calc_zone needs updating but not recalculating"""
-        return super().get_update_state() + (
+        return super().update_state + (
             self.fov_vert,
             self.fov_horiz,
             self.vert,
@@ -565,8 +565,8 @@ class CalcPlane(CalcZone):
         return ZoneView(
             coords=self.geometry.coords,
             num_points=self.geometry.num_points,
-            calc_state=self.get_calc_state(),
-            update_state=self.get_update_state(),
+            calc_state=self.calc_state,
+            update_state=self.update_state,
             calctype=self.calctype,
             fov_vert=self.fov_vert,
             fov_horiz=self.fov_horiz,

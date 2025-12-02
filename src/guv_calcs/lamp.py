@@ -202,10 +202,6 @@ class Lamp:
         # plotting
         self.plotter = LampPlotter(self)
 
-        # state
-        self.calc_state = None
-        self.update_state = None
-
     # ------------------------ Basics ------------------------------
 
     def _eq_dict(self):
@@ -354,7 +350,8 @@ class Lamp:
         kwargs = cls._prepare_from_key(key, kwargs)
         return cls(**kwargs)
 
-    def get_calc_state(self):
+    @property
+    def calc_state(self):
         """
         return a set of paramters that, if changed, indicate that
         this lamp must be recalculated
@@ -365,8 +362,8 @@ class Lamp:
             if self.surface.intensity_map_orig is not None
             else None
         )
-        return [
-            self.filedata,
+        return (
+            self.filedata,  # replace with photometry hash?
             self.x,
             self.y,
             self.z,
@@ -381,10 +378,11 @@ class Lamp:
             self.surface.source_density,  # ""
             intensity_map_orig,
             self.scaling_factor,
-        ]
+        )
 
-    def get_update_state(self):
-        return [self.intensity_units]
+    @property
+    def update_state(self):
+        return (self.intensity_units,)
 
     # ----------------------- IO ------------------------------------
 

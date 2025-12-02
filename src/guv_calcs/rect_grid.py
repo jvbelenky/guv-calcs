@@ -147,11 +147,13 @@ class RectGrid:
     def zp(self):
         return self.points[2] if len(self.points) > 2 else None
 
-    def get_calc_state(self):
+    @property
+    def calc_state(self):
         dims = tuple(val for dim in self.dimensions for val in dim)
         return dims + tuple(self.spacings) + (self.offset,)
 
-    def get_update_state(self):
+    @property
+    def update_state(self):
         return ()
 
 
@@ -235,7 +237,7 @@ class PlaneGrid(RectGrid):
         return basis
 
     def get_calc_state(self):
-        return super().get_calc_state() + (self.height, self.ref_surface)
+        return super().calc_state + (self.height, self.ref_surface)
 
     def get_update_state(self):
-        return super().get_update_state() + (self.direction,)
+        return super().update_state + (self.direction,)
