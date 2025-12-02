@@ -14,6 +14,8 @@ class Axis1D:
     def __post_init__(self):
         self._check_spacing(self.spacing_init)
         self._check_n_pts(self.n_pts_init)
+        # print(self.spacing_init,self.n_pts_init)
+        # print(self.spacing, self.n_pts)
 
     @property
     def span(self):
@@ -64,11 +66,11 @@ class Axis1D:
         if spacing > 0 and int(self.span / spacing) == int(num):
             return spacing  # no changes needed
         else:
-            testval = self.span / round(num)
+            testval = self.span / num
             i = 1
             while i < 6:
                 val = round(testval, i)
-                if val != 0 and int(self.span / round(testval, i) + 1) == num:
+                if val != 0 and int(self.span / val) == int(num):
                     break
                 i += 1
                 val = testval  # if no rounded value works use the original value
