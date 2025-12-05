@@ -4,18 +4,30 @@ from dataclasses import dataclass
 
 @dataclass(slots=True, frozen=True)
 class Axis1D:
+    """
+    lo: float, default = 0
+        coordinate start point
+    hi: float, default = 5
+        coordinate end point
+    spacing_init: float, default = None
+        desired spacing between points. will override num_points_init. If None,
+        first num_points_init will be used, then defaults generated.
+    num_points_init: desired number of points
+    offset: if true, the points will be centered between lo and hi. If false,
+
+    """
+
     lo: float = 0  # lower bound
     hi: float = 5  # upper bound
-    spacing_init: float | None = None  # spacing - will override n_pts
-    n_pts_init: int | None = None  # alternatively, specify point count
+    spacing_init: float | None = None  # spacing - will override num_points
+    num_points_init: int | None = None  # alternatively, specify point count
     offset: bool = True  # centre the grid inside [lo, hi]
-    fallback_n_pts: int = 30
 
     def __post_init__(self):
         self._check_spacing(self.spacing_init)
-        self._check_n_pts(self.n_pts_init)
-        # print(self.spacing_init,self.n_pts_init)
-        # print(self.spacing, self.n_pts)
+        self._check_num_points(self.num_points_init)
+        # print(self.spacing_init,self.num_points_init)
+        # print(self.spacing, self.num_points)
 
     @property
     def span(self):
@@ -23,14 +35,15 @@ class Axis1D:
 
     @property
     def default_spacing(self):
+        # define a
         if self.span == 0.0:
             return 0.0
-        n = max(1, min(int(self.span * 10), self.fallback_n_pts))
+        n = max(1, min(int(self.span * 10), 30))
         sigfigs = -int(np.floor(np.log10(self.span / n)))
         return round(self.span / n, sigfigs)
 
     @property
-    def default_n_pts(self):
+    def default_num_points(self):
         if self.span == 0:
             return 1
         return int(round(self.span / self.default_spacing))
@@ -41,21 +54,28 @@ class Axis1D:
 
     @property
     def spacing(self):
+        """
+        either initial value passsed, derived from initial num_points value,
+        or from default num_points value
+        """
         if self.spacing_init is None:
-            n_pts = self.n_pts_init or self.default_n_pts
-            return self._set_spacing(n_pts, self.default_spacing)
+            # if not provided, derive from num_points (or default num_points)
+            num_points = self.num_points_init or self.default_num_points
+            return self._set_spacing(num_points, self.default_spacing)
         return self.spacing_init
 
     @property
-    def n_pts(self):
+    def num_points(self):
         if self.spacing_init is None:
-            return self.n_pts_init or self.default_n_pts
+            return self.num_points_init or self.default_num_points
         else:
             return int(round(self.span / self.spacing_init))
 
     @property
     def points(self):
-        pts = np.array([i * self.spacing + self.offset_val for i in range(self.n_pts)])
+        pts = np.array(
+            [i * self.spacing + self.offset_val for i in range(self.num_points)]
+        )
         if self.offset:
             pts += (self.span - abs(pts[-1] - pts[0])) / 2
         return pts
@@ -81,7 +101,7 @@ class Axis1D:
             if spacing > self.span:
                 raise ValueError("Spacing value cannot be larger than dimension")
 
-    def _check_n_pts(self, n_pts):
-        if n_pts is not None:
-            if n_pts < 1:
-                raise ValueError("n_pts_init must be positive integer")
+    def _check_num_points(self, num_points):
+        if num_points is not None:
+            if num_points < 1:
+                raise ValueError("num_points_init must be positive integer")
