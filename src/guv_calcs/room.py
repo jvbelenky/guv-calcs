@@ -31,11 +31,6 @@ class Room:
         units: str = "meters",
         standard: str = "ANSI IES RP 27.1-22 (ACGIH Limits)",
         enable_reflectance: bool = True,
-        # reflectances: dict | None = None,
-        # reflectance_x_spacings: dict | None = None,
-        # reflectance_y_spacings: dict | None = None,
-        # reflectance_num_x: dict | None = None,
-        # reflectance_num_y: dict | None = None,
         reflectance_max_num_passes: int = 100,
         reflectance_threshold: float = 0.02,
         air_changes: float = 1.0,
@@ -78,11 +73,11 @@ class Room:
         self.precision = precision
 
         ### Reflectance
-        self.enable_reflectance = enable_reflectance
         self.ref_manager = ReflectanceManager(
             surfaces=self.surfaces,
             max_num_passes=reflectance_max_num_passes,
             threshold=reflectance_threshold,
+            enabled=enable_reflectance,
         )
 
         ### Plotting and data extraction
@@ -121,7 +116,7 @@ class Room:
             f"Room(x={self.dim.x}, y={self.dim.y}, z={self.dim.z}, "
             f"units='{self.units}', lamps={[k for k,v in self.lamps.items()]}, "
             f"calc_zones={[k for k,v in self.calc_zones.items()]}), "
-            f"enable_reflectance={self.enable_reflectance}, "
+            f"enable_reflectance={self.ref_manager.enabled}, "
             f"reflectances={self.ref_manager.reflectances}"
         )
 
@@ -139,10 +134,9 @@ class Room:
         data["z"] = self.dim.z
         data["units"] = self.units
 
-        data["enable_reflectance"] = self.enable_reflectance
-        # data["reflectances"] = self.ref_manager.reflectances
-        # data["reflectance_x_spacings"] = self.ref_manager.x_spacings
-        # data["reflectance_y_spacings"] = self.ref_manager.y_spacings
+        # this should probably come from a reflectance manager to_dict
+        # reflectance manager maybe should also own enable_reflectance?
+        data["enable_reflectance"] = self.ref_manager.enabled
         data["reflectance_max_num_passes"] = self.ref_manager.max_num_passes
         data["reflectance_threshold"] = self.ref_manager.threshold
 
@@ -236,11 +230,8 @@ class Room:
         calc_state = {}
         calc_state["lamps"] = lamp_state
         calc_state["calc_zones"] = zone_state
-<<<<<<< HEAD
         calc_state["filters"] = filter_state
-=======
-        calc_state["reflectance"] = ref_state
->>>>>>> c66aa8e (overhaul of how reflective surfaces are handled + update to scene unique id generation)
+        calc_state["reflectance"] = self.ref_manager.calc_state
 
         return calc_state
 
@@ -275,7 +266,7 @@ class Room:
     def recalculate_incidence(self) -> bool:
         """
         TODO: possibly should be off in the ref_manager
-        true of incident reflections need recalculation
+        true if incident reflections need recalculation
         """
         new_calc_state = self.get_calc_state()
         new_update_state = self.get_update_state()
@@ -299,6 +290,11 @@ class Room:
         return self
 
     # --------------------- Reflectance ----------------------
+
+    def enable_reflectance(self, val):
+        """enable/disable reflectance"""
+        self.ref_manager.enabled = val
+        return self
 
     def set_reflectance(self, R, wall_id=None):
         """
@@ -464,7 +460,6 @@ class Room:
         self.scene.remove_calc_zone(zone_id)
         return self
 
-<<<<<<< HEAD
     def add_filter(self, filt, on_collision=None):
         """Add a measured correction filter to the room"""
         self.scene.add_filter(filt=filt, on_collision=on_collision)
@@ -473,14 +468,13 @@ class Room:
     def remove_filter(self, filt_id):
         """remove a measured correction filter from the room"""
         self.scene.remove_filter(filt_id)
-=======
+        
     def add_surface(self, surface, on_collision=None):
         self.scene.add_surface(surface, on_collision=on_collision)
         return self
 
     def remove_surface(self, surface_id):
         self.scene.remove_surface(surface_id)
->>>>>>> c66aa8e (overhaul of how reflective surfaces are handled + update to scene unique id generation)
         return self
 
     def set_colormap(self, colormap):
@@ -514,9 +508,10 @@ class Room:
 
         valid_lamps = self.scene.get_valid_lamps()
         # calculate incidence on the surfaces if the reflectances or lamps have changed
-        if (self.recalculate_incidence or hard) and self.enable_reflectance:
+        if self.recalculate_incidence or hard:
             self.ref_manager.calculate_incidence(valid_lamps, hard=hard)
 
+<<<<<<< HEAD
         ref_manager = self.ref_manager if self.enable_reflectance else None
 
         # calculate incidence on any correction filters
@@ -533,6 +528,12 @@ class Room:
                     obstacles=self.obstacles,
                     hard=hard,
                 )
+=======
+        for name, zone in self.calc_zones.items():
+            zone.calculate_values(
+                lamps=valid_lamps, ref_manager=self.ref_manager, hard=hard
+            )
+>>>>>>> a1bb196 (move the enabling flag to reflectance module)
         # update calc states.
         self.calc_state = self.get_calc_state()
         self.update_state = self.get_update_state()
@@ -552,11 +553,10 @@ class Room:
         if len(valid_lamps) > 0:
 
             # calculate incidence on the surfaces if the reflectances or lamps have changed
-            if (self.recalculate_incidence or hard) and self.enable_reflectance:
+            if self.recalculate_incidence or hard:
                 self.ref_manager.calculate_incidence(valid_lamps, hard=hard)
-            ref_manager = self.ref_manager if self.enable_reflectance else None
             self.calc_zones[zone_id].calculate_values(
-                lamps=valid_lamps, ref_manager=ref_manager, hard=hard
+                lamps=valid_lamps, ref_manager=self.ref_manager, hard=hard
             )
             self.calc_state = self.get_calc_state()
             self.update_state = self.get_update_state()
