@@ -113,10 +113,22 @@ class Scene:
         self.lamps[lamp_id] = self._check_lamp(lamp, unit_mode=unit_mode)
         return self
 
-    def place_lamp(self, lamp, on_collision=None, unit_mode=None):
+    def place_lamp(self, lamp_arg, on_collision=None, unit_mode=None):
         """
         Position a lamp as far from other lamps and the walls as possible
         """
+        # ok I'm adding this as a convenience
+        if isinstance(lamp_arg, Lamp):
+            lamp = lamp_arg
+        elif isinstance(lamp_arg, str):
+            lamp = Lamp.from_keyword(lamp_arg)
+        elif isinstance(lamp_arg, int):
+            lamp = Lamp.from_index(lamp_arg)
+        else:
+            raise TypeError(
+                f"{type(lamp_arg)} is not a valid Lamp or method of generating a Lamp"
+            )
+
         idx = len(self.lamps) + 1
         x, y = new_lamp_position(idx, self.dim.x, self.dim.y)
         lamp.move(x, y, self.dim.z)
@@ -260,14 +272,14 @@ class Scene:
             zone.set_dimensions(
                 x2=self.dim.x, y2=self.dim.y, preserve_spacing=preserve_spacing
             )
-            zone.set_height(height)
+            zone.update_from_legacy(height=height, ref_surface="xy", direction=1)
             zone.horiz = skin_horiz
         if "EyeLimits" in self.calc_zones.keys():
             zone = self.calc_zones["EyeLimits"]
             zone.set_dimensions(
                 x2=self.dim.x, y2=self.dim.y, preserve_spacing=preserve_spacing
             )
-            zone.set_height(height)
+            zone.update_from_legacy(height=height, ref_surface="xy", direction=1)
             zone.fov_vert = fov_vert
             zone.vert = eye_vert
         if "WholeRoomFluence" in self.calc_zones.keys():
