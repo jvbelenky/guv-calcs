@@ -6,10 +6,12 @@ from .calc_manager import LightingCalculator
 from .rect_grid import VolGrid, PlaneGrid
 from .calc_zone_io import export_plane, export_volume
 from .calc_zone_plot import plot_plane, plot_volume
+from .room_dims import RoomDimensions
 
 
 @dataclass(frozen=True)
 class ZoneView:
+    zone_id: str
     coords: np.ndarray
     num_points: np.ndarray
     calc_state: tuple
@@ -38,14 +40,9 @@ class ZoneResult:
     base_values: np.ndarray | None = None
     reflected_values: np.ndarray | None = None
 
-    def set_init_dimensions(self, num_points):
-        self.base_values = np.zeros(num_points, dtype="float32")
-        self.reflected_values = np.zeros(num_points, dtype="float32")
-        return self
-
-    def clear(self):
-        if self.base_values is not None:
-            self.set_init_dimensions(self.base_values.shape)
+    def init(self, num_points=None):
+        self.base_values = None
+        self.reflected_values = None
         return self
 
     @property
@@ -82,6 +79,8 @@ class CalcZone(object):
         number of hours to calculate dose over. Only relevant if dose is True.
     enabled: bool, default = True
         whether or not the calc zone is enabled for calculations
+    show_values: bool, default = True
+    colormap: str, default = None
     """
 
     def __init__(
@@ -107,30 +106,43 @@ class CalcZone(object):
         self.colormap = colormap
 
         # these will all be calculated after spacing is set, which is set in the subclass
-        self.calctype = "Zone"
-        self.geometry = None
+        self._geometry = None
         self.calculator = LightingCalculator()
         self.result = ZoneResult()
 
     def __getattr__(self, name):
         """
-        attribute passthrough to result/calculator cache/geometry - called if normal lookup fails
+        attribute passthrough to geometry - called if normal lookup fails
         """
-        result = self.__dict__.get("result", None)
-        if result is not None and hasattr(result, name):
-            return getattr(result, name)
-
-        calculator = self.__dict__.get("calculator", None)
-        if calculator is not None:
-            cache = calculator.__dict__.get("cache", None)
-            if cache is not None and hasattr(cache, name):
-                return getattr(cache, name)
-
-        geometry = self.__dict__.get("geometry", None)
+        geometry = self.__dict__.get("_geometry", None)
         if geometry is not None and hasattr(geometry, name):
             return getattr(geometry, name)
-
         raise AttributeError(name)
+
+    def __eq__(self, other):
+        if not isinstance(other, CalcZone):
+            return NotImplemented
+        return self.to_dict() == other.to_dict()
+
+    def __repr__(self):
+        return (
+            f"Calc{self.calctype}(id={self.zone_id!r}, name={self.name!r}, "
+            f"enabled={self.enabled}, "
+            f"dose={self.dose}, "
+            f"dose_hours={self.hours}, "
+        )
+
+    @property
+    def id(self) -> str:
+        return self.zone_id
+
+    @id.setter
+    def id(self, value: str) -> None:
+        self.zone_id = value
+
+    @property
+    def calc_type(self):
+        return "Zone"
 
     @property
     def calc_state(self):
@@ -146,24 +158,20 @@ class CalcZone(object):
             return ()
         return self.geometry.update_state
 
+    @property
+    def geometry(self):
+        return self._geometry
+
+    @geometry.setter
+    def geometry(self, new_geom):
+        self._geometry = new_geom
+        if hasattr(self, "result") and self.result is not None:
+            self.result.init(new_geom.num_points)
+
     @classmethod
     def from_dict(cls, data):
         keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
         return cls(**{k: v for k, v in data.items() if k in keys})
-
-    def __eq__(self, other):
-        if not isinstance(other, CalcZone):
-            return NotImplemented
-
-        return self.to_dict() == other.to_dict()
-
-    def __repr__(self):
-        return (
-            f"Calc{self.calctype}(id={self.zone_id!r}, name={self.name!r}, "
-            f"enabled={self.enabled}, "
-            f"dose={self.dose}, "
-            f"dose_hours={self.hours}, "
-        )
 
     def to_dict(self):
 
@@ -176,6 +184,8 @@ class CalcZone(object):
         data["show_values"] = self.show_values
         data["colormap"] = self.colormap
         data["calctype"] = "Zone"
+        if self.geometry is not None:
+            data["geometry"] = self.geometry.to_dict()
 
         data.update(self._extra_dict())
         return data
@@ -229,36 +239,103 @@ class CalcZone(object):
             raise TypeError("Hours must be numeric")
         self.hours = hours
 
+    def set_dimensions(
+        self,
+        x1=None,
+        x2=None,
+        y1=None,
+        y2=None,
+        z1=None,
+        z2=None,
+        preserve_spacing=True,
+    ):
+        if self.geometry is not None:
+            mins = self._strip_tpl(
+                x1 or self.geometry.x1, y1 or self.geometry.y1, z1 or self.geometry.z1
+            )
+            maxs = self._strip_tpl(
+                x2 or self.geometry.x2, y2 or self.geometry.y2, z2 or self.geometry.z2
+            )
+            self.geometry = self.geometry.update_dimensions(
+                mins, maxs, preserve_spacing
+            )
+        return self
+
+    def set_spacing(self, x_spacing=None, y_spacing=None, z_spacing=None):
+        """
+        set the spacing desired in the dimension
+        """
+        if self.geometry is not None:
+            spacing = self._strip_tpl(
+                x_spacing or self.geometry.x_spacing,
+                y_spacing or self.geometry.y_spacing,
+                z_spacing or self.geometry.z_spacing,
+            )
+            self.geometry = self.geometry.update(spacing_init=spacing)
+        return self
+
+    def set_num_points(self, num_x=None, num_y=None, num_z=None):
+        """
+        set the number of points desired in a dimension, instead of setting the spacing
+        """
+        if self.geometry is not None:
+            num_points_init = self._strip_tpl(
+                num_x or self.geometry.num_x,
+                num_y or self.geometry.num_y,
+                num_z or self.geometry.num_z,
+            )
+            self.geometry = self.geometry.update(num_points_init=num_points_init)
+        return self
+
+    def set_offset(self, offset):
+        if self.geometry is not None:
+            self.geometry = self.geometry.update(offset=offset)
+        return self
+
+    @staticmethod
+    def _strip_tpl(*args):
+        return tuple(val for val in args if val is not None)
+
     def calculate_values(self, lamps, ref_manager=None, hard=False):
-        """
-        Calculate all the values for all the lamps
-        """
+        """Calculate all the values for all the lamps"""
 
-        if self.calctype == "Zone":
-            return None
+        if self.calctype != "Zone" and self.enabled:
 
-        base_values = self.calculator.compute(lamps=lamps, zv=self.to_view(), hard=hard)
-
-        if ref_manager is not None:
-            # calculate reflectance -- warning, may be expensive!
-            reflected_values = ref_manager.calculate_reflectance(self, hard=hard)
-        else:
-            reflected_values = np.zeros(self.geometry.num_points).astype("float32")
-
-        self.result.base_values = base_values
-        self.result.reflected_values = reflected_values
+            self.result.base_values = self.calculator.compute(
+                lamps=lamps, zv=self.to_view(), hard=hard
+            )
+            if ref_manager is not None:
+                # calculate reflectance -- warning, may be expensive!
+                self.result.reflected_values = ref_manager.calculate_reflectance(
+                    self.to_view(), hard=hard
+                )
 
         return self.get_values()
 
     def get_values(self):
-        """
-        return
-        """
-        if self.values is None:
+        """return dose-adjusted values"""
+        if self.result.values is None:
             return None
         if self.dose:
-            return self.values * 3.6 * self.hours
-        return self.values
+            return self.result.values * 3.6 * self.hours
+        return self.result.values
+
+    @property
+    def lamp_cache(self):
+        """lamp_values are stored here"""
+        return self.calculator.cache.lamp_cache
+
+    @property
+    def base_values(self):
+        return self.result.base_values
+
+    @property
+    def reflected_values(self):
+        return self.result.reflected_values
+
+    @property
+    def values(self):
+        return self.result.values
 
 
 class CalcVol(CalcZone):
@@ -299,50 +376,34 @@ class CalcVol(CalcZone):
             enabled=enabled,
             show_values=show_values,
         )
-        self.calctype = "Volume"
         self.geometry = VolGrid(
             mins=(x1 or 0.0, y1 or 0.0, z1 or 0.0),
             maxs=(x2 or 6.0, y2 or 4.0, z2 or 2.7),
-            n_pts=(num_x, num_y, num_z),
-            spacing=(x_spacing, y_spacing, z_spacing),
+            num_points_init=(num_x, num_y, num_z),
+            spacing_init=(x_spacing, y_spacing, z_spacing),
             offset=True if offset is None else bool(offset),
         )
 
-        self.result.set_init_dimensions(self.geometry.num_points)
-
-        # self.values = np.zeros(self.geometry.num_points, dtype="float32")
-        # self.reflected_values = np.zeros(self.geometry.num_points, dtype="float32")
-
-    def _extra_dict(self):
+    def _extra_dict(self) -> dict:
 
         zone_data = super()._extra_dict()
-
         data = {
-            "x1": self.geometry.x1,
-            "x2": self.geometry.x2,
-            "x_spacing": self.geometry.x_spacing,
-            "y1": self.geometry.y1,
-            "y2": self.geometry.y2,
-            "y_spacing": self.geometry.y_spacing,
-            "z1": self.geometry.z1,
-            "z2": self.geometry.z2,
-            "z_spacing": self.geometry.z_spacing,
             "calctype": self.calctype,
         }
         zone_data.update(data)
         return zone_data
 
+    @property
+    def calctype(self) -> str:
+        return "Volume"
+
     def __repr__(self):
-        return super().__repr__() + (
-            f"dimensions=(x=({self.x1},{self.x2}), y=({self.y1},{self.y2}), z=({self.z1},{self.z2})), "
-            f"grid={self.num_x}x{self.num_y}x{self.num_z}, "
-            f"offset={self.offset}, "
-            f"enabled={self.enabled})"
-        )
+        return super().__repr__() + f"geometry: {self.geometry.__repr__()})"
 
     def to_view(self):
         """take a snapshot of the zone's state"""
         return ZoneView(
+            zone_id=self.zone_id,
             coords=self.geometry.coords,
             num_points=self.geometry.num_points,
             calc_state=self.calc_state,
@@ -353,55 +414,6 @@ class CalcVol(CalcZone):
     def export(self, fname=None):
         """export values to csv"""
         return export_volume(self, fname=fname)
-
-    def set_dimensions(
-        self,
-        x1=None,
-        x2=None,
-        y1=None,
-        y2=None,
-        z1=None,
-        z2=None,
-        preserve_spacing=True,
-    ):
-        mins = (x1 or self.geometry.x1, y1 or self.geometry.y1, z1 or self.geometry.z1)
-        maxs = (x2 or self.geometry.x2, y2 or self.geometry.y2, z2 or self.geometry.z2)
-        if preserve_spacing:
-            self.geometry = self.geometry.update(
-                mins=mins, maxs=maxs, spacing=tuple(self.geometry.spacings)
-            )
-        else:
-            self.geometry = self.geometry.update(
-                mins=mins, maxs=maxs, n_pts=tuple(self.geometry.num_points)
-            )
-        return self
-
-    def set_spacing(self, x_spacing=None, y_spacing=None, z_spacing=None):
-        """
-        set the spacing desired in the dimension
-        """
-        spacing = (
-            x_spacing or self.geometry.x_spacing,
-            y_spacing or self.geometry.y_spacing,
-            z_spacing or self.geometry.z_spacing,
-        )
-        self.geometry = self.geometry.update(spacing=spacing)
-        return self
-
-    def set_num_points(self, num_x=None, num_y=None, num_z=None):
-        """
-        set the number of points desired in a dimension, instead of setting the spacing
-        """
-        n_pts = (
-            num_x or self.geometry.num_x,
-            num_y or self.geometry.num_y,
-            num_z or self.geometry.num_z,
-        )
-        self.geometry = self.geometry.update(n_pts=n_pts)
-        return self
-
-    def set_offset(self, offset):
-        self.geometry = self.geometry.update(offset=offset)
 
     def plot(self, **kwargs):
         """plot fluence values as isosurface"""
@@ -420,29 +432,32 @@ class CalcPlane(CalcZone):
 
     def __init__(
         self,
-        zone_id=None,
-        name=None,
+        zone_id: str | None = None,
+        name: str | None = None,
+        geometry: PlaneGrid | None = None,
+        dose: bool = False,
+        hours: int = 8,
+        enabled: bool = True,
+        show_values: bool = True,
+        colormap: str | None = None,
+        fov_vert: int | float = 180,
+        fov_horiz: int | float = 360,
+        # soon to be legacy
+        vert: bool = False,
+        horiz: bool = False,
+        direction=None,
+        # legacy only! ignored if geometry is not None
         x1=None,
         x2=None,
         y1=None,
         y2=None,
+        num_x: int | None = None,
+        num_y: int | None = None,
+        x_spacing: float | None = None,
+        y_spacing: float | None = None,
+        offset: bool = True,
         height=None,
-        ref_surface="xy",
-        direction=None,
-        num_x=None,
-        num_y=None,
-        x_spacing=None,
-        y_spacing=None,
-        offset=None,
-        fov_vert=None,
-        fov_horiz=None,
-        vert=None,
-        horiz=None,
-        dose=None,
-        hours=None,
-        enabled=None,
-        show_values=None,
-        colormap=None,
+        ref_surface=None,
     ):
 
         super().__init__(
@@ -453,44 +468,41 @@ class CalcPlane(CalcZone):
             enabled=enabled,
             show_values=show_values,
         )
-        self.calctype = "Plane"
 
-        self.geometry = PlaneGrid(
-            mins=(x1 or 0.0, y1 or 0.0),
-            maxs=(x2 or 6.0, y2 or 4.0),
-            n_pts=(num_x, num_y),
-            spacing=(x_spacing, y_spacing),
-            offset=True if offset is None else bool(offset),
-            height=height or 0,
-            ref_surface=ref_surface or "xy",
-            direction=direction or 1,
-        )
+        if geometry is None:
+            # legacy initialization strategy
+            self.geometry = PlaneGrid.from_legacy(
+                mins=(x1 or 0.0, y1 or 0.0),
+                maxs=(x2 or 6.0, y2 or 4.0),
+                spacing_init=(x_spacing, y_spacing),
+                num_points_init=(num_x, num_y),
+                offset=True if offset is None else bool(offset),
+                height=height or 0,
+                ref_surface=ref_surface or "xy",
+                direction=direction or 1,
+            )
+        else:
+            self.geometry = geometry
 
-        self.fov_vert = 180 if fov_vert is None else fov_vert
-        self.fov_horiz = 360 if fov_horiz is None else abs(fov_horiz)
-        self.vert = False if vert is None else vert
-        self.horiz = False if horiz is None else horiz
+        self.fov_vert = fov_vert
+        self.fov_horiz = fov_horiz
+        # flags to be killed and replaced by PlaneType enum or something
+        self.direction = direction
+        self.vert = vert
+        self.horiz = horiz
 
-        self.result.set_init_dimensions(self.geometry.num_points)
-        # self.values = np.zeros(self.geometry.num_points, dtype="float32")
-        # self.reflected_values = np.zeros(self.geometry.num_points, dtype="float32")
+    @property
+    def calctype(self):
+        return "Plane"
 
     def _extra_dict(self):
 
         zone_data = super()._extra_dict()
 
         data = {
-            "x1": self.geometry.x1,
-            "x2": self.geometry.x2,
-            "x_spacing": self.geometry.x_spacing,
-            "y1": self.geometry.y1,
-            "y2": self.geometry.y2,
-            "y_spacing": self.geometry.y_spacing,
-            "height": self.geometry.height,
-            "ref_surface": self.geometry.ref_surface,
-            "direction": self.geometry.direction,
             "fov_vert": self.fov_vert,
             "fov_horiz": self.fov_horiz,
+            "direction": self.direction,
             "vert": self.vert,
             "horiz": self.horiz,
             "calctype": self.calctype,
@@ -499,55 +511,69 @@ class CalcPlane(CalcZone):
         return zone_data
 
     def __repr__(self):
-        a = self.ref_surface[0]
-        b = self.ref_surface[1]
         return super().__repr__() + (
-            f"dimensions=({a}=({self.x1},{self.x2}), {b}=({self.y1},{self.y2})), "
-            f"height={self.height}, "
-            f"grid={self.num_x}x{self.num_y}, "
-            f"offset={self.offset}, "
+            f"geometry={self.geometry.__repr__()}, "
             f"field_of_view=({self.fov_horiz}° horiz, {self.fov_vert}° vert), "
             f"flags=(vert={self.vert}, horiz={self.horiz}, dir={self.direction}), "
         )
 
     @classmethod
-    def from_vectors(cls, p0, pU, pV, **kwargs):
-        p0 = np.asarray(p0, float)
-        u = np.asarray(pU, float) - p0
-        v = np.asarray(pV, float) - p0
+    def from_dict(cls, data):
+        keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
+        if data.get("geometry") is not None:
+            geometry = PlaneGrid.from_dict(data.pop("geometry"))
+        return cls(geometry=geometry, **{k: v for k, v in data.items() if k in keys})
 
-        # Decide which Cartesian plane we’re in (largest component of n̂)
-        n = np.cross(u, v)
-        axis = np.argmax(np.abs(n))
+    @classmethod
+    def from_vectors(
+        cls,
+        origin,
+        u_vec,
+        v_vec,
+        num_points_init=None,
+        spacing=None,
+        offset=True,
+        **kwargs,
+    ):
+        """define a calc plane from an arbitrary origin, U point, and V point"""
+        geometry = PlaneGrid.from_vectors(
+            origin=origin,
+            u_vec=u_vec,
+            v_vec=v_vec,
+            spacing_init=spacing,
+            num_points_init=num_points_init,
+            offset=offset,
+        )
+        return cls(geometry=geometry, **kwargs)
 
-        if axis == 2:
-            ref_surface = "xy"
-            x1, x2 = np.unique(sorted([p0[0], pU[0], pV[0]]))
-            y1, y2 = np.unique(sorted([p0[1], pU[1], pV[1]]))
-            height = p0[2]
-        elif axis == 1:
-            ref_surface = "xz"
-            x1, x2 = np.unique(sorted([p0[0], pU[0], pV[0]]))
-            y1, y2 = np.unique(sorted([p0[2], pU[2], pV[2]]))
-            height = p0[1]
-        else:
-            ref_surface = "yz"
-            x1, x2 = np.unique(sorted([p0[1], pU[1], pV[1]]))
-            y1, y2 = np.unique(sorted([p0[2], pU[2], pV[2]]))
-            height = p0[0]
+    @classmethod
+    def from_face(
+        cls,
+        wall: str,
+        dims: RoomDimensions,
+        height: float = 0,
+        spacing=None,
+        num_points=None,
+        offset=None,
+        **kwargs,
+    ):
+        if wall.lower() not in dims.faces.keys():
+            raise KeyError(
+                f"{wall} is not a valid wall ID, must be in {dims.faces.keys()}"
+            )
+        x1, x2, y1, y2, base_height, ref_surface, direction = dims.faces[wall]
+        height = base_height + height * direction
 
-        direction = int(np.sign(n[axis])) if n[axis] != 0 else 1
-
-        return cls(
-            x1=x1,
-            x2=x2,
-            y1=y1,
-            y2=y2,
+        geometry = PlaneGrid.from_legacy(
+            mins=(x1, y1),
+            maxs=(x2, y2),
             height=height,
             ref_surface=ref_surface,
-            direction=direction,
-            **kwargs,
+            spacing_init=spacing,
+            num_points_init=num_points,
+            offset=offset,
         )
+        return cls(geometry=geometry, **kwargs)
 
     @property
     def update_state(self):
@@ -563,6 +589,7 @@ class CalcPlane(CalcZone):
     def to_view(self):
         """take a snapshot of the zone's state"""
         return ZoneView(
+            zone_id=self.zone_id,
             coords=self.geometry.coords,
             num_points=self.geometry.num_points,
             calc_state=self.calc_state,
@@ -576,63 +603,17 @@ class CalcPlane(CalcZone):
             basis=self.basis,
         )
 
+    def update_from_legacy(self, height, ref_surface, direction):
+        """update the geometry based on legacy parameters"""
+        self.geometry = self.geometry.update_from_legacy(
+            height=height,
+            ref_surface=ref_surface,
+            direction=direction,
+        )
+
     def export(self, fname=None):
         """export values to csv"""
         return export_plane(self, fname=fname)
-
-    def set_height(self, height):
-        """set height of calculation plane. currently we only support vertical planes"""
-        self.geometry = self.geometry.update(height=height)
-        return self
-
-    def set_ref_surface(self, ref_surface):
-        """
-        set the reference surface of the calc plane--must be a string in [`xy`,`xz`,`yz`]
-        """
-        self.geometry = self.geometry.update(ref_surface=ref_surface)
-        return self
-
-    def set_direction(self, direction):
-        """
-        set the direction of the plane normal
-        Valid values are currently 1, -1 and 0
-        """
-        self.geometry = self.geometry.update(direction=direction)
-        return self
-
-    def set_dimensions(self, x1=None, x2=None, y1=None, y2=None, preserve_spacing=True):
-        """set the dimensions and update the coordinate points"""
-        mins = (x1 or self.geometry.x1, y1 or self.geometry.y1)
-        maxs = (x2 or self.geometry.x2, y2 or self.geometry.y2)
-        if preserve_spacing:
-            self.geometry = self.geometry.update(
-                mins=mins, maxs=maxs, spacing=tuple(self.geometry.spacings)
-            )
-        else:  # preserve num_points instead
-            self.geometry = self.geometry.update(
-                mins=mins, maxs=maxs, n_pts=tuple(self.geometry.num_points)
-            )
-        return self
-
-    def set_spacing(self, x_spacing=None, y_spacing=None):
-        """set the fineness of the grid spacing and update the coordinate points"""
-        spacing = (
-            x_spacing or self.geometry.x_spacing,
-            y_spacing or self.geometry.y_spacing,
-        )
-        self.geometry = self.geometry.update(spacing=spacing)
-        return self
-
-    def set_num_points(self, num_x=None, num_y=None):
-        """
-        set the number of points desired in a dimension, instead of setting the spacing
-        """
-        n_pts = (num_x or self.geometry.num_x, num_y or self.geometry.num_y)
-        self.geometry = self.geometry.update(n_pts=n_pts)
-        return self
-
-    def set_offset(self, offset):
-        self.geometry = self.geometry.update(offset=offset)
 
     def plot(self, **kwargs):
         """Plot the image of the radiation pattern"""
