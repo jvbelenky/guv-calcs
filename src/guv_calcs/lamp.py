@@ -5,6 +5,7 @@ import pathlib
 import warnings
 import copy
 import numpy as np
+import hashlib
 from photompy import Photometry, IESFile
 from .spectrum import Spectrum
 from .lamp_surface import LampSurface
@@ -246,6 +247,14 @@ class Lamp:
             f"enabled={self.enabled})"
         )
 
+    @property
+    def id(self) -> str:
+        return self.lamp_id
+
+    @id.setter
+    def id(self, value: str) -> None:
+        self.lamp_id = value
+
     def to_dict(self):
         """
         save just the minimum number of parameters required to re-instantiate the lamp
@@ -357,13 +366,19 @@ class Lamp:
         this lamp must be recalculated
         """
         # this needs summed to make comparison not fail, might need to investigate later
-        intensity_map_orig = (
-            self.surface.intensity_map_orig.sum()
-            if self.surface.intensity_map_orig is not None
-            else None
-        )
+        if self.surface.intensity_map_orig is not None:
+            arr = self.surface.intensity_map_orig
+            map_fingerprint = hashlib.sha1(arr.tobytes()).digest()
+        else:
+            map_fingerprint = None
+
+        if self.photometry is not None:
+            photometry_fingerprint = self.photometry.to_fingerprint()
+        else:
+            photometry_fingerprint = None
+
         return (
-            self.filedata,  # replace with photometry hash?
+            photometry_fingerprint,
             self.x,
             self.y,
             self.z,
@@ -376,7 +391,7 @@ class Lamp:
             self.surface.depth,
             self.surface.units,  # ""
             self.surface.source_density,  # ""
-            intensity_map_orig,
+            map_fingerprint,
             self.scaling_factor,
         )
 
