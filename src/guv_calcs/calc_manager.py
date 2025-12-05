@@ -79,7 +79,7 @@ class LightingCalculator:
 
     def __init__(self):
         self.cache = ZoneCache()
-        
+
     def compute(self, lamps, zv, hard=False):
         """
         Calculate and return irradiance values at all coordinate points within the zone.
@@ -147,35 +147,7 @@ class LightingCalculator:
         update the values of a single lamp based on the calc zone properties,
         but which don't require a full recalculation
         """
-        # apply measured correction filters
-        if filters is not None:
-            for filt in filters.values():
-                if (
-                    lamp.surface.source_density > 0
-                    and lamp.surface.photometric_distance
-                ):
-                    new_values = np.zeros(values.shape)
-                    for point in lamp.surface.surface_points:
-                        tmpvals = filt.apply(deepcopy(values), point, self.zone.coords)
-                        new_values += tmpvals / len(lamp.surface.surface_points)
-                    values = new_values
-                else:
-                    values = filt.apply(values, lamp.position, self.zone.coords)
 
-        if obstacles is not None:
-            for obs in obstacles.values():
-                if (
-                    lamp.surface.source_density > 0
-                    and lamp.surface.photometric_distance
-                ):
-                    new_values = np.zeros(values.shape)
-                    for point in lamp.surface.surface_points:
-                        tmpvals = obs.apply(deepcopy(values), point, self.zone.coords)
-                        new_values += tmpvals / len(lamp.surface.surface_points)
-                    values = new_values
-                else:
-                    values = obs.apply(values, lamp.position, self.zone.coords)
-                    
         if zv.is_plane():
             rel_coords = zv.coords - lamp.surface.position
             x, y, z = (rel_coords @ zv.basis).T
@@ -261,6 +233,40 @@ class LightingCalculator:
         value_sums = value_sums.squeeze(-1)  # Shape (N, M)
 
         return np.max(value_sums, axis=1)  # Shape (N,)
+
+    def apply_obstacles(self, lamp, filters, obstacles, values, zv):
+        """
+        under construction--currently unused. previously, sat before apply_filters
+        """
+        # apply measured correction filters
+        if filters is not None:
+            for filt in filters.values():
+                if (
+                    lamp.surface.source_density > 0
+                    and lamp.surface.photometric_distance
+                ):
+                    new_values = np.zeros(values.shape)
+                    for point in lamp.surface.surface_points:
+                        tmpvals = filt.apply(deepcopy(values), point, self.zone.coords)
+                        new_values += tmpvals / len(lamp.surface.surface_points)
+                    values = new_values
+                else:
+                    values = filt.apply(values, lamp.position, zv.coords)
+
+        if obstacles is not None:
+            for obs in obstacles.values():
+                if (
+                    lamp.surface.source_density > 0
+                    and lamp.surface.photometric_distance
+                ):
+                    new_values = np.zeros(values.shape)
+                    for point in lamp.surface.surface_points:
+                        tmpvals = obs.apply(deepcopy(values), point, zv.coords)
+                        new_values += tmpvals / len(lamp.surface.surface_points)
+                    values = new_values
+                else:
+                    values = obs.apply(values, lamp.position, zv.coords)
+        return values
 
 
 # reused in reflectance.py

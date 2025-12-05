@@ -221,8 +221,6 @@ class Room:
             if zone.calctype != "Zone" and zone.enabled:
                 zone_state[key] = zone.calc_state
 
-        ref_state = (self.enable_reflectance,) + self.ref_manager.calc_state
-
         filter_state = {}
         for key, filt in self.scene.filters.items():
             filter_state[key] = filt.get_calc_state()
@@ -468,7 +466,7 @@ class Room:
     def remove_filter(self, filt_id):
         """remove a measured correction filter from the room"""
         self.scene.remove_filter(filt_id)
-        
+
     def add_surface(self, surface, on_collision=None):
         self.scene.add_surface(surface, on_collision=on_collision)
         return self
@@ -511,29 +509,11 @@ class Room:
         if self.recalculate_incidence or hard:
             self.ref_manager.calculate_incidence(valid_lamps, hard=hard)
 
-<<<<<<< HEAD
-        ref_manager = self.ref_manager if self.enable_reflectance else None
-
-        # calculate incidence on any correction filters
-        for filt in self.filters.values():
-            filt.calculate_values(valid_lamps, ref_manager=ref_manager, hard=hard)
-
-        # main calculation loop
-        for name, zone in self.calc_zones.items():
-            if zone.enabled:
-                zone.calculate_values(
-                    lamps=valid_lamps,
-                    ref_manager=ref_manager,
-                    filters=self.filters,
-                    obstacles=self.obstacles,
-                    hard=hard,
-                )
-=======
         for name, zone in self.calc_zones.items():
             zone.calculate_values(
                 lamps=valid_lamps, ref_manager=self.ref_manager, hard=hard
             )
->>>>>>> a1bb196 (move the enabling flag to reflectance module)
+
         # update calc states.
         self.calc_state = self.get_calc_state()
         self.update_state = self.get_update_state()

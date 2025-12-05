@@ -21,7 +21,7 @@ class Scene:
 
         self.lamps: dict[str, Lamp] = {}
         self.calc_zones: dict[str, CalcZone] = {}
-        
+
         self.filters: dict[str, FilterBase] = {}
         self.obstacles: dict[str, BoxObstacle] = {}
 
@@ -385,15 +385,6 @@ class Scene:
                 raise KeyError(f"wall_id must be in {keys}")
             else:
                 self.surfaces[wall_id].set_num_points(num_x=num_x, num_y=num_y)
-
-    def set_colormap(self, colormap: str):
-        """Set the scene's colormap"""
-        if colormap not in list(colormaps):
-            warnings.warn(f"{colormap} is not a valid colormap.")
-        else:
-            self.colormap = colormap
-            for zone in self.calc_zones.values():
-                zone.colormap = self.colormap
 
     # --------------------------- internals ----------------------------
 

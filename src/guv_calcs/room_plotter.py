@@ -45,17 +45,12 @@ class RoomPlotter:
                     fig = self._plot_plane(zone=zone, fig=fig, select_id=select_id)
             elif isinstance(zone, CalcVol):
                 fig = self._plot_vol(zone=zone, fig=fig, select_id=select_id)
-<<<<<<< HEAD
-        for filter_id, filt in self.room.filters.items():
-            fig = self._plot_filter(filt=filt, fig=fig, select_id=select_id)
-            
-        for obs_id, obs in self.room.obstacles.items():
-            fig = self._plot_obstacle(obs=obs, fig=fig)
 
-        for obs_id, obs in self.room.obstacles.items():
-            fig = self._plot_obstacle(obs=obs, fig=fig)
-=======
->>>>>>> be6a919 (not sure how this snuck in there  but removing it)
+        # for filter_id, filt in self.room.filters.items():
+        # fig = self._plot_filter(filt=filt, fig=fig, select_id=select_id)
+
+        # for obs_id, obs in self.room.obstacles.items():
+        # fig = self._plot_obstacle(obs=obs, fig=fig)
 
         x, y, z = self.room.dim.x, self.room.dim.y, self.room.dim.z
 
@@ -304,7 +299,7 @@ class RoomPlotter:
                 z=z_coords,
             )
         return fig
-    
+
     def _plot_vol(self, zone, fig, select_id=None):
 
         x_coords, y_coords, z_coords = self._get_box_coords(
