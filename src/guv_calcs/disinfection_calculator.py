@@ -64,15 +64,15 @@ class DisinfectionCalculator:
         for label, lamp_ids in lamp_wavelengths.items():
             vals = np.zeros(zone.values.shape)
             for lamp_id in lamp_ids:
-                if lamp_id in zone.lamp_values.keys():
-                    vals += zone.lamp_values[lamp_id].mean()
+                if lamp_id in zone.lamp_cache.keys():
+                    vals += zone.lamp_cache[lamp_id].values.mean()
             fluence_dict[label] = vals.mean()
         return fluence_dict
 
     def _get_lamp_wavelength_dict(self, zone):
         """assign lamps to each unique wavelength contributing to the zone"""
         lamp_types = self._get_lamp_types(zone)
-        if len(zone.lamp_values) == 0:
+        if len(zone.lamp_cache) == 0:
             msg = f"Calc zone {zone.zone_id} has no associated lamps."
             warnings.warn(msg)
         elif len(lamp_types) == 0:
@@ -91,7 +91,7 @@ class DisinfectionCalculator:
     def _get_lamp_types(self, zone):
         """fetch a list of unique wavelengths contributing to the zone"""
         wavelengths = []
-        for lamp_id in zone.lamp_values.keys():
+        for lamp_id in zone.lamp_cache.keys():
             if lamp_id in self.room.lamps.keys():
                 lamp = self.room.lamps[lamp_id]
                 if lamp.wavelength is not None:

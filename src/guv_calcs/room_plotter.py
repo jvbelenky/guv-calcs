@@ -39,7 +39,7 @@ class RoomPlotter:
                 fig = self._plot_lamp(lamp=lamp, fig=fig, select_id=select_id)
         for zone_id, zone in self.room.calc_zones.items():
             if isinstance(zone, CalcPlane):
-                if zone.show_values and zone.values.sum() > 0:
+                if zone.show_values and zone.values is not None:
                     fig = self._plot_plane_values(zone=zone, fig=fig)
                 else:
                     fig = self._plot_plane(zone=zone, fig=fig, select_id=select_id)
@@ -251,15 +251,8 @@ class RoomPlotter:
         return fig
 
     def _plot_plane_values(self, zone, fig):
-        if zone.ref_surface == "xy":
-            X, Y = np.meshgrid(zone.xp, zone.yp, indexing="ij")
-            Z = np.full_like(X, zone.height)
-        elif zone.ref_surface == "xz":
-            X, Z = np.meshgrid(zone.xp, zone.yp, indexing="ij")
-            Y = np.full_like(X, zone.height)
-        elif zone.ref_surface == "yz":
-            Y, Z = np.meshgrid(zone.xp, zone.yp, indexing="ij")
-            X = np.full_like(Y, zone.height)
+        coords = zone.coords.reshape(*zone.num_points, 3)
+        X, Y, Z = coords[:, :, 0], coords[:, :, 1], coords[:, :, 2]
         zone_value_trace = go.Surface(
             x=X,
             y=Y,
