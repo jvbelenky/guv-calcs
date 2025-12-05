@@ -1,5 +1,6 @@
 import numpy as np
 from dataclasses import dataclass, field
+import warnings
 
 # import matplotlib.pyplot as plt
 from copy import deepcopy
@@ -41,16 +42,34 @@ class ZoneCache:
         return False
 
     def base_values(self, lamp_id):
+        """convenience attribute for fetching lamp base values"""
         entry = self.lamp_cache.get(lamp_id)
         if entry is not None:
             return entry.base_values
         return None
 
     def values(self, lamp_id):
+        """convenience attribute for fetching lamp values"""
         entry = self.lamp_cache.get(lamp_id)
         if entry is not None:
             return entry.values
         return None
+
+    def by_lamp_type(self, lamps):
+        """
+        TODO: under construction! for replacing much of the stuff in disinfection_calculator
+        return a dict of lamp contributions to the zone by wavelength/GUV type
+        """
+        # gather wavelengths
+        wavelengths = []
+        for key, lamp in lamps.items():
+            if key in self.lamp_cache.keys():
+                if lamp.wavelength is not None:
+                    wavelengths.append(lamp.wavelength)
+                else:
+                    msg = f"{lamp.name} ({key}) has an undefined wavelength. Its fluence contribution will not be counted."
+                    warnings.warn(msg, stacklevel=3)
+        wavelengths = np.unique(wavelengths)
 
 
 class LightingCalculator:
@@ -102,14 +121,12 @@ class LightingCalculator:
             lamp_id=lamp.lamp_id,
             lamp_calc_state=lamp.calc_state,
         )
-
         if hard or RECALC:
             # get coords
             rel_coords = zv.coords - lamp.surface.position
             Theta, Phi, R = lamp.transform_to_lamp(rel_coords, which="polar")
             if lamp.surface.units.lower() != "meters":
                 R = np.array(convert_units(lamp.surface.units, "meters", *R))
-
             # fetch intensity values from photometric data
             phot = lamp.ies.photometry.interpolated()
             values = phot.get_intensity(Theta, Phi) / R ** 2
@@ -126,6 +143,10 @@ class LightingCalculator:
         return self.cache.base_values(lamp.lamp_id)
 
     def apply_filters(self, lamp, values, zv):
+        """
+        update the values of a single lamp based on the calc zone properties,
+        but which don't require a full recalculation
+        """
         # apply measured correction filters
         if filters is not None:
             for filt in filters.values():
@@ -154,26 +175,13 @@ class LightingCalculator:
                     values = new_values
                 else:
                     values = obs.apply(values, lamp.position, self.zone.coords)
-
+                    
         if zv.is_plane():
             rel_coords = zv.coords - lamp.surface.position
             x, y, z = (rel_coords @ zv.basis).T
             r = np.sqrt(x ** 2 + y ** 2 + z ** 2)
             theta = np.arccos(-z / r)
-
-            # apply normals/directions
-            if zv.direction != 0:
-                values[theta > np.pi / 2] = 0
-
-            # apply vertical/horizontal irradiances
-            if zv.vert:
-                values *= np.sin(theta)
-            if zv.horiz:
-                values *= abs(np.cos(theta))
-
-            if zv.fov_vert < 180:
-                values[theta < (np.pi / 2 - np.radians(zv.fov_vert / 2))] = 0
-                values[theta > (np.pi / 2 + np.radians(zv.fov_vert / 2))] = 0
+            values = apply_plane_filters(values, theta, zv)
 
         # TODO: This should actually be in Lamp/Photometry
         if lamp.intensity_units.lower() == "mw/sr":
@@ -253,3 +261,25 @@ class LightingCalculator:
         value_sums = value_sums.squeeze(-1)  # Shape (N, M)
 
         return np.max(value_sums, axis=1)  # Shape (N,)
+
+
+# reused in reflectance.py
+def apply_plane_filters(values, theta, zv):
+    """apply angular view filters to a plane"""
+    if zv.is_plane():
+        # apply normals/directions
+        if zv.direction != 0:
+            values[theta > np.pi / 2] = 0
+
+        # apply vertical/horizontal irradiances
+        if zv.vert:
+            values *= np.sin(theta)
+        if zv.horiz:
+            values *= abs(np.cos(theta))
+
+        if zv.fov_vert < 180:
+            values[theta < (np.pi / 2 - np.radians(zv.fov_vert / 2))] = 0
+            values[theta > (np.pi / 2 + np.radians(zv.fov_vert / 2))] = 0
+        return values
+    else:
+        return values
