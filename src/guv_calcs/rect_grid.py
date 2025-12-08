@@ -262,16 +262,16 @@ class PlaneGrid(RectGrid):
     def update_state(self):
         return super().update_state
 
-    @property
-    def dimensions(self):
-        """bespoke overwrite--for planes initialized with origin/uvec/vvec"""
-        dim1 = np.asarray(self.origin, float)
-        dim2 = np.array(
-            np.array(self.origin)
-            + np.array(self.u_hat) * self.maxs[0]
-            + np.array(self.v_hat) * self.maxs[1]
-        )
-        return np.array(tuple(np.array((a, b)) for a, b in zip(dim1, dim2) if a != b))
+    # @property
+    # def dimensions(self):
+        # """bespoke overwrite--for planes initialized with origin/uvec/vvec"""
+        # dim1 = np.asarray(self.origin, float)
+        # dim2 = np.array(
+            # np.array(self.origin)
+            # + np.array(self.u_hat) * self.maxs[0]
+            # + np.array(self.v_hat) * self.maxs[1]
+        # )
+        # return np.array(tuple(np.array((a, b)) for a, b in zip(dim1, dim2) if a != b))
 
     @property
     def u_hat(self):
@@ -357,36 +357,42 @@ class PlaneGrid(RectGrid):
             raise TypeError("Height must be numeric")
         if direction is not None and direction not in [1, 0, -1]:
             raise ValueError("Direction must be in [1, 0, -1]")
+        
+        val = float(mins[1]) + float(maxs[1])
 
         if ref_surface == "xy":
-            origin = (mins[0], mins[1], float(height))
-            u_vec = (1.0, 0.0, 0.0)
-            v_vec = (0.0, 1.0, 0.0)
+            if direction == 1:
+                origin = (0.0, 0.0, float(height))
+                u_vec = (1.0, 0.0, 0.0)      # +x
+                v_vec = (0.0, 1.0, 0.0)      # +y
+            else:
+                origin = (0.0, val, float(height))
+                u_vec = (1.0, 0.0, 0.0)      # +x
+                v_vec = (0.0, -1.0, 0.0)     # -y
+
         elif ref_surface == "xz":
-            # for some godforsaken reason this kludge is required for xz plane
-            def swap(tpl):
-                return tuple((tpl[1],tpl[0]))
-            mins = swap(mins)
-            maxs = swap(maxs)
-            if kwargs.get("spacing_init") is not None:
-                kwargs.setdefault("spacing_init", swap(spacing_init))
-            if kwargs.get("num_points_init") is not None:
-                kwargs.setdefault("num_points_init", swap(num_points_init))
-            origin = (mins[0], float(height), mins[1])
-            v_vec = (1.0, 0.0, 0.0)
-            u_vec = (0.0, 0.0, 1.0)           
+            if direction == 1:
+                origin = (0.0, float(height), val)
+                u_vec = (1.0, 0.0, 0.0)      # +x
+                v_vec = (0.0, 0.0, -1.0)     # -z
+            else:
+                origin = (0.0, float(height), 0.0)
+                u_vec = (1.0, 0.0, 0.0)      # +x
+                v_vec = (0.0, 0.0, 1.0)      # +z
+
         elif ref_surface == "yz":
-            origin = (float(height), mins[0], mins[1])
-            u_vec = (0.0, 1.0, 0.0)
-            v_vec = (0.0, 0.0, 1.0)
-
-        if direction == -1:
-            v_vec = tuple(-np.asarray(v_vec))
-
-        extent = tuple(np.array(maxs)-np.array(mins))
+            if direction == 1:
+                origin = (float(height), 0.0, 0.0)
+                u_vec = (0.0, 1.0, 0.0)      # +y
+                v_vec = (0.0, 0.0, 1.0)      # +z
+            else:
+                origin = (float(height), 0.0, val)
+                u_vec = (0.0, 1.0, 0.0)      # +y
+                v_vec = (0.0, 0.0, -1.0)     # -z
 
         return cls(
-            mins=mins, maxs=extent, origin=origin, u_vec=u_vec, v_vec=v_vec, **kwargs
+            mins=mins, maxs=maxs, 
+            origin=origin, u_vec=u_vec, v_vec=v_vec, **kwargs
         )
 
     def update_from_legacy(self, height, ref_surface, direction):
