@@ -399,6 +399,12 @@ class Room:
 
     # -------------------- Scene: lamps, zones, surfaces ---------------------
 
+    def lamp(self, lamp_id):
+        return self.scene.lamps.get(zone_id)
+
+    def zone(self, zone_id):
+        return self.scene.calc_zones.get(zone_id)
+
     def add(self, *args, on_collision=None, unit_mode=None):
         """
         Add objects to the Scene.
