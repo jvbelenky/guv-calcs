@@ -217,7 +217,7 @@ def generate_report(self, fname=None):
     # ───  Reflectance  ──────────────────────────────────
     rows += [["", "Reflectance"]]
     rows += [["", "", "Floor", "Ceiling", "North", "South", "East", "West", "Enabled"]]
-    rows += [["", "", *self.ref_manager.reflectances.values(), self.enable_reflectance]]
+    rows += [["", "", *self.ref_manager.reflectances.values(), self.ref_manager.enabled]]
     rows += [[""]]
 
     # ───  Luminaires  ───────────────────────────────────
@@ -240,6 +240,7 @@ def generate_report(self, fname=None):
                 "Surface Length",
                 "Surface Width",
                 "Fixture Depth",
+                "Scaling factor"
             ]
         ]
         for lamp in self.scene.lamps.values():
@@ -259,12 +260,16 @@ def generate_report(self, fname=None):
                     fmt(lamp.surface.length),
                     fmt(lamp.surface.width),
                     fmt(lamp.surface.depth),
+                    fmt(lamp.scaling_factor),
                 ]
             ]
         rows += [[""]]
 
-    # ───  Calculation planes  ───────────────────────────
-    planes = [z for z in self.scene.calc_zones.values() if z.calctype == "Plane"]
+    # ----- Calc zones ------------------------
+    zones = [z for z in self.scene.calc_zones.values() if z.values is not None]
+
+    # ----- Calc planes -----------------------
+    planes = [z for z in zones if z.calctype == "Plane"]
     if planes:
         rows += [["Calculation Planes"]]
         rows += [
@@ -306,8 +311,8 @@ def generate_report(self, fname=None):
             ]
         rows += [[""]]
 
-    # ───  Calculation volumes  ──────────────────────────
-    vols = [z for z in self.scene.calc_zones.values() if z.calctype == "Volume"]
+    # ------ Calc volumes ----------------------
+    vols = [z for z in zones if z.calctype == "Volume"]
     if vols:
         rows += [["Calculation Volumes"]]
         rows += [
@@ -343,8 +348,7 @@ def generate_report(self, fname=None):
             ]
         rows += [[""]]
 
-    # ───  Statistics  ──────────────────────────
-    zones = [z for z in self.scene.calc_zones.values() if z.calctype != "Zone"]
+    # --------- Statistics -----------------
     if zones:
         rows += [["Statistics"]]
         rows += [

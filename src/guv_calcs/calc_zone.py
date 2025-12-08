@@ -21,7 +21,7 @@ class ZoneView:
     fov_horiz: int | None = None
     vert: bool | None = None
     horiz: bool | None = None
-    direction: int | None = None
+    use_normal: bool | None = None
     basis: np.ndarray | None = None
 
     def is_plane(self):
@@ -87,22 +87,18 @@ class CalcZone(object):
         self,
         zone_id=None,
         name=None,
-        dose=None,
-        hours=None,
-        enabled=None,
-        show_values=None,
+        dose=False,
+        hours=8.0,
+        enabled=True,
+        show_values=True,
         colormap=None,
     ):
         self.zone_id = zone_id
         self.name = str(zone_id) if name is None else str(name)
         self.dose = False if dose is None else dose
-        if self.dose:
-            self.units = "mJ/cm²"
-        else:
-            self.units = "uW/cm²"
-        self.hours = 8.0 if hours is None else abs(hours)  # only used if dose is true
-        self.enabled = True if enabled is None else enabled
-        self.show_values = True if show_values is None else show_values
+        self.hours = hours # only used if dose is true
+        self.enabled = enabled
+        self.show_values = show_values
         self.colormap = colormap
 
         # these will all be calculated after spacing is set, which is set in the subclass
@@ -141,8 +137,15 @@ class CalcZone(object):
         self.zone_id = value
 
     @property
-    def calc_type(self):
+    def calctype(self):
         return "Zone"
+        
+    @property
+    def units(self):
+        #todo: probably should be called unit_label or something instead
+        if self.dose:
+            return "mJ/cm²"
+        return "uW/cm²"
 
     @property
     def calc_state(self):
@@ -445,7 +448,7 @@ class CalcPlane(CalcZone):
         # soon to be legacy
         vert: bool = False,
         horiz: bool = False,
-        direction=None,
+        use_normal: bool = True,
         # legacy only! ignored if geometry is not None
         x1=None,
         x2=None,
@@ -458,6 +461,7 @@ class CalcPlane(CalcZone):
         offset: bool = True,
         height=None,
         ref_surface=None,
+        direction=None,
     ):
 
         super().__init__(
@@ -487,7 +491,7 @@ class CalcPlane(CalcZone):
         self.fov_vert = fov_vert
         self.fov_horiz = fov_horiz
         # flags to be killed and replaced by PlaneType enum or something
-        self.direction = direction
+        self.use_normal = use_normal
         self.vert = vert
         self.horiz = horiz
 
@@ -502,7 +506,7 @@ class CalcPlane(CalcZone):
         data = {
             "fov_vert": self.fov_vert,
             "fov_horiz": self.fov_horiz,
-            "direction": self.direction,
+            "use_normal": self.use_normal,
             "vert": self.vert,
             "horiz": self.horiz,
             "calctype": self.calctype,
@@ -514,7 +518,7 @@ class CalcPlane(CalcZone):
         return super().__repr__() + (
             f"geometry={self.geometry.__repr__()}, "
             f"field_of_view=({self.fov_horiz}° horiz, {self.fov_vert}° vert), "
-            f"flags=(vert={self.vert}, horiz={self.horiz}, dir={self.direction}), "
+            f"flags=(vert={self.vert}, horiz={self.horiz}, use_normal={self.use_normal}), "
         )
 
     @classmethod
@@ -522,7 +526,8 @@ class CalcPlane(CalcZone):
         keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
         if data.get("geometry") is not None:
             geometry = PlaneGrid.from_dict(data.pop("geometry"))
-        return cls(geometry=geometry, **{k: v for k, v in data.items() if k in keys})
+            data["geometry"] = geometry
+        return cls(**{k: v for k, v in data.items() if k in keys})
 
     @classmethod
     def from_vectors(
@@ -583,7 +588,7 @@ class CalcPlane(CalcZone):
             self.fov_horiz,
             self.vert,
             self.horiz,
-            self.direction,
+            self.use_normal,
         )
 
     def to_view(self):
@@ -599,17 +604,33 @@ class CalcPlane(CalcZone):
             fov_horiz=self.fov_horiz,
             vert=self.vert,
             horiz=self.horiz,
-            direction=self.direction,
+            use_normal=self.use_normal,
             basis=self.basis,
         )
 
-    def update_from_legacy(self, height, ref_surface, direction):
-        """update the geometry based on legacy parameters"""
+    def set_height(self, height):
         self.geometry = self.geometry.update_from_legacy(
             height=height,
-            ref_surface=ref_surface,
+            ref_surface=self.geometry.ref_surface,
+            direction=self.geometry.direction,
+        )
+        return self
+
+    def set_ref_surface(self, ref_surface):
+        self.geometry = self.geometry.update_from_legacy(
+            height=self.geometry.height,
+            ref_surface=self.ref_surface,
+            direction=self.geometry.direction,
+        )
+        return self
+
+    def set_direction(self, direction):
+        self.geometry = self.geometry.update_from_legacy(
+            height=self.geometry.height,
+            ref_surface=self.geometry.ref_surface,
             direction=direction,
         )
+        return self
 
     def export(self, fname=None):
         """export values to csv"""

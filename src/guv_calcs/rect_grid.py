@@ -359,23 +359,34 @@ class PlaneGrid(RectGrid):
             raise ValueError("Direction must be in [1, 0, -1]")
 
         if ref_surface == "xy":
-            origin = (0.0, 0.0, float(height))
+            origin = (mins[0], mins[1], float(height))
             u_vec = (1.0, 0.0, 0.0)
             v_vec = (0.0, 1.0, 0.0)
         elif ref_surface == "xz":
-            origin = (0.0, float(height), 0.0)
-            u_vec = (1.0, 0.0, 0.0)
-            v_vec = (0.0, 0.0, 1.0)
+            # for some godforsaken reason this kludge is required for xz plane
+            def swap(tpl):
+                return tuple((tpl[1],tpl[0]))
+            mins = swap(mins)
+            maxs = swap(maxs)
+            if kwargs.get("spacing_init") is not None:
+                kwargs.setdefault("spacing_init", swap(spacing_init))
+            if kwargs.get("num_points_init") is not None:
+                kwargs.setdefault("num_points_init", swap(num_points_init))
+            origin = (mins[0], float(height), mins[1])
+            v_vec = (1.0, 0.0, 0.0)
+            u_vec = (0.0, 0.0, 1.0)           
         elif ref_surface == "yz":
-            origin = (float(height), 0.0, 0.0)
+            origin = (float(height), mins[0], mins[1])
             u_vec = (0.0, 1.0, 0.0)
             v_vec = (0.0, 0.0, 1.0)
 
         if direction == -1:
             v_vec = tuple(-np.asarray(v_vec))
 
+        extent = tuple(np.array(maxs)-np.array(mins))
+
         return cls(
-            mins=mins, maxs=maxs, origin=origin, u_vec=u_vec, v_vec=v_vec, **kwargs
+            mins=mins, maxs=extent, origin=origin, u_vec=u_vec, v_vec=v_vec, **kwargs
         )
 
     def update_from_legacy(self, height, ref_surface, direction):
@@ -409,3 +420,58 @@ class PlaneGrid(RectGrid):
                 origin=origin,
                 num_points_init=self.num_points,
             )
+
+    # ---------------- legacy properties --------------------
+    @property
+    def ref_surface(self) -> str | None:
+        """
+        Return 'xy', 'xz', or 'yz' if the plane is axis-aligned.
+        Otherwise return None.
+        """
+        n = self.normal  # unit normal, from existing property
+        axes = np.eye(3)
+        labels = ["yz", "xz", "xy"]  # normals along +x,+y,+z ⇒ planes yz,xz,xy
+
+        idx = int(np.argmax(np.abs(n)))
+        if not np.isclose(abs(n[idx]), 1.0, atol=1e-6):
+            return None  # not axis-aligned
+
+        return labels[idx]
+
+    @property
+    def height(self) -> float | None:
+        """
+        For an axis-aligned plane, return the offset along the axis
+        normal to the plane. Otherwise None.
+        """
+        rs = self.ref_surface
+        if rs is None:
+            return None
+
+        # Could use origin only; using coords is more robust if origin isn’t on the plane,
+        # but origin *should* be on the plane. This is the simple version:
+        if rs == "xy":  # normal ±z
+            return float(self.origin[2])
+        elif rs == "xz":  # normal ±y
+            return float(self.origin[1])
+        elif rs == "yz":  # normal ±x
+            return float(self.origin[0])
+
+    @property
+    def direction(self) -> int | None:
+        """
+        Sign of the normal relative to the axis orthogonal to the plane.
+        +1 or -1 if axis-aligned, else None.
+        """
+        rs = self.ref_surface
+        if rs is None:
+            print('bork')
+            return None
+
+        n = self.normal
+        if rs == "xy":  # normal ±z
+            return 1 if n[2] > 0 else -1
+        elif rs == "xz":  # normal ±y
+            return 1 if n[1] > 0 else -1
+        elif rs == "yz":  # normal ±x
+            return 1 if n[0] > 0 else -1

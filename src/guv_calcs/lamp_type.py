@@ -7,8 +7,8 @@ from .spectrum import Spectrum
 
 
 class GUVType(StrEnum):
-    KRCL = "krypton_chloride"
-    LPHG = "low_pressure_mercury"
+    KRCL = "krcl"
+    LPHG = "lphg"
     LED = "led"
     OTHER = "other"
 
@@ -22,13 +22,16 @@ class GUVType(StrEnum):
 
     @classmethod
     def from_token(cls, token: str) -> "GUVType":
-        token = re.sub(r"[\s_\-]+", "", str(token).strip().lower())
+        token = re.sub(r"[\s_\-()]+", "", str(token).strip().lower())
+
         aliases = {
             "krcl": cls.KRCL,
             "kryptonchloride": cls.KRCL,
+            "kryptonchloride222nm": cls.KRCL,
             "222nm": cls.KRCL,
             "222": cls.KRCL,
             "lowpressuremercury": cls.LPHG,
+            "lowpressuremercury254nm": cls.LPHG,
             "lphg": cls.LPHG,
             "254": cls.LPHG,
             "254nm": cls.LPHG,
@@ -48,6 +51,20 @@ class GUVType(StrEnum):
         if round(wv) == 254:
             return cls.LPHG
         return cls.OTHER
+        
+    @property
+    def label(self):
+        if self is GUVType.KRCL:
+            return "Krypton chloride (222 nm)"
+        if self is GUVType.LPHG:
+            return "Low-pressure mercury (254 nm)"
+        if self is GUVType.LED:
+            return "LED"
+        if self is GUVType.OTHER:
+            return "Other"
+
+    def __str__(self) -> str:
+        return self.label
 
     @property
     def default_wavelength(self) -> Optional[float]:
@@ -56,8 +73,11 @@ class GUVType(StrEnum):
         if self is GUVType.LPHG:
             return 254.0
         return None
-
-
+        
+    @classmethod
+    def dict(cls) -> dict:
+        return {member.value: member.label for member in cls}
+        
 @dataclass(frozen=True)
 class LampType:
     spectrum: Spectrum | None = None

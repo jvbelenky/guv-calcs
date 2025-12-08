@@ -275,7 +275,7 @@ def apply_plane_filters(values, theta, zv):
     """apply angular view filters to a plane"""
     if zv.is_plane():
         # apply normals/directions
-        if zv.direction != 0:
+        if zv.use_normal:
             values[theta > np.pi / 2] = 0
 
         # apply vertical/horizontal irradiances

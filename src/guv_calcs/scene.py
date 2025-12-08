@@ -230,6 +230,7 @@ class Scene:
                 zone_id="WholeRoomFluence",
                 name="Whole Room Fluence",
                 show_values=False,
+                num_x=25, num_y=25, num_z=25,
             ),
             CalcPlane(
                 zone_id="EyeLimits",
@@ -237,6 +238,7 @@ class Scene:
                 dose=True,
                 hours=8,
                 direction=0,
+                x_spacing=0.1,y_spacing=0.1,
             ),
             CalcPlane(
                 zone_id="SkinLimits",
@@ -244,6 +246,7 @@ class Scene:
                 dose=True,
                 hours=8,
                 direction=0,
+                x_spacing=0.1,y_spacing=0.1,
             ),
         ]
 
@@ -272,14 +275,14 @@ class Scene:
             zone.set_dimensions(
                 x2=self.dim.x, y2=self.dim.y, preserve_spacing=preserve_spacing
             )
-            zone.update_from_legacy(height=height, ref_surface="xy", direction=1)
+            zone.set_height(height=height)
             zone.horiz = skin_horiz
         if "EyeLimits" in self.calc_zones.keys():
             zone = self.calc_zones["EyeLimits"]
             zone.set_dimensions(
                 x2=self.dim.x, y2=self.dim.y, preserve_spacing=preserve_spacing
             )
-            zone.update_from_legacy(height=height, ref_surface="xy", direction=1)
+            zone.set_height(height=height)
             zone.fov_vert = fov_vert
             zone.vert = eye_vert
         if "WholeRoomFluence" in self.calc_zones.keys():
