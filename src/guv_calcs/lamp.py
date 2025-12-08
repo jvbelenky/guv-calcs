@@ -1,7 +1,6 @@
 from importlib import resources
 import inspect
 import json
-import pathlib
 import warnings
 import copy
 import numpy as np
@@ -13,6 +12,7 @@ from .lamp_plotter import LampPlotter
 from .lamp_orientation import LampOrientation
 from .trigonometry import to_polar
 from ._data import get_tlvs
+from .lamp_type import GUVType, LampUnitType, LampType
 
 VALID_LAMPS = [
     "aerolamp",
@@ -26,24 +26,6 @@ VALID_LAMPS = [
     "uvpro222_b1",
     "uvpro222_b2",
     "visium",
-]
-
-KRCL_KEYS = [
-    "krypton chloride",
-    "krypton-chloride",
-    "krypton_chloride",
-    "krcl",
-    "kr-cl",
-    "kr cl",
-]
-
-LPHG_KEYS = [
-    "low pressure mercury",
-    "low-pressure mercury",
-    "mercury",
-    "lphg",
-    "lp-hg",
-    "lp hg",
 ]
 
 
@@ -179,26 +161,14 @@ class Lamp:
 
         # Spectral data
         self.spectra_source = spectra_source
-        self.spectra = self._load_spectra(spectra_source)
-
-        # source type & wavelength - just labels if Spectra is provided
-        self.guv_type = guv_type
-        if guv_type is not None:
-            if any([key in guv_type.lower() for key in KRCL_KEYS]):
-                self.wavelength = 222
-            elif any([key in guv_type.lower() for key in LPHG_KEYS]):
-                self.wavelength = 254
-            else:  # set from wavelength if guv_type not recognized
-                self.wavelength = wavelength
-        else:
-            self.wavelength = wavelength
-        if self.wavelength is not None:
-            if not isinstance(self.wavelength, (int, float)):
-                msg = f"Wavelength must be int or float, not {type(self.wavelength)}"
-                raise TypeError(msg)
+        self.lamp_type = LampType(
+            spectrum=Spectrum.from_source(spectra_source),
+            _guv_type=GUVType.from_any(guv_type),
+            _wavelength=wavelength,
+        )
 
         # mW/sr or uW/cm2 typically; not directly specified in .ies file and they can vary for GUV fixtures
-        self.intensity_units = self._set_intensity_units(intensity_units)
+        self.intensity_units = LampUnitType.from_any(intensity_units)
 
         # plotting
         self.plotter = LampPlotter(self)
@@ -231,17 +201,15 @@ class Lamp:
             p = self.ies.photometry
             maxval = p.values.max().round(2)
             phot = f"Photometry(thetas={p.thetas.size}, phis={p.phis.size}, maxval={maxval})"
-        spec = False if self.spectra is None else True
 
         return (
             f"Lamp(id={self.lamp_id!r}, name={self.name!r}, "
             f"pos=({self.pose.x:.3g}, {self.pose.y:.3g}, {self.pose.z:.3g}), "
             f"aim=({self.pose.aimx:.3g}, {self.pose.aimy:.3g}, {self.pose.aimz:.3g}), "
             f"phot={phot}, "
-            f"units={self.intensity_units!r}, "
+            f"units={self.intensity_units.label}, "
             f"scaling_factor={self.scaling_factor}, "
-            f"wavelength={self.wavelength}, "
-            f"spectra_provided={spec}, "
+            f"{self.lamp_type.__repr__()}, "
             f"surface=({self.surface.width}×{self.surface.length}×{self.surface.depth} {self.surface.units}), "
             f"source_density={self.surface.source_density}, "
             f"enabled={self.enabled})"
@@ -271,8 +239,8 @@ class Lamp:
         data["aimx"] = float(self.pose.aimx)
         data["aimy"] = float(self.pose.aimy)
         data["aimz"] = float(self.pose.aimz)
-        data["intensity_units"] = self.intensity_units
-        data["guv_type"] = self.guv_type
+        data["intensity_units"] = self.intensity_units.value
+        data["guv_type"] = self.guv_type.value
         data["wavelength"] = self.wavelength
         data["width"] = self.surface.width
         data["length"] = self.surface.length
@@ -317,27 +285,6 @@ class Lamp:
     @property
     def keywords(self):
         return VALID_LAMPS
-
-    @classmethod
-    def _prepare_from_key(cls, key: str, kwargs: dict) -> dict:
-        """Common logic for from_keyword / from_index."""
-        if not isinstance(key, str):
-            raise TypeError(f"Keyword must be str, not {type(key)}")
-        if key.lower() not in VALID_LAMPS:
-            raise KeyError(
-                f"{key} is not a valid lamp key. Valid keys are {VALID_LAMPS}"
-            )
-        path = "guv_calcs.data.lamp_data"
-        fn = resources.files(path).joinpath(key.lower() + ".ies")
-        sn = resources.files(path).joinpath(key.lower() + ".csv")
-        kwargs.setdefault("filedata", fn)
-        kwargs.setdefault("spectra_source", sn)
-        if kwargs.get("lamp_id", None) is None:
-            kwargs.setdefault("lamp_id", key)
-            
-        if kwargs.get("guv_type", None) is None and kwargs.get("wavelength", None) is None:
-            kwargs.setdefault("guv_type", "krypton chloride") 
-        return kwargs
 
     @classmethod
     def from_keyword(cls, key, **kwargs):
@@ -425,10 +372,6 @@ class Lamp:
             self.surface.set_ies(self.ies)
 
         return self.ies
-
-    def load_spectra(self, spectra_source):
-        """external method for loading spectra after lamp object has been instantiated"""
-        self.spectra = self._load_spectra(spectra_source)
 
     def load_intensity_map(self, intensity_map):
         """external method for loading relative intensity map after lamp object has been instantiated"""
@@ -730,6 +673,39 @@ class Lamp:
         """update scaling factor based on the last scaling operation"""
         self._scaling_factor = self.ies.center() / self._base_ies.center()
 
+    # ---------------------- Spectra / Lamp type ---------------
+
+    def load_spectra(self, spectra_source):
+        """external method for loading spectra after lamp object has been instantiated"""
+        new_spectra = Spectrum.from_source(spectra_source)
+        self.lamp_type = self.lamp_type.update(spectrum=new_spectra)
+        return self
+
+    def set_guv_type(self, guv_type, spectra=None):
+        guv_type = GUVType.from_any(guv_type)
+        if guv_type is not None and self.wavelength == guv_type.default_wavelength:
+            return self  # no changes, don't accidentally override spectra
+        self.lamp_type = LampType(_guv_type=guv_type)
+        return self
+
+    def set_wavelength(self, wavelength):
+        if self.wavelength == wavelength:
+            return self  # no changes, don't accidentally override spectra
+        self.lamp_type = LampType(_wavelength=wavelength)
+        return self
+
+    @property
+    def spectra(self):
+        return self.lamp_type.spectrum
+
+    @property
+    def guv_type(self):
+        return self.lamp_type.guv_type
+
+    @property
+    def wavelength(self):
+        return self.lamp_type.wavelength
+
     # ---------------------- Surface ---------------------------
 
     @property
@@ -805,46 +781,20 @@ class Lamp:
 
     # --------------------------- Internals -----------------------------
 
-    def _set_intensity_units(self, arg):
-        """
-        TODO: this should probably just be an enum?
-        determine the units of the radiant intensity
-        """
-        if arg is not None:
-            msg = f"Intensity unit {arg} not recognized. Using default value `mW/sr`"
-            if isinstance(arg, int):
-                if arg == 0:
-                    intensity_units = "mW/sr"
-                elif arg == 1:
-                    intensity_units = "uW/cm²"
-                else:
-                    warnings.warn(msg, stacklevel=3)
-                    intensity_units = "mW/sr"
-            elif isinstance(arg, str):
-                if arg.lower() in ["mw/sr", "uw/cm2", "uw/cm²"]:
-                    intensity_units = arg
-                else:
-                    warnings.warn(msg, stacklevel=3)
-                    intensity_units = "mW/sr"
-            else:
-                msg = f"Datatype {type(arg)} for intensity units not recognized. Using default value `mW/Sr`"
-                intensity_units = "mW/sr"
-        else:
-            intensity_units = "mW/sr"
-        return intensity_units
-
-    def _load_spectra(self, spectra_source):
-        """initialize a Spectrum object from the source"""
-        if isinstance(spectra_source, dict):
-            spectra = Spectrum.from_dict(spectra_source)
-        elif isinstance(spectra_source, (str, pathlib.Path, bytes)):
-            spectra = Spectrum.from_file(spectra_source)
-        elif isinstance(spectra_source, tuple):
-            spectra = Spectrum(spectra_source[0], spectra_source[1])
-        elif spectra_source is None:
-            spectra = None
-        else:
-            spectra = None
-            msg = f"Datatype {type(spectra_source)} not recognized spectral data source"
-            warnings.warn(msg, stacklevel=3)
-        return spectra
+    @classmethod
+    def _prepare_from_key(cls, key: str, kwargs: dict) -> dict:
+        """Common logic for from_keyword / from_index."""
+        if not isinstance(key, str):
+            raise TypeError(f"Keyword must be str, not {type(key)}")
+        if key.lower() not in VALID_LAMPS:
+            raise KeyError(
+                f"{key} is not a valid lamp key. Valid keys are {VALID_LAMPS}"
+            )
+        path = "guv_calcs.data.lamp_data"
+        fn = resources.files(path).joinpath(key.lower() + ".ies")
+        sn = resources.files(path).joinpath(key.lower() + ".csv")
+        kwargs.setdefault("filedata", fn)
+        kwargs.setdefault("spectra_source", sn)
+        if kwargs.get("lamp_id", None) is None:
+            kwargs.setdefault("lamp_id", key)
+        return kwargs

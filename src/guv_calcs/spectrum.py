@@ -3,11 +3,15 @@ import warnings
 from importlib import resources
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
 from .io import load_csv, rows_to_bytes
 
 
 class Spectrum:
     """
+    TODO: This is a bit of a mess. Probably it should be a dataclass or something.
+
+
     Attributes:
         wavelengths: 1d arraylike
             wavelength values in nanometers
@@ -40,6 +44,27 @@ class Spectrum:
         self.weighted_intensities = (
             None if self.weights is None else self._weight_spectra()
         )
+
+    @classmethod
+    def from_source(cls, source) -> "Spectrum | None":
+        """Best-effort construction from various common representations."""
+        if source is None:
+            return None
+        if isinstance(source, cls):
+            return source
+        if isinstance(source, dict):
+            return cls.from_dict(source)
+        if isinstance(source, (str, bytes, Path)):
+            return cls.from_file(source)
+        if isinstance(source, tuple) and len(source) == 2:
+            wavelengths, intensities = source
+            return cls(wavelengths, intensities)
+
+        warnings.warn(
+            f"Datatype {type(source)} not recognized as spectral data source",
+            stacklevel=3,
+        )
+        return None
 
     @classmethod
     def from_file(cls, filepath):
@@ -81,6 +106,10 @@ class Spectrum:
         wavelengths = np.array(dct[keys[0]])
         intensities = np.array(dct[keys[1]])
         return cls(wavelengths, intensities)
+
+    @property
+    def peak_wavelength(self):
+        return float(round(self.wavelengths[np.argmax(self.intensities)]))
 
     def to_dict(self, as_string=False):
         spec = {}

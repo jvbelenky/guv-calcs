@@ -7,6 +7,7 @@ from copy import deepcopy
 
 # from .trigonometry import attitude, to_polar
 from .units import convert_units
+from .lamp_type import LampUnitType
 
 
 @dataclass(frozen=True)
@@ -155,8 +156,8 @@ class LightingCalculator:
             theta = np.arccos(-z / r)
             values = apply_plane_filters(values, theta, zv)
 
-        # TODO: This should actually be in Lamp/Photometry
-        if lamp.intensity_units.lower() == "mw/sr":
+        # TODO: This should maybe actually be in Lamp/Photometry
+        if lamp.intensity_units is LampUnitType.MW_PER_SR:
             values = values / 10  # convert from mW/Sr to uW/cm2
 
         return values.reshape(*zv.num_points)
