@@ -260,7 +260,7 @@ class CalcZone(object):
                 x2 or self.geometry.x2, y2 or self.geometry.y2, z2 or self.geometry.z2
             )
             self.geometry = self.geometry.update_dimensions(
-                mins, maxs, preserve_spacing
+                mins=mins, maxs=maxs, preserve_spacing=preserve_spacing
             )
         return self
 
