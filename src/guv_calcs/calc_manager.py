@@ -9,6 +9,8 @@ from copy import deepcopy
 from .units import convert_units
 from .lamp_type import LampUnitType
 
+np.seterr(divide="ignore", invalid="ignore")
+
 
 @dataclass(frozen=True)
 class LampCacheEntry:

@@ -42,7 +42,7 @@ class GUVType(StrEnum):
         try:
             return aliases[token]
         except KeyError:
-            raise ValueError(f"Unknown GUVType {token!r}")
+            raise ValueError(f"Unknown GUVType {token}")
 
     @classmethod
     def from_wavelength(cls, wv: float) -> "GUVType":
@@ -51,7 +51,7 @@ class GUVType(StrEnum):
         if round(wv) == 254:
             return cls.LPHG
         return cls.OTHER
-        
+
     @property
     def label(self):
         if self is GUVType.KRCL:
@@ -73,11 +73,12 @@ class GUVType(StrEnum):
         if self is GUVType.LPHG:
             return 254.0
         return None
-        
+
     @classmethod
     def dict(cls) -> dict:
         return {member.value: member.label for member in cls}
-        
+
+
 @dataclass(frozen=True)
 class LampType:
     spectrum: Spectrum | None = None

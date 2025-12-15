@@ -204,7 +204,10 @@ def generate_report(self, fname=None):
     header group clearly.
     """
     precision = self.precision if self.precision > 3 else 3
-    fmt = lambda v: round(v, precision) if isinstance(v, (int, float)) else v
+
+    def fmt(v):
+        return round(v, precision) if isinstance(v, (int, float)) else v
+
     # ───  Room parameters  ───────────────────────────────
     rows = [["Room Parameters"]]
     rows += [["", "Dimensions", "x", "y", "z", "units"]]
@@ -217,7 +220,9 @@ def generate_report(self, fname=None):
     # ───  Reflectance  ──────────────────────────────────
     rows += [["", "Reflectance"]]
     rows += [["", "", "Floor", "Ceiling", "North", "South", "East", "West", "Enabled"]]
-    rows += [["", "", *self.ref_manager.reflectances.values(), self.ref_manager.enabled]]
+    rows += [
+        ["", "", *self.ref_manager.reflectances.values(), self.ref_manager.enabled]
+    ]
     rows += [[""]]
 
     # ───  Luminaires  ───────────────────────────────────
@@ -240,7 +245,7 @@ def generate_report(self, fname=None):
                 "Surface Length",
                 "Surface Width",
                 "Fixture Depth",
-                "Scaling factor"
+                "Scaling factor",
             ]
         ]
         for lamp in self.scene.lamps.values():
