@@ -17,7 +17,7 @@ from ._data import (
     sum_multiwavelength_data,
     plot_disinfection_data,
 )
-from .units import convert_units
+from .units import convert_units, convert_length, convert_time
 from .lamp_helpers import new_lamp_position, get_lamp_positions
 from ._read import read_export_file, file_to_zone
 from ._version import __version__
@@ -48,6 +48,8 @@ __all__ = [
     "sum_multiwavelength_data",
     "plot_disinfection_data",
     "convert_units",
+    "convert_length",
+    "convert_time",
     "new_lamp_position",
     "get_lamp_positions",
     "read_export_file",

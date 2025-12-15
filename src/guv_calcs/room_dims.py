@@ -1,5 +1,6 @@
 from dataclasses import dataclass, replace
 import numpy as np
+from .units import LengthUnits
 
 
 @dataclass(frozen=True, slots=True)
@@ -7,7 +8,7 @@ class RoomDimensions:
     x: float
     y: float
     z: float
-    units: str = "meters"
+    units: "LengthUnits" = LengthUnits.METERS
 
     @property
     def volume(self) -> float:
@@ -35,5 +36,5 @@ class RoomDimensions:
             x=self.x if x is None else x,
             y=self.y if y is None else y,
             z=self.z if z is None else z,
-            units=self.units if units is None else units.lower(),
+            units=self.units if units is None else LengthUnits.from_any(units),
         )

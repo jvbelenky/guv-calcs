@@ -9,10 +9,13 @@ from .disinfection_calculator import DisinfectionCalculator
 from .reflectance import ReflectanceManager, ReflectiveSurface
 from .scene import Scene
 from .io import load_room_data, save_room_data, export_room_zip, generate_report
+from .safety import PhotStandard
+from .units import LengthUnits, convert_length
 
-UNIT_DEFAULTS = {"meters": [6.0, 4.0, 2.7], "feet": [20.0, 13.0, 9.0]}
-VALID_UNITS = UNIT_DEFAULTS.keys()
-
+DEFAULT_DIMS = {}
+for member in list(LengthUnits):
+    base = (6.0, 4.0, 2.7) #meters
+    DEFAULT_DIMS[member] = convert_length("meters", member, *base, sigfigs=0)
 
 class Room:
     """
@@ -42,15 +45,12 @@ class Room:
     ):
 
         ### Dimensions
-        if units.lower() not in VALID_UNITS:
-            raise KeyError(f"Invalid unit {units}")
-        default = UNIT_DEFAULTS[units.lower()]
-
+        units = LengthUnits.from_any(units)
         dim = RoomDimensions(
-            x if x is not None else default[0],
-            y if y is not None else default[1],
-            z if z is not None else default[2],
-            "meters" if units is None else units.lower(),
+            x if x is not None else DEFAULT_DIMS[units][0],
+            y if y is not None else DEFAULT_DIMS[units][1],
+            z if z is not None else DEFAULT_DIMS[units][2],
+            units,
         )
 
         ### Scene - dimensions, lamps, zones, and reflective surfaces
@@ -67,7 +67,7 @@ class Room:
         self.calc_zones = self.scene.calc_zones
 
         ### Misc flags
-        self.standard = standard
+        self.standard = PhotStandard.from_any(standard)
         self.air_changes = air_changes
         self.ozone_decay_constant = ozone_decay_constant
         self.precision = precision
@@ -135,7 +135,6 @@ class Room:
         data["units"] = self.units
 
         # this should probably come from a reflectance manager to_dict
-        # reflectance manager maybe should also own enable_reflectance?
         data["enable_reflectance"] = self.ref_manager.enabled
         data["reflectance_max_num_passes"] = self.ref_manager.max_num_passes
         data["reflectance_threshold"] = self.ref_manager.threshold
@@ -263,8 +262,9 @@ class Room:
     @property
     def recalculate_incidence(self) -> bool:
         """
-        TODO: possibly should be off in the ref_manager
+        TODO: possibly should be off in the ref_manager?
         true if incident reflections need recalculation
+        also should be true if any new surfaces are added
         """
         new_calc_state = self.get_calc_state()
         new_update_state = self.get_update_state()
@@ -281,7 +281,7 @@ class Room:
 
     def set_standard(self, standard, preserve_spacing=True):
         """update the photobiological safety standard the Room is subject to"""
-        self.standard = standard
+        self.standard = PhotStandard.from_any(standard)
         self.scene.update_standard_zones(
             standard=self.standard, preserve_spacing=preserve_spacing
         )
@@ -400,7 +400,7 @@ class Room:
     # -------------------- Scene: lamps, zones, surfaces ---------------------
 
     def lamp(self, lamp_id):
-        return self.scene.lamps.get(zone_id)
+        return self.scene.lamps.get(lamp_id)
 
     def zone(self, zone_id):
         return self.scene.calc_zones.get(zone_id)
@@ -440,6 +440,10 @@ class Room:
     def remove_lamp(self, lamp_id):
         """Remove a lamp from the room scene"""
         self.scene.remove_lamp(lamp_id)
+        return self
+
+    def plane_from_face(self, wall, **kwargs):
+        self.scene.plane_from_face(wall, **kwargs)
         return self
 
     def add_calc_zone(self, calc_zone, on_collision=None):
