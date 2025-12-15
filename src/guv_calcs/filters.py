@@ -167,7 +167,7 @@ class MeasuredCorrection(FilterBase):
         self.beta_nodes = np.linspace(0, np.linalg.norm(self.v), values.shape[1])
 
         # incident plane
-        self.plane = CalcPlane.from_vectors(
+        self.plane = CalcPlane.from_points(
             p0=p0,
             pU=pU,
             pV=pV,

@@ -53,7 +53,9 @@ def export_volume(zone, fname=None):
     lines = header.split("\n")
     rows = [[line] for line in lines]
     rows += [zone.geometry.num_points]
-    rows += zone.geometry.points
+    rows += [np.unique(zone.geometry.coords.T[0])]
+    rows += [np.unique(zone.geometry.coords.T[1])]
+    rows += [np.unique(zone.geometry.coords.T[2])]
     values = zone.get_values()
     for i in range(zone.geometry.num_z):
         rows += [""]

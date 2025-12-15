@@ -246,12 +246,11 @@ class RoomPlotter:
         return fig
 
     def _plot_plane_values(self, zone, fig):
-        coords = zone.coords.reshape(*zone.num_points, 3)
-        X, Y, Z = coords[:, :, 0], coords[:, :, 1], coords[:, :, 2]
+        x, y, z = zone.coords.T
         zone_value_trace = go.Surface(
-            x=X,
-            y=Y,
-            z=Z,
+            x=x,
+            y=y,
+            z=z,
             surfacecolor=zone.values,
             colorscale=self.room.scene.colormap,
             showscale=False,
@@ -269,9 +268,9 @@ class RoomPlotter:
             self._update_trace_by_id(
                 fig,
                 zone.zone_id,
-                x=X,
-                y=Y,
-                z=Z,
+                x=x,
+                y=y,
+                z=z,
                 surfacecolor=zone.values,
             )
         return fig
@@ -332,15 +331,13 @@ class RoomPlotter:
             )
         # fluence isosurface
         if zone.values is not None and zone.show_values:
-            X, Y, Z = np.meshgrid(*zone.points, indexing="ij")
-            x, y, z = X.flatten(), Y.flatten(), Z.flatten()
             values = zone.values.flatten()
             isomin = zone.values.mean() / 2
             if zone.name + " Values" not in traces:
                 zone_value_trace = go.Isosurface(
-                    x=x,
-                    y=y,
-                    z=z,
+                    x=zone.coords.T[0],
+                    y=zone.coords.T[1],
+                    z=zone.coords.T[2],
                     value=values,
                     isomin=isomin,
                     surface_count=3,
@@ -359,9 +356,9 @@ class RoomPlotter:
                 self._update_trace_by_id(
                     fig,
                     zone.zone_id,
-                    x=x,
-                    y=y,
-                    z=z,
+                    x=zone.coords.T[0],
+                    y=zone.coords.T[1],
+                    z=zone.coords.T[2],
                     values=values,
                     isomin=isomin,
                 )

@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import plotly.graph_objs as go
-import numpy as np
+import warnings
 
 
 def plot_volume(zone, title=None):
@@ -8,30 +8,30 @@ def plot_volume(zone, title=None):
     Plot the fluence values as an isosurface using Plotly.
     """
 
-    if zone.values is None:
-        raise ValueError("No values calculated for this volume.")
-
-    X, Y, Z = np.meshgrid(*zone.geometry.points, indexing="ij")
-    x, y, z = X.flatten(), Y.flatten(), Z.flatten()
-    values = zone.values.flatten()
-    isomin = zone.values.mean() / 2
     fig = go.Figure()
-    fig.add_trace(
-        go.Isosurface(
-            x=x,
-            y=y,
-            z=z,
-            value=values,
-            isomin=isomin,
-            surface_count=3,
-            opacity=0.25,
-            showscale=False,
-            colorbar=None,
-            colorscale=zone.colormap,
-            caps=dict(x_show=False, y_show=False, z_show=False),
-            name=zone.name + " Values",
+
+    if zone.values is None:
+        warnings.warn("No values calculated for this volume.")
+    else:
+        values = zone.get_values().flatten()
+        isomin = values.mean() / 2
+
+        fig.add_trace(
+            go.Isosurface(
+                x=zone.coords.T[0],
+                y=zone.coords.T[1],
+                z=zone.coords.T[2],
+                value=values,
+                isomin=isomin,
+                surface_count=3,
+                opacity=0.25,
+                showscale=False,
+                colorbar=None,
+                colorscale=zone.colormap,
+                caps=dict(x_show=False, y_show=False, z_show=False),
+                name=zone.name + " Values",
+            )
         )
-    )
     fig.update_layout(
         title=dict(
             text=zone.name if title is None else title,
@@ -51,7 +51,10 @@ def plot_volume(zone, title=None):
 
 
 def plot_plane(zone, fig=None, ax=None, vmin=None, vmax=None, title=None):
-    """Plot the image of the radiation pattern"""
+    """
+    TODO: extent will not work correctly for non-axis-aligned planes
+    Plot the image of the radiation pattern
+    """
     if fig is None:
         if ax is None:
             fig, ax = plt.subplots()

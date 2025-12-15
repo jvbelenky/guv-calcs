@@ -2,13 +2,14 @@ from dataclasses import dataclass, replace, field
 import numbers
 import numpy as np
 import inspect
+import warnings
 from .axis import Axis1D
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class RectGrid:
-    mins: tuple[float, ...]
-    maxs: tuple[float, ...]
+    origin: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    spans: tuple[float, ...] = (1.0, 1.0, 1.0)
     spacing_init: tuple[float, ...] | None = None
     num_points_init: tuple[int, ...] | None = None
     offset: bool = True
@@ -21,36 +22,48 @@ class RectGrid:
 
     def __post_init__(self):
 
-        if len(self.mins) != len(self.maxs):
-            raise ValueError(
-                f"number of min ({len(self.mins)}) and max ({len(self.maxs)}) dimensions do not match"
-            )
-
         if self.num_points_init is not None:
-            if len(self.num_points_init) != len(self.mins):
+            if len(self.num_points_init) != len(self.spans):
                 raise ValueError(
                     "num_points_init dimensions do not match min/max dimensions"
                 )
 
         if self.spacing_init is not None:
-            if len(self.spacing_init) != len(self.mins):
+            if len(self.spacing_init) != len(self.spans):
                 raise ValueError(
                     "spacing_init dimensions do not match min/max dimensions"
                 )
 
-        if len(self.mins) > 3:
+        if len(self.spans) > 3:
             raise ValueError("Maximum of three dimensions allowed")
 
-        if len(self.mins) < 1:
+        if len(self.spans) < 1:
             raise ValueError("Minimum of one dimension required")
 
         if type(self.offset) is not bool:
             raise TypeError("must be either True or False")
 
+    def __eq__(self, other):
+        if not isinstance(other, RectGrid):
+            return NotImplemented
+        return self.to_dict() == other.to_dict()
+
     @classmethod
     def from_dict(cls, data):
         keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
         return cls(**{k: v for k, v in data.items() if k in keys})
+
+    def to_dict(self):
+        data = {
+            "origin": tuple(self.origin),
+            "spans": tuple(self.spans),
+            "spacing": tuple(self.spacing),
+        }
+        data.update(self._extra_dict())
+        return data
+
+    def _extra_dict(self):
+        return {}
 
     def update(self, **changes):
         new = replace(self, **changes)
@@ -64,12 +77,11 @@ class RectGrid:
             return self._cache["axes"]
 
         axes = []
-        spacing = self.spacing_init or (None,) * len(self.mins)
-        num_points = self.num_points_init or (None,) * len(self.mins)
-        for lo, hi, sp, n_pts in zip(self.mins, self.maxs, spacing, num_points):
+        spacing = self.spacing_init or (None,) * len(self.spans)
+        num_points = self.num_points_init or (None,) * len(self.spans)
+        for span, sp, n_pts in zip(self.spans, spacing, num_points):
             axis = Axis1D(
-                lo=lo,
-                hi=hi,
+                span=abs(span),
                 spacing_init=sp,
                 num_points_init=n_pts,
                 offset=self.offset,
@@ -82,43 +94,50 @@ class RectGrid:
     def points(self) -> list:
         if self._cache.get("points") is not None:
             return self._cache.get("points")
-        points = [axis.points for axis in self.axes]
+        points = [axis.points for axis, start in zip(self.axes, self.mins)]
         self._cache["points"] = points
         return points
 
     @property
-    def dimensions(self) -> tuple:
-        return np.array(
-            tuple(np.array((float(axis.lo), float(axis.hi))) for axis in self.axes)
+    def mins(self):
+        return tuple(
+            min(orig, orig + span) for orig, span in zip(self.origin, self.spans)
         )
 
     @property
-    def spans(self) -> tuple:
-        return tuple(abs(float(axis.hi - axis.lo)) for axis in self.axes)
+    def maxs(self):
+        return tuple(
+            max(orig, orig + span) for orig, span in zip(self.origin, self.spans)
+        )
 
     @property
+    def dimensions(self):
+        return tuple((a, b) for a, b in zip(self.mins, self.maxs))
+
+    # warning -- these will no longer function as intended for PlaneGrids if they are off-axis
+    @property
     def x1(self) -> float:
-        return self.dimensions[0][0] if len(self.dimensions) > 0 else None
+        return self.mins[0] if len(self.mins) > 0 else None
 
     @property
     def x2(self) -> float:
-        return self.dimensions[0][1] if len(self.dimensions) > 0 else None
+        return self.maxs[0] if len(self.mins) > 0 else None
 
     @property
     def y1(self) -> float:
-        return self.dimensions[1][0] if len(self.dimensions) > 1 else None
+        return self.mins[1] if len(self.mins) > 1 else None
 
     @property
     def y2(self) -> float:
-        return self.dimensions[1][1] if len(self.dimensions) > 1 else None
+        return self.maxs[1] if len(self.mins) > 1 else None
 
     @property
     def z1(self) -> float:
-        return self.dimensions[2][0] if len(self.dimensions) > 2 else None
+        return self.mins[2] if len(self.mins) > 2 else None
 
     @property
     def z2(self) -> float:
-        return self.dimensions[2][1] if len(self.dimensions) > 2 else None
+        return self.maxs[2] if len(self.mins) > 2 else None
 
     @property
     def num_points(self) -> tuple:
@@ -166,15 +185,14 @@ class RectGrid:
 
     @property
     def calc_state(self) -> tuple:
-        dims = tuple(val for dim in self.dimensions for val in dim)
-        return dims + tuple(self.spacing) + (self.offset,)
+        return tuple(self.origin) + (tuple(self.spans) + self.spacing + (self.offset,))
 
     @property
     def update_state(self) -> tuple:
         return ()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class VolGrid(RectGrid):
     def __repr__(self):
         return (
@@ -190,31 +208,37 @@ class VolGrid(RectGrid):
             return self._cache["coords"]
         mesh = np.meshgrid(*self.points, indexing="ij")
         X, Y, Z = [grid.reshape(-1) for grid in mesh]
-        coords = np.array((X, Y, Z)).T
+        coords = np.array((X, Y, Z)).T + np.asarray(self.origin, float)
         coords = np.unique(coords, axis=0)
         self._cache["coords"] = coords
         return coords
 
-    def to_dict(self):
-        return {"mins": self.mins, "maxs": self.maxs, "spacing": self.spacing}
+    @classmethod
+    def from_legacy(cls, *, mins, maxs, **kwargs):
+        origin = np.asarray(mins, float)
+        spans = np.asarray(maxs) - origin
+        return cls(origin=tuple(origin), spans=tuple(spans), **kwargs)
 
     def update_dimensions(self, mins, maxs, preserve_spacing=True):
         """mostly to keep the pattern with PlaneGrid"""
+        origin = np.asarray(mins, float)
+        spans = np.asarray(maxs, float) - origin
         if preserve_spacing:
-            return self.update(mins=mins, maxs=maxs, spacing_init=self.spacing)
+            return self.update(origin=origin, spans=spans, spacing_init=self.spacing)
         else:
-            return self.update(mins=mins, maxs=maxs, num_points_init=self.num_points)
+            return self.update(
+                origin=origin, spans=spans, num_points_init=self.num_points
+            )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class PlaneGrid(RectGrid):
-    origin: tuple[float, float, float] = (0.0, 0.0, 0.0)
     u_vec: tuple[float, float, float] = (1.0, 0.0, 0.0)
     v_vec: tuple[float, float, float] = (0.0, 1.0, 0.0)
 
     def __post_init__(self):
 
-        if len(self.mins) > 2:
+        if len(self.spans) > 2:
             raise ValueError("Too many dimensions for a plane")
 
         u = np.array(self.u_vec, float)
@@ -239,39 +263,30 @@ class PlaneGrid(RectGrid):
             f"normal={self.normal})"
         )
 
-    def to_dict(self):
-        return {
-            "mins": self.mins,
-            "maxs": self.maxs,
-            "spacing": self.spacing,
-            "origin": self.origin,
-            "u_vec": self.u_vec,
-            "v_vec": self.v_vec,
-        }
+    def _extra_dict(self):
+        data = super()._extra_dict()
+        data.update({"u_vec": tuple(self.u_vec), "v_vec": tuple(self.v_vec)})
+        return data
 
     @property
     def calc_state(self):
-        return (
-            super().calc_state
-            + tuple(self.origin)
-            + tuple(self.u_vec)
-            + tuple(self.v_vec)
+        return super().calc_state + tuple(self.u_vec) + tuple(self.v_vec)
+
+    @property
+    def extent(self):
+        return np.array(
+            np.asarray(self.origin, float)
+            + self.u_hat * self.spans[0]
+            + self.v_hat * self.spans[1]
         )
 
     @property
-    def update_state(self):
-        return super().update_state
+    def mins(self):
+        return tuple(min(a, b) for a, b in zip(self.origin, self.extent) if a != b)
 
-    # @property
-    # def dimensions(self):
-        # """bespoke overwrite--for planes initialized with origin/uvec/vvec"""
-        # dim1 = np.asarray(self.origin, float)
-        # dim2 = np.array(
-            # np.array(self.origin)
-            # + np.array(self.u_hat) * self.maxs[0]
-            # + np.array(self.v_hat) * self.maxs[1]
-        # )
-        # return np.array(tuple(np.array((a, b)) for a, b in zip(dim1, dim2) if a != b))
+    @property
+    def maxs(self):
+        return tuple(max(a, b) for a, b in zip(self.origin, self.extent) if a != b)
 
     @property
     def u_hat(self):
@@ -317,26 +332,43 @@ class PlaneGrid(RectGrid):
         return coords
 
     @classmethod
-    def from_vectors(cls, *, origin, u_vec, v_vec, **kwargs):
-        origin = np.asarray(origin, float)
-        u = np.asarray(u_vec, float)
-        v = np.asarray(v_vec, float)
-        if np.linalg.norm(u) == 0 or np.linalg.norm(v) == 0:
-            raise ValueError("from_vectors requires non-zero u_vec and v_vec")
-        # Orthonormalize u and v to get a clean 2D parameter frame
+    def from_points(cls, *, p0, pU, pV, **kwargs):
+        origin = np.asarray(p0, float)
+        u = np.asarray(pU, float) - p0
+        v = np.asarray(pV, float) - p0
+        if np.dot(u, v) != 0:
+            msg = f"point {pV} is not orthogonal to point {pV}"
+            warnings.warn(msg)
         u_hat = u / np.linalg.norm(u)
         v_perp = v - np.dot(v, u_hat) * u_hat
         v_norm = np.linalg.norm(v_perp)
         if v_norm == 0:
-            raise ValueError("from_vectors requires non-collinear points")
+            raise ValueError("from_points requires non-collinear points")
         v_hat = v_perp / v_norm
         s1, t1 = np.dot(u, u_hat), np.dot(u, v_hat)
         s2, t2 = np.dot(v, u_hat), np.dot(v, v_hat)
-        mins = (0, 0)
-        maxs = (max(s1, s2), max(t1, t2))
-        return cls(
-            mins=mins, maxs=maxs, origin=origin, u_vec=u_vec, v_vec=v_vec, **kwargs
-        )
+        spans = (max(s1, s2), max(t1, t2))
+        return cls(spans=spans, origin=origin, u_vec=u, v_vec=v, **kwargs)
+
+    def update_dimensions(self, mins, maxs, preserve_spacing=True):
+        """keep current orientation, with different extents"""
+        u1, u2, v1, v2 = mins[0], maxs[0], mins[1], maxs[1]
+        span_u, span_v = (u2 - u1), (v2 - v1)
+        origin = u1 * self.u_hat + v1 * self.v_hat
+        if preserve_spacing:
+            return self.update(
+                origin=origin,
+                spans=(span_u, span_v),
+                spacing_init=self.spacing,
+            )
+        else:
+            return self.update(
+                origin=origin,
+                spans=(span_u, span_v),
+                num_points_init=self.num_points,
+            )
+
+    # ---------------- legacy properties for axis-aligned planes --------------------
 
     @classmethod
     def from_legacy(
@@ -357,77 +389,62 @@ class PlaneGrid(RectGrid):
             raise TypeError("Height must be numeric")
         if direction is not None and direction not in [1, 0, -1]:
             raise ValueError("Direction must be in [1, 0, -1]")
-        
-        val = float(mins[1]) + float(maxs[1])
 
         if ref_surface == "xy":
             if direction == 1:
-                origin = (0.0, 0.0, float(height))
-                u_vec = (1.0, 0.0, 0.0)      # +x
-                v_vec = (0.0, 1.0, 0.0)      # +y
+                origin = (mins[0], mins[1], height)
+                u_vec = (1, 0, 0)
+                v_vec = (0, 1, 0)
             else:
-                origin = (0.0, val, float(height))
-                u_vec = (1.0, 0.0, 0.0)      # +x
-                v_vec = (0.0, -1.0, 0.0)     # -y
+                origin = (mins[1], maxs[1], height)
+                u_vec = (1, 0, 0)
+                v_vec = (0, -1, 0)
 
         elif ref_surface == "xz":
             if direction == 1:
-                origin = (0.0, float(height), val)
-                u_vec = (1.0, 0.0, 0.0)      # +x
-                v_vec = (0.0, 0.0, -1.0)     # -z
+                origin = (mins[1], height, maxs[1])
+                u_vec = (1, 0, 0)
+                v_vec = (0, 0, -1)
             else:
-                origin = (0.0, float(height), 0.0)
-                u_vec = (1.0, 0.0, 0.0)      # +x
-                v_vec = (0.0, 0.0, 1.0)      # +z
+                origin = (mins[0], height, mins[1])
+                u_vec = (1, 0, 0)
+                v_vec = (0, 0, 1)
 
         elif ref_surface == "yz":
             if direction == 1:
-                origin = (float(height), 0.0, 0.0)
-                u_vec = (0.0, 1.0, 0.0)      # +y
-                v_vec = (0.0, 0.0, 1.0)      # +z
+                origin = (height, mins[0], mins[1])
+                u_vec = (0, 1, 0)
+                v_vec = (0, 0, 1)
             else:
-                origin = (float(height), 0.0, val)
-                u_vec = (0.0, 1.0, 0.0)      # +y
-                v_vec = (0.0, 0.0, -1.0)     # -z
+                origin = (height, mins[1], maxs[1])
+                u_vec = (0, 1, 0)
+                v_vec = (0, 0, -1)
+
+        spans = (maxs[0] - mins[0], maxs[1] - mins[1])
 
         return cls(
-            mins=mins, maxs=maxs, 
-            origin=origin, u_vec=u_vec, v_vec=v_vec, **kwargs
+            spans=spans,
+            origin=np.asarray(origin, float),
+            u_vec=np.asarray(u_vec, float),
+            v_vec=np.asarray(v_vec, float),
+            **kwargs,
         )
 
-    def update_from_legacy(self, height, ref_surface, direction):
+    def update_legacy(self, height=None, ref_surface=None, direction=None):
         """keep current dimensions, update height/orientation/reference surface"""
+        if self.ref_surface is None:
+            raise ValueError(
+                "update_from_legacy is only defined for axis-aligned planes"
+            )
         return PlaneGrid.from_legacy(
             mins=self.mins,
             maxs=self.maxs,
             spacing_init=tuple(self.spacing),
-            height=height,
-            ref_surface=ref_surface,
-            direction=direction,
+            height=height or self.height,
+            ref_surface=ref_surface or self.ref_surface,
+            direction=direction or self.direction,
         )
 
-    def update_dimensions(self, mins, maxs, preserve_spacing=True):
-        """keep current orientation, with different extents"""
-        u1, u2, v1, v2 = mins[0], maxs[0], mins[1], maxs[1]
-        u_vec = np.array(self.u_hat) * (u2 - u1)
-        v_vec = np.array(self.v_hat) * (v2 - v1)
-        origin = u1 * self.u_hat + v1 * self.v_hat
-        if preserve_spacing:
-            return PlaneGrid.from_vectors(
-                u_vec=u_vec,
-                v_vec=v_vec,
-                origin=origin,
-                spacing_init=self.spacing,
-            )
-        else:
-            return PlaneGrid.from_vectors(
-                u_vec=u_vec,
-                v_vec=v_vec,
-                origin=origin,
-                num_points_init=self.num_points,
-            )
-
-    # ---------------- legacy properties --------------------
     @property
     def ref_surface(self) -> str | None:
         """
@@ -435,7 +452,7 @@ class PlaneGrid(RectGrid):
         Otherwise return None.
         """
         n = self.normal  # unit normal, from existing property
-        axes = np.eye(3)
+        # axes = np.eye(3)
         labels = ["yz", "xz", "xy"]  # normals along +x,+y,+z ⇒ planes yz,xz,xy
 
         idx = int(np.argmax(np.abs(n)))
@@ -471,7 +488,7 @@ class PlaneGrid(RectGrid):
         """
         rs = self.ref_surface
         if rs is None:
-            print('bork')
+            print("bork")
             return None
 
         n = self.normal

@@ -96,7 +96,7 @@ class CalcZone(object):
         self.zone_id = zone_id
         self.name = str(zone_id) if name is None else str(name)
         self.dose = False if dose is None else dose
-        self.hours = hours # only used if dose is true
+        self.hours = hours  # only used if dose is true
         self.enabled = enabled
         self.show_values = show_values
         self.colormap = colormap
@@ -139,10 +139,10 @@ class CalcZone(object):
     @property
     def calctype(self):
         return "Zone"
-        
+
     @property
     def units(self):
-        #todo: probably should be called unit_label or something instead
+        # todo: probably should be called unit_label or something instead
         if self.dose:
             return "mJ/cm²"
         return "uW/cm²"
@@ -167,9 +167,10 @@ class CalcZone(object):
 
     @geometry.setter
     def geometry(self, new_geom):
+        if self._geometry != new_geom:  # only clear if geometry is different
+            if hasattr(self, "result") and self.result is not None:
+                self.result.init(new_geom.num_points)
         self._geometry = new_geom
-        if hasattr(self, "result") and self.result is not None:
-            self.result.init(new_geom.num_points)
 
     @classmethod
     def from_dict(cls, data):
@@ -177,7 +178,6 @@ class CalcZone(object):
         return cls(**{k: v for k, v in data.items() if k in keys})
 
     def to_dict(self):
-
         data = {}
         data["zone_id"] = self.zone_id
         data["name"] = self.name
@@ -227,12 +227,7 @@ class CalcZone(object):
         """
         if type(dose) is not bool:
             raise TypeError("Dose must be either True or False")
-
         self.dose = dose
-        if self.dose:
-            self.units = "mJ/cm²"
-        else:
-            self.units = "uW/cm²"
 
     def set_dose_time(self, hours):
         """
@@ -244,6 +239,7 @@ class CalcZone(object):
 
     def set_dimensions(
         self,
+        *,
         x1=None,
         x2=None,
         y1=None,
@@ -349,26 +345,28 @@ class CalcVol(CalcZone):
 
     def __init__(
         self,
-        zone_id=None,
-        name=None,
-        x1=None,
-        x2=None,
-        y1=None,
-        y2=None,
-        z1=None,
-        z2=None,
-        num_x=None,
-        num_y=None,
-        num_z=None,
-        x_spacing=None,
-        y_spacing=None,
-        z_spacing=None,
-        offset=None,
-        dose=None,
-        hours=None,
-        enabled=None,
-        show_values=None,
-        colormap=None,
+        zone_id: str | None = None,
+        name: str | None = None,
+        geometry: VolGrid | None = None,
+        dose: bool = False,
+        hours: int = 8,
+        enabled: bool = True,
+        show_values: bool = True,
+        colormap: str | None = None,
+        # legacy -- ignored if geometry is not None
+        x1: float | None = None,
+        x2: float | None = None,
+        y1: float | None = None,
+        y2: float | None = None,
+        z1: float | None = None,
+        z2: float | None = None,
+        num_x: int | None = None,
+        num_y: int | None = None,
+        num_z: int | None = None,
+        x_spacing: float | None = None,
+        y_spacing: float | None = None,
+        z_spacing: float | None = None,
+        offset: bool | None = None,
     ):
 
         super().__init__(
@@ -378,21 +376,22 @@ class CalcVol(CalcZone):
             hours=hours,
             enabled=enabled,
             show_values=show_values,
+            colormap=colormap,
         )
-        self.geometry = VolGrid(
-            mins=(x1 or 0.0, y1 or 0.0, z1 or 0.0),
-            maxs=(x2 or 6.0, y2 or 4.0, z2 or 2.7),
-            num_points_init=(num_x, num_y, num_z),
-            spacing_init=(x_spacing, y_spacing, z_spacing),
-            offset=True if offset is None else bool(offset),
-        )
+        if geometry is None:
+            self.geometry = VolGrid.from_legacy(
+                mins=(x1 or 0.0, y1 or 0.0, z1 or 0.0),
+                maxs=(x2 or 6.0, y2 or 4.0, z2 or 2.7),
+                num_points_init=(num_x, num_y, num_z),
+                spacing_init=(x_spacing, y_spacing, z_spacing),
+                offset=True if offset is None else bool(offset),
+            )
+        else:
+            self.geometry = geometry
 
     def _extra_dict(self) -> dict:
-
         zone_data = super()._extra_dict()
-        data = {
-            "calctype": self.calctype,
-        }
+        data = {"calctype": self.calctype}
         zone_data.update(data)
         return zone_data
 
@@ -402,6 +401,24 @@ class CalcVol(CalcZone):
 
     def __repr__(self):
         return super().__repr__() + f"geometry: {self.geometry.__repr__()})"
+
+    @classmethod
+    def from_dims(
+        cls,
+        dims: RoomDimensions,
+        spacing: float | None = None,
+        num_points: int | None = None,
+        offset: bool | None = None,
+        **kwargs,
+    ):
+        geometry = VolGrid.from_legacy(
+            mins=(0, 0, 0),
+            maxs=(dims.x, dims.y, dims.z),
+            spacing_init=spacing,
+            num_points_init=num_points,
+            offset=offset,
+        )
+        return cls(geometry=geometry, **kwargs)
 
     def to_view(self):
         """take a snapshot of the zone's state"""
@@ -443,25 +460,25 @@ class CalcPlane(CalcZone):
         enabled: bool = True,
         show_values: bool = True,
         colormap: str | None = None,
+        # soon to be legacy-ish
         fov_vert: int | float = 180,
         fov_horiz: int | float = 360,
-        # soon to be legacy
         vert: bool = False,
         horiz: bool = False,
         use_normal: bool = True,
         # legacy only! ignored if geometry is not None
-        x1=None,
-        x2=None,
-        y1=None,
-        y2=None,
+        x1: float | None = None,
+        x2: float | None = None,
+        y1: float | None = None,
+        y2: float | None = None,
         num_x: int | None = None,
         num_y: int | None = None,
         x_spacing: float | None = None,
         y_spacing: float | None = None,
-        offset: bool = True,
-        height=None,
-        ref_surface=None,
-        direction=None,
+        offset: bool | None = None,
+        height: float | None = None,
+        ref_surface: str | None = None,
+        direction: int | None = None,
     ):
 
         super().__init__(
@@ -471,6 +488,7 @@ class CalcPlane(CalcZone):
             hours=hours,
             enabled=enabled,
             show_values=show_values,
+            colormap=colormap,
         )
 
         if geometry is None:
@@ -502,7 +520,6 @@ class CalcPlane(CalcZone):
     def _extra_dict(self):
 
         zone_data = super()._extra_dict()
-
         data = {
             "fov_vert": self.fov_vert,
             "fov_horiz": self.fov_horiz,
@@ -530,21 +547,21 @@ class CalcPlane(CalcZone):
         return cls(**{k: v for k, v in data.items() if k in keys})
 
     @classmethod
-    def from_vectors(
+    def from_points(
         cls,
-        origin,
-        u_vec,
-        v_vec,
+        p0,
+        pU,
+        pV,
         num_points_init=None,
         spacing=None,
         offset=True,
         **kwargs,
     ):
         """define a calc plane from an arbitrary origin, U point, and V point"""
-        geometry = PlaneGrid.from_vectors(
-            origin=origin,
-            u_vec=u_vec,
-            v_vec=v_vec,
+        geometry = PlaneGrid.from_points(
+            p0=p0,
+            pU=pU,
+            pV=pV,
             spacing_init=spacing,
             num_points_init=num_points_init,
             offset=offset,
@@ -556,10 +573,10 @@ class CalcPlane(CalcZone):
         cls,
         wall: str,
         dims: RoomDimensions,
-        height: float = 0,
-        spacing=None,
-        num_points=None,
-        offset=None,
+        normal_offset: float = 0.0,
+        spacing: float | None = None,
+        num_points: int | None = None,
+        offset: bool | None = None,
         **kwargs,
     ):
         if wall.lower() not in dims.faces.keys():
@@ -567,7 +584,8 @@ class CalcPlane(CalcZone):
                 f"{wall} is not a valid wall ID, must be in {dims.faces.keys()}"
             )
         x1, x2, y1, y2, base_height, ref_surface, direction = dims.faces[wall]
-        height = base_height + height * direction
+
+        height = base_height + normal_offset * direction
 
         geometry = PlaneGrid.from_legacy(
             mins=(x1, y1),
@@ -609,27 +627,15 @@ class CalcPlane(CalcZone):
         )
 
     def set_height(self, height):
-        self.geometry = self.geometry.update_from_legacy(
-            height=height,
-            ref_surface=self.geometry.ref_surface,
-            direction=self.geometry.direction,
-        )
+        self.geometry = self.geometry.update_legacy(height=height)
         return self
 
     def set_ref_surface(self, ref_surface):
-        self.geometry = self.geometry.update_from_legacy(
-            height=self.geometry.height,
-            ref_surface=self.ref_surface,
-            direction=self.geometry.direction,
-        )
+        self.geometry = self.geometry.update_legacy(ref_surface=ref_surface)
         return self
 
     def set_direction(self, direction):
-        self.geometry = self.geometry.update_from_legacy(
-            height=self.geometry.height,
-            ref_surface=self.geometry.ref_surface,
-            direction=direction,
-        )
+        self.geometry = self.geometry.update_legacy(direction=direction)
         return self
 
     def export(self, fname=None):
