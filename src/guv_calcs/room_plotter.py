@@ -128,7 +128,7 @@ class RoomPlotter:
 
         init_scale = convert_units(self.room.units, "meters", lamp.values.max())
         coords = lamp.transform_to_world(lamp.photometric_coords, scale=init_scale)
-        scale = lamp.get_total_power() / 120
+        scale = lamp.get_total_power() / 100
         coords = (coords.T - lamp.position) * scale + lamp.surface.position
         x, y, z = coords.T
 
@@ -246,7 +246,7 @@ class RoomPlotter:
         return fig
 
     def _plot_plane_values(self, zone, fig):
-        x, y, z = zone.coords.T
+        x, y, z = zone.coords.T.reshape(3, *zone.num_points)
         zone_value_trace = go.Surface(
             x=x,
             y=y,
