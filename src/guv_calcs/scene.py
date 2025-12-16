@@ -7,29 +7,47 @@ from .calc_zone import CalcZone, CalcPlane, CalcVol
 from .filters import FilterBase
 from .obstacles import BoxObstacle
 from .reflectance import ReflectiveSurface, init_room_surfaces
-from .lamp_helpers import new_lamp_position
+from .lamp_helpers import new_lamp_position, new_lamp_position_perimeter
+from .safety import PhotStandard
+from .scene_registry import LampRegistry, ZoneRegistry, SurfaceRegistry
+from .units import LengthUnits, convert_length
 
 
 class Scene:
     def __init__(
-        self, dim: RoomDimensions, unit_mode: str, on_collision: str, colormap: str
+        self,
+        dim: RoomDimensions,
+        on_collision: str = "increment",  # error | increment | overwrite"
+        colormap: str = "plasma",
     ):
         self.dim = dim
-        self.unit_mode: str = unit_mode  # "strict" → raise; "auto" → convert in place
-        self.on_collision: str = on_collision  # error | increment | overwrite"
-        self.colormap: str = colormap
+        self.colormap = colormap
 
-        self.lamps: dict[str, Lamp] = {}
-        self.calc_zones: dict[str, CalcZone] = {}
-
+        # self.lamps: dict[str, Lamp] = {}
+        self.lamps = LampRegistry(
+            dims=lambda: self.dim,
+            on_collision=on_collision,
+        )
+        # self.calc_zones: dict[str, CalcZone] = {}
+        self.calc_zones = ZoneRegistry(
+            dims=lambda: self.dim,
+            on_collision=on_collision,
+        )
+        # to be replaced by a more general Surface - perhaps populated entirely by Obstacles
+        # self.surfaces: dict[str, ReflectiveSurface] = {}
+        self.surfaces = SurfaceRegistry(
+            dims=lambda: self.dim,
+            on_collision=on_collision,
+        )
+        # to be dummied out
         self.filters: dict[str, FilterBase] = {}
         self.obstacles: dict[str, BoxObstacle] = {}
 
-        self.surfaces: dict[str, ReflectiveSurface] = {}
-
     # ------------------------ Global --------------------------
-    def add(self, *args, on_collision=None, unit_mode=None):
+    def add(self, *args, on_collision=None):
         """
+        TODO: possibly the specific add_lamp etc functions should go away?
+
         Add objects to the Scene.
         - If an object is a Lamp, it is added as a lamp.
         - If an object is a CalcZone, CalcPlane, or CalcVol, it is added as a calculation zone.
@@ -39,7 +57,7 @@ class Scene:
 
         for obj in args:
             if isinstance(obj, Lamp):
-                self.add_lamp(obj, on_collision=on_collision, unit_mode=unit_mode)
+                self.add_lamp(obj, on_collision=on_collision)
             elif isinstance(obj, CalcZone):
                 self.add_calc_zone(obj, on_collision=on_collision)
             elif isinstance(obj, FilterBase):
@@ -51,9 +69,8 @@ class Scene:
             elif isinstance(obj, dict):
                 self.add(*obj.values(), on_collision=on_collision)
             elif isinstance(obj, Iterable) and not isinstance(obj, (str, bytes)):
-                self.add(
-                    *obj, on_collision=on_collision
-                )  # Recursively process other iterables
+                # Recursively process other iterables
+                self.add(*obj, on_collision=on_collision)
             else:
                 msg = f"Cannot add object of type {type(obj).__name__} to Room."
                 warnings.warn(msg, stacklevel=3)
@@ -63,89 +80,88 @@ class Scene:
         self.dim = self.dim.with_(x=x, y=y, z=z)
         self.update_standard_surfaces()
 
-    def update_units(self, units, unit_mode=None):
-        self.dim = self.dim.with_(units=units)
-        self.to_units(unit_mode)
+    def update_units(self, units):
+        self.dim = self.dim.with_(units=LengthUnits.from_any(units))
+        self.lamps.validate()  # update lamp units...but this should really not be happening
 
     def set_colormap(self, colormap: str):
         """Set the scene's colormap"""
         if colormap not in list(colormaps):
-            warnings.warn(f"{colormap} is not a valid colormap.")
-        else:
-            self.colormap = colormap
-            for zone in self.calc_zones.values():
-                zone.colormap = self.colormap
-            for surface in self.surfaces.values():
-                surface.plane.colormap = self.colormap
+            raise ValueError(f"{colormap} is not a valid colormap.")
+
+        self.colormap = colormap
+        for zone in self.calc_zones.values():
+            zone.colormap = self.colormap
+        for surface in self.surfaces.values():
+            surface.plane.colormap = self.colormap
 
     def check_positions(self):
         """
         verify the positions of all objects in the scene and return any warning messages
         """
-        lamps, zones, surfaces = {}, {}, {}
-        for lamp_id, lamp in self.lamps.items():
-            lamps[lamp_id] = self._check_lamp_position(lamp)
-        for zone_id, zone in self.calc_zones.items():
-            zones[zone_id] = self._check_zone_position(zone)
-        for surface_id, surface in self.surfaces.items():
-            surfaces[surface_id] = self._check_zone_position(surface.plane)
-
         msgs = {}
-        msgs["lamps"] = lamps
-        msgs["calc_zones"] = zones
-        msgs["surfaces"] = surfaces
+        msgs["lamps"] = self.lamps.get_position_warnings()
+        msgs["calc_zones"] = self.calc_zones.get_position_warnings()
+        msgs["surfaces"] = self.surfaces.get_position_warnings()
         return msgs
 
     # ------------------ Lamps -----------------------
 
-    def add_lamp(self, lamp, base_id="Lamp", on_collision=None, unit_mode=None):
+    def add_lamp(self, lamp, on_collision=None):
         """Add a lamp to the room"""
-
-        lamp_id = self._get_id(
-            mapping=self.lamps,
-            obj_id=lamp.lamp_id,
-            base_id=base_id,
-            on_collision=on_collision,
-        )
-        lamp.lamp_id = lamp_id
-        if lamp.name is None:
-            lamp.name = lamp_id
-        self.lamps[lamp_id] = self._check_lamp(lamp, unit_mode=unit_mode)
+        self.lamps.add(lamp, on_collision=on_collision)
         return self
 
-    def place_lamp(self, lamp_arg, on_collision=None, unit_mode=None):
+    def place_lamp(self, *args, on_collision=None, mode="downlight"):
         """
         Position a lamp as far from other lamps and the walls as possible
         """
-        # ok I'm adding this as a convenience
-        if isinstance(lamp_arg, Lamp):
-            lamp = lamp_arg
-        elif isinstance(lamp_arg, str):
-            lamp = Lamp.from_keyword(lamp_arg)
-        elif isinstance(lamp_arg, int):
-            lamp = Lamp.from_index(lamp_arg)
-        else:
-            raise TypeError(
-                f"{type(lamp_arg)} is not a valid Lamp or method of generating a Lamp"
-            )
 
-        idx = len(self.lamps) + 1
-        x, y = new_lamp_position(idx, self.dim.x, self.dim.y)
-        lamp.move(x, y, self.dim.z)
-        self.add_lamp(lamp, on_collision=on_collision, unit_mode=unit_mode)
+        offset = convert_length(LengthUnits.METERS, self.dim.units, 0.1, sigfigs=2)
 
-    def place_lamps(self, *args, on_collision=None, unit_mode=None):
-        """place multiple lamps in the room, as far away from each other and the walls as possible"""
+        lamps = self._init_lamp(*args)
+        for lamp in lamps:
+            idx = len(self.lamps) + 1
+            if mode.lower() == "downlight":
+                x, y = new_lamp_position(idx, self.dim.x, self.dim.y)
+                lamp.move(x, y, self.dim.z - offset).aim(0.0, 0.0, 0.0)
+            elif mode.lower() == "tilted":
+                x, y = new_lamp_position_perimeter(idx, self.dim.x, self.dim.y)
+                x = x + offset if x == 0.0 else x - offset
+                y = y + offset if y == 0.0 else y - offset
+                lamp.move(x, y, self.dim.z - offset).aim(
+                    self.dim.x - x, self.dim.y - y, 0.0
+                )
+            else:
+                raise ValueError(f"invalid lamp placement mode {mode}")
+            self.add_lamp(lamp, on_collision=on_collision)
+
+    def _init_lamp(self, *args):
+        lst = []
         for obj in args:
             if isinstance(obj, Lamp):
-                self.place_lamp(obj, on_collision=on_collision, unit_mode=unit_mode)
+                lst.append(obj)
+            elif isinstance(obj, str):
+                lst.append(Lamp.from_keyword(obj))
+            elif isinstance(obj, int):
+                lst.append(Lamp.from_index(obj))
+            elif isinstance(obj, dict):
+                lst.append(self._init_lamp(*obj.values()))
+            elif isinstance(obj, Iterable) and not isinstance(obj, (str, bytes)):
+                lst.append(self._init_lamp(*obj))
             else:
-                msg = f"Cannot add object of type {type(obj).__name__} to Room."
-                warnings.warn(msg, stacklevel=3)
+                raise TypeError(
+                    f"{type(obj)} is not a valid Lamp or method of generating a Lamp"
+                )
+        for i, x in enumerate(lst):
+            while i < len(lst) and isinstance(lst[i], list):
+                lst[i : i + 1] = lst[i]
+        return lst
 
     def remove_lamp(self, lamp_id):
         """Remove a lamp from the scene"""
-        self.lamps.pop(lamp_id, None)
+        # self.lamps.pop(lamp_id, None)
+        self.lamps.remove(lamp_id)
 
     def get_valid_lamps(self):
         """return all the lamps that can participate in a calculation"""
@@ -153,138 +169,90 @@ class Scene:
             k: v for k, v in self.lamps.items() if v.enabled and v.filedata is not None
         }
 
-    def to_units(self, unit_mode=None):
-        """
-        ensure that all lamps in the state have the correct units, or raise an error
-        in strict mode
-        """
-        for lamp in self.lamps.values():
-            self._check_lamp_units(lamp, unit_mode=unit_mode)
-
     # -------------- Zones ------------------
-    def add_calc_zone(self, zone, base_id=None, on_collision=None):
+
+    def plane_from_face(self, wall, **kwargs):
+        """
+        add a plane to the scene matching the room dimensions, referenced
+        """
+        plane = CalcPlane.from_face(wall=wall, dims=self.dim, **kwargs)
+        self.add_calc_zone(plane)
+
+    def add_calc_zone(self, zone, on_collision=None):
         """
         Add a calculation zone to the scene
         """
-        if base_id is None:
-            base_id = "Calc" + zone.calctype
-
-        zone_id = self._get_id(
-            mapping=self.calc_zones,
-            obj_id=zone.zone_id,
-            base_id=base_id,
-            on_collision=on_collision,
-        )
-        zone.zone_id = zone_id
-        if zone.name is None:
-            zone.name = zone_id
-        zone.colormap = self.colormap
-        self.calc_zones[zone_id] = self._check_zone(zone)
+        zone.colormap = self.colormap  # this maybe should go away?
+        self.calc_zones.add(zone, on_collision=on_collision)
 
     def remove_calc_zone(self, zone_id):
         """remove calculation zone from scene"""
         self.calc_zones.pop(zone_id, None)
 
-    def add_filter(self, filt, base_id="Filter", on_collision=None):
-        """add a correction filter to the scene"""
-        filter_id = self._get_id(
-            mapping=self.filters,
-            obj_id=filt.filter_id,
-            base_id=base_id,
-            counter=self._filter_counter,
-            on_collision=on_collision,
-        )
-        filt.filter_id = filter_id
-        if filt.name is None:
-            filt.name = filter_id
-        self.filters[filter_id] = filt
-
-    def remove_filter(self, filter_id):
-        """remove a correction filter from the scene"""
-        self.filters.pop(filter_id, None)
-
-    def add_obstacle(self, obs, base_id="Obstacle", on_collision=None):
-        """add a 3d box obstacle to the scene"""
-        obs_id = self._get_id(
-            mapping=self.obstacles,
-            obj_id=obs.obs_id,
-            base_id=base_id,
-            counter=self._obstacle_counter,
-            on_collision=on_collision,
-        )
-        obs.obs_id = obs_id
-        if obs.name is None:
-            obs.name = obs_id
-        self.obstacles[obs_id] = obs
-
-    def remove_obstacle(self, obs_id):
-        self.obstacles.pop(obs_id, None)
-
-    def add_standard_zones(self, standard, *, on_collision=None):
+    def add_standard_zones(self, standard: "PhotStandard", *, on_collision=None):
         """
         Add the special calculation zones SkinLimits, EyeLimits, and
         WholeRoomFluence to the scene
         """
+        flags = standard.flags(self.dim.units)
         standard_zones = [
-            CalcVol(
+            CalcVol.from_dims(
+                dims=self.dim,
                 zone_id="WholeRoomFluence",
                 name="Whole Room Fluence",
                 show_values=False,
-                num_x=25, num_y=25, num_z=25,
+                num_points=(25, 25, 25),
             ),
-            CalcPlane(
+            CalcPlane.from_face(
+                dims=self.dim,
+                wall="floor",
+                normal_offset=flags["height"],
                 zone_id="EyeLimits",
                 name="Eye Dose (8 Hours)",
                 dose=True,
                 hours=8,
-                direction=0,
-                x_spacing=0.1,y_spacing=0.1,
+                use_normal=False,
+                vert=flags["eye_vert"],
+                fov_vert=flags["fov_vert"],
+                spacing=(0.1, 0.1),
             ),
-            CalcPlane(
+            CalcPlane.from_face(
+                dims=self.dim,
+                wall="floor",
+                normal_offset=flags["height"],
                 zone_id="SkinLimits",
                 name="Skin Dose (8 Hours)",
                 dose=True,
                 hours=8,
-                direction=0,
-                x_spacing=0.1,y_spacing=0.1,
+                use_normal=False,
+                horiz=flags["skin_horiz"],
+                spacing=(0.1, 0.1),
             ),
         ]
 
         self.add(standard_zones, on_collision=on_collision)
-        # sets the height and field of view parameters
-        self.update_standard_zones(standard, preserve_spacing=True)
 
-    def update_standard_zones(self, standard: str, preserve_spacing: bool):
+    def update_standard_zones(self, standard: "PhotStandard", preserve_spacing: bool):
         """
         update the standard safety calculation zones based on the current
         standard, units, and room dimensions
         """
-        if "UL8802" in standard:
-            height = 1.9 if self.dim.units == "meters" else 6.25
-            skin_horiz = False
-            eye_vert = False
-            fov_vert = 180
-        else:
-            height = 1.8 if self.dim.units == "meters" else 5.9
-            skin_horiz = True
-            eye_vert = True
-            fov_vert = 80
-
+        flags = standard.flags(self.dim.units)
         if "SkinLimits" in self.calc_zones.keys():
             zone = self.calc_zones["SkinLimits"]
             zone.set_dimensions(
                 x2=self.dim.x, y2=self.dim.y, preserve_spacing=preserve_spacing
             )
-            zone.set_height(height=height)
-            zone.horiz = skin_horiz
+            zone.set_height(height=flags["height"])
+            zone.horiz = flags["skin_horiz"]
         if "EyeLimits" in self.calc_zones.keys():
             zone = self.calc_zones["EyeLimits"]
             zone.set_dimensions(
                 x2=self.dim.x, y2=self.dim.y, preserve_spacing=preserve_spacing
             )
-            zone.set_height(height=height)
-            zone.fov_vert = fov_vert
-            zone.vert = eye_vert
+            zone.set_height(height=flags["height"])
+            zone.fov_vert = flags["fov_vert"]
+            zone.vert = flags["eye_vert"]
         if "WholeRoomFluence" in self.calc_zones.keys():
             zone = self.calc_zones["WholeRoomFluence"]
             zone.set_dimensions(
@@ -296,21 +264,14 @@ class Scene:
 
     # ------------------- Surfaces ----------------------
 
-    def add_surface(self, surface, base_id="Surface", on_collision=None):
+    def add_surface(self, surface, on_collision=None):
         """add a reflective surface to the room"""
-        surface_id = self._get_id(
-            mapping=self.surfaces,
-            obj_id=surface.plane.zone_id,
-            base_id=base_id,
-            on_collision=on_collision,
-        )
-        surface.plane.zone_id = surface_id
         surface.plane.colormap = self.colormap
-        self.surfaces[surface_id] = self._check_surface(surface)
+        self.surfaces.add(surface, on_collision=on_collision)
 
     def remove_surface(self, surface_id):
         """remove reflective surface from the room"""
-        self.surfaces.pop(surface_id, None)
+        self.surfaces.remove(surface_id)
 
     def init_standard_surfaces(
         self,
@@ -352,12 +313,12 @@ class Scene:
         if wall_id is None:
             # set this value for all walls
             for wall in keys:
-                self.surfaces[wall].set_reflectance(R)
+                self.surfaces.get(wall).set_reflectance(R)
         else:
             if wall_id not in keys:
                 raise KeyError(f"wall_id must be in {keys}")
             else:
-                self.surfaces[wall_id].set_reflectance(R)
+                self.surfaces.get(wall_id).set_reflectance(R)
 
     def set_spacing(self, x_spacing=None, y_spacing=None, wall_id=None):
         """set x and y spacing by wall_id or, if wall_if is None, to all walls"""
@@ -365,14 +326,14 @@ class Scene:
         if wall_id is None:
             # set this value for all walls
             for wall in keys:
-                self.surfaces[wall].set_spacing(
+                self.surfaces.get(wall).set_spacing(
                     x_spacing=x_spacing, y_spacing=y_spacing
                 )
         else:
             if wall_id not in keys:
                 raise KeyError(f"wall_id must be in {keys}")
             else:
-                self.surfaces[wall_id].set_spacing(
+                self.surfaces.get(wall_id).set_spacing(
                     x_spacing=x_spacing, y_spacing=y_spacing
                 )
 
@@ -382,103 +343,51 @@ class Scene:
         if wall_id is None:
             for wall in keys:
                 # set for all walls
-                self.surfaces[wall].set_num_points(num_x=num_x, num_y=num_y)
+                self.surfaces.get(wall).set_num_points(num_x=num_x, num_y=num_y)
         else:
             if wall_id not in keys:
                 raise KeyError(f"wall_id must be in {keys}")
             else:
-                self.surfaces[wall_id].set_num_points(num_x=num_x, num_y=num_y)
+                self.surfaces.get(wall_id).set_num_points(num_x=num_x, num_y=num_y)
+
+    # --------------------- filters / obstacles TODO: dummy out --------
+
+    def add_filter(self, filt, base_id="Filter", on_collision=None):
+        """add a correction filter to the scene"""
+        filter_id = self._get_id(
+            mapping=self.filters,
+            obj_id=filt.filter_id,
+            base_id=base_id,
+            counter=self._filter_counter,
+            on_collision=on_collision,
+        )
+        filt.filter_id = filter_id
+        if filt.name is None:
+            filt.name = filter_id
+        self.filters[filter_id] = filt
+
+    def remove_filter(self, filter_id):
+        """remove a correction filter from the scene"""
+        self.filters.pop(filter_id, None)
+
+    def add_obstacle(self, obs, base_id="Obstacle", on_collision=None):
+        """add a 3d box obstacle to the scene"""
+        obs_id = self._get_id(
+            mapping=self.obstacles,
+            obj_id=obs.obs_id,
+            base_id=base_id,
+            counter=self._obstacle_counter,
+            on_collision=on_collision,
+        )
+        obs.obs_id = obs_id
+        if obs.name is None:
+            obs.name = obs_id
+        self.obstacles[obs_id] = obs
+
+    def remove_obstacle(self, obs_id):
+        self.obstacles.pop(obs_id, None)
 
     # --------------------------- internals ----------------------------
-
-    def _get_id(self, mapping, obj_id, base_id, on_collision=None):
-        """Generate an ID for a lamp, zone, or surface object.
-
-        - If obj_id is None: generate a unique ID based on base_id.
-        - If obj_id is provided and not in mapping: use it as-is.
-        - If obj_id is provided and in mapping:
-            * 'error'      -> raise
-            * 'overwrite'  -> reuse obj_id
-            * 'increment'  -> generate a unique variant of obj_id
-        """
-        policy = on_collision or self.on_collision
-
-        # No explicit id → generate from base_id
-        if obj_id is None:
-            return self._unique_id(str(base_id), mapping)
-
-        obj_id = str(obj_id)
-
-        # Existing id
-        if obj_id in mapping:
-            if policy == "error":
-                raise ValueError(f"'{obj_id}' already exists")
-            elif policy == "overwrite":
-                # explicitly replace existing entry; no renaming
-                return obj_id
-            # default: increment policy → find a free variant of obj_id
-            return self._unique_id(obj_id, mapping)
-
-        # No collision → accept obj_id unchanged
-        return obj_id
-
-    def _unique_id(self, base: str, mapping: dict) -> str:
-        """
-        Return a unique id based on `base`, using existing keys in `mapping`.
-
-        - If `base` is unused, return `base`.
-        - Otherwise look for keys like `base`, `base-2`, `base-3`, ... and
-          return the next free suffix (e.g. 'Lamp-5' if Lamp, Lamp-2..Lamp-4 exist).
-        """
-        if base not in mapping:
-            return base
-
-        prefix = base + "-"
-        max_suffix = 1  # 1 corresponds to plain `base` being present
-
-        for key in mapping.keys():
-            if key == base:
-                max_suffix = max(max_suffix, 1)
-            elif key.startswith(prefix):
-                rest = key[len(prefix) :]
-                if rest.isdigit():
-                    n = int(rest)
-                    if n > max_suffix:
-                        max_suffix = n
-
-        # Next free number
-        return f"{base}-{max_suffix + 1}"
-
-    def _check_lamp(self, lamp, unit_mode=None):
-        """check lamp position and units"""
-        if not isinstance(lamp, Lamp):
-            raise TypeError(f"Must be type Lamp, not {type(lamp)}")
-        self._check_lamp_position(lamp)
-        self._check_lamp_units(lamp, unit_mode)
-        return lamp
-
-    def _check_lamp_units(self, lamp, unit_mode=None):
-        """convert lamp units, or raise error in strict mode"""
-        policy = unit_mode or self.unit_mode
-        if lamp.surface.units != self.dim.units:
-            if policy == "strict":
-                raise ValueError(
-                    f"Lamp {lamp.lamp_id} is in {lamp.surface.units}, "
-                    f"room is {self.dim.units}"
-                )
-            lamp.set_units(self.dim.units)
-
-    def _check_zone(self, zone):
-        if not isinstance(zone, (CalcZone, CalcPlane, CalcVol)):
-            raise TypeError(f"Must be CalcZone, CalcPlane, or CalcVol not {type(zone)}")
-        self._check_zone_position(zone)
-        return zone
-
-    def _check_surface(self, surface):
-        if not isinstance(surface, ReflectiveSurface):
-            raise TypeError(f"Must be ReflectiveSurface, not {type(surface)}")
-        self._check_zone_position(surface.plane)
-        return surface
 
     def _check_lamp_position(self, lamp):
         return self._check_position(lamp.position, lamp.name)

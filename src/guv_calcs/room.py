@@ -14,8 +14,9 @@ from .units import LengthUnits, convert_length
 
 DEFAULT_DIMS = {}
 for member in list(LengthUnits):
-    base = (6.0, 4.0, 2.7) #meters
+    base = (6.0, 4.0, 2.7)  # meters
     DEFAULT_DIMS[member] = convert_length("meters", member, *base, sigfigs=0)
+
 
 class Room:
     """
@@ -41,7 +42,6 @@ class Room:
         precision: int = 1,
         colormap: str = "plasma",
         on_collision: str = "increment",  # error | increment | overwrite
-        unit_mode: str = "auto",  # strict | auto
     ):
 
         ### Dimensions
@@ -50,14 +50,14 @@ class Room:
             x if x is not None else DEFAULT_DIMS[units][0],
             y if y is not None else DEFAULT_DIMS[units][1],
             z if z is not None else DEFAULT_DIMS[units][2],
-            units,
+            origin=(0.0, 0.0, 0.0),
+            units=units,
         )
 
         ### Scene - dimensions, lamps, zones, and reflective surfaces
         self.scene = Scene(
             dim=dim,
             on_collision=on_collision,
-            unit_mode=unit_mode,
             colormap=colormap,
         )
         # may be overriden if loaded serially
@@ -144,7 +144,6 @@ class Room:
         data["ozone_decay_constant"] = self.ozone_decay_constant
         data["precision"] = self.precision
         data["on_collision"] = self.scene.on_collision
-        data["unit_mode"] = self.scene.unit_mode
         data["colormap"] = self.scene.colormap
 
         dct = self.__dict__.copy()
@@ -335,11 +334,9 @@ class Room:
 
     # -------------- Dimensions and Units -----------------------
 
-    def set_units(self, units, unit_mode="auto", preserve_spacing=True):
+    def set_units(self, units, preserve_spacing=True):
         """set room units"""
-        if units.lower() not in VALID_UNITS:
-            raise KeyError("Valid units are `meters` or `feet`")
-        self.scene.update_units(units, unit_mode=unit_mode)
+        self.scene.update_units(units)
         self.scene.update_standard_zones(
             standard=self.standard, preserve_spacing=preserve_spacing
         )
@@ -405,40 +402,20 @@ class Room:
     def zone(self, zone_id):
         return self.scene.calc_zones.get(zone_id)
 
-    def add(self, *args, on_collision=None, unit_mode=None):
-        """
-        Add objects to the Scene.
-        - If an object is a Lamp, it is added as a lamp.
-        - If an object is a CalcZone, CalcPlane, or CalcVol, it is added as a calculation zone.
-        - If an object is iterable, it is recursively processed.
-        - Otherwise, a warning is printed.
-        """
-        self.scene.add(*args, on_collision=on_collision, unit_mode=unit_mode)
+    def add(self, *args, **kwargs):
+        self.scene.add(*args, **kwargs)
         return self
 
-    def add_lamp(self, lamp, on_collision=None, unit_mode=None):
-        """
-        Add a lamp to the room scene
-        """
-        self.scene.add_lamp(lamp, on_collision=on_collision, unit_mode=unit_mode)
+    def add_lamp(self, lamp, **kwargs):
+        self.scene.add_lamp(lamp, **kwargs)
         return self
 
-    def place_lamp(self, lamp, on_collision=None, unit_mode=None):
-        """
-        Position a lamp as far from other lamps and the walls as possible
-        """
-        self.scene.place_lamp(lamp, on_collision=on_collision, unit_mode=unit_mode)
-        return self
-
-    def place_lamps(self, *args, on_collision=None, unit_mode=None):
-        """
-        Place multiple lamps in the room, as far away from each other and the walls as possible
-        """
-        self.scene.place_lamps(*args, on_collision=on_collision, unit_mode=unit_mode)
+    def place_lamp(self, *args, **kwargs):
+        """todo: add a `downlight` vs `tilted` mode"""
+        self.scene.place_lamp(*args, **kwargs)
         return self
 
     def remove_lamp(self, lamp_id):
-        """Remove a lamp from the room scene"""
         self.scene.remove_lamp(lamp_id)
         return self
 
@@ -446,11 +423,8 @@ class Room:
         self.scene.plane_from_face(wall, **kwargs)
         return self
 
-    def add_calc_zone(self, calc_zone, on_collision=None):
-        """
-        Add a calculation zone to the room
-        """
-        self.scene.add_calc_zone(calc_zone, on_collision=on_collision)
+    def add_calc_zone(self, calc_zone, **kwargs):
+        self.scene.add_calc_zone(calc_zone, **kwargs)
         return self
 
     def add_standard_zones(self, on_collision=None):
@@ -468,17 +442,17 @@ class Room:
         self.scene.remove_calc_zone(zone_id)
         return self
 
-    def add_filter(self, filt, on_collision=None):
+    def add_filter(self, filt, **kwargs):
         """Add a measured correction filter to the room"""
-        self.scene.add_filter(filt=filt, on_collision=on_collision)
+        self.scene.add_filter(filt=filt, **kwargs)
         return self
 
     def remove_filter(self, filt_id):
         """remove a measured correction filter from the room"""
         self.scene.remove_filter(filt_id)
 
-    def add_surface(self, surface, on_collision=None):
-        self.scene.add_surface(surface, on_collision=on_collision)
+    def add_surface(self, surface, **kwargs):
+        self.scene.add_surface(surface, **kwargs)
         return self
 
     def remove_surface(self, surface_id):
@@ -486,9 +460,7 @@ class Room:
         return self
 
     def set_colormap(self, colormap):
-        """
-        Set the room colormap
-        """
+        """Set the room colormap"""
         self.scene.set_colormap(colormap)
         return self
 

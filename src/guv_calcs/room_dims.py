@@ -8,6 +8,7 @@ class RoomDimensions:
     x: float
     y: float
     z: float
+    origin: tuple[float, float, float] = (0.0, 0.0, 0.0)
     units: "LengthUnits" = LengthUnits.METERS
 
     @property
