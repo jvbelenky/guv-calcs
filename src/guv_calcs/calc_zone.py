@@ -408,7 +408,7 @@ class CalcVol(CalcZone):
         dims: RoomDimensions,
         spacing: float | None = None,
         num_points: int | None = None,
-        offset: bool | None = None,
+        offset: bool = True,
         **kwargs,
     ):
         geometry = VolGrid.from_legacy(
@@ -576,7 +576,7 @@ class CalcPlane(CalcZone):
         normal_offset: float = 0.0,
         spacing: float | None = None,
         num_points: int | None = None,
-        offset: bool | None = None,
+        offset: bool = True,
         **kwargs,
     ):
         if wall.lower() not in dims.faces.keys():

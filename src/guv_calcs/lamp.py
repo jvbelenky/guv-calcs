@@ -13,6 +13,7 @@ from .lamp_orientation import LampOrientation
 from .trigonometry import to_polar
 from ._data import get_tlvs
 from .lamp_type import GUVType, LampUnitType, LampType
+from .units import LengthUnits
 
 VALID_LAMPS = [
     "aerolamp",
@@ -132,7 +133,7 @@ class Lamp:
             width=width,
             length=length,
             depth=depth,
-            units=units,
+            units=LengthUnits.from_any(units),
             source_density=source_density,
             intensity_map=intensity_map,
         )
