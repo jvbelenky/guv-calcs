@@ -169,5 +169,12 @@ class LampUnitType(StrEnum):
         # defensive default
         return self.value
 
+    @property
+    def factor(self) -> float:
+        if self is LampUnitType.MW_PER_SR:
+            return 0.1
+        if self is LampUnitType.UW_PER_CM2:
+            return 1.0
+
     def __str__(self) -> str:
         return self.label

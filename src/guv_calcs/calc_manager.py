@@ -1,13 +1,8 @@
 import numpy as np
 from dataclasses import dataclass, field
 import warnings
-
-# import matplotlib.pyplot as plt
 from copy import deepcopy
-
-# from .trigonometry import attitude, to_polar
 from .units import convert_units
-from .lamp_type import LampUnitType
 
 np.seterr(divide="ignore", invalid="ignore")
 
@@ -159,8 +154,7 @@ class LightingCalculator:
             values = apply_plane_filters(values, theta, zv)
 
         # TODO: This should maybe actually be in Lamp/Photometry
-        if lamp.intensity_units is LampUnitType.MW_PER_SR:
-            values = values / 10  # convert from mW/Sr to uW/cm2
+        values = values * lamp.intensity_units.factor
 
         return values.reshape(*zv.num_points)
 
