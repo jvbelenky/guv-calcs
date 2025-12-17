@@ -1,4 +1,7 @@
 from enum import StrEnum
+import numpy as np
+from .spectrum import Spectrum, log_interp
+from ._data import get_spectral_weightings
 
 
 class PhotStandard(StrEnum):
@@ -37,6 +40,24 @@ class PhotStandard(StrEnum):
         # if self is PhotStandard.GB28235:
         # return "GB 28235 (China)"
 
+    @property
+    def eye_weights(self):
+        weights = get_spectral_weightings()
+        if self is PhotStandard.ACGIH or PhotStandard.UL8802:
+            key = "ANSI IES RP 27.1-22 (Eye)"
+        elif self is PhotStandard.ICNIRP:
+            key = "IEC 62471-6:2022 (Eye/Skin)"
+        return {k: v for k, v in zip(weights["Wavelength (nm)"], weights[key])}
+
+    @property
+    def skin_weights(self):
+        weights = get_spectral_weightings()
+        if self is PhotStandard.ACGIH or PhotStandard.UL8802:
+            key = "ANSI IES RP 27.1-22 (Skin)"
+        elif self is PhotStandard.ICNIRP:
+            key = "IEC 62471-6:2022 (Eye/Skin)"
+        return {k: v for k, v in zip(weights["Wavelength (nm)"], weights[key])}
+
     def flags(self, units="meters") -> dict:
         if self is PhotStandard.UL8802:
             return {
@@ -62,3 +83,22 @@ class PhotStandard(StrEnum):
 
     def __str__(self) -> str:
         return self.label
+
+
+def get_tlvs(ref, standard=PhotStandard.ACGIH):
+    skin = _tlv(ref, standard.skin_weights)
+    eye = _tlv(ref, standard.eye_weights)
+    return skin, eye
+
+
+def _tlv(ref, weights: dict):
+    if isinstance(ref, (int, float)):
+        wavelengths = list(weights.keys())
+        values = list(weights.values())
+        weighting = log_interp(ref, wavelengths, values)
+        return 3 / weighting  # value not to be exceeded in 8 hours
+    elif isinstance(ref, Spectrum):
+        return ref.get_tlv(weights)
+    raise TypeError(
+        f"Argument `ref` must be either float, int, or Spectrum object, not {type(ref)}"
+    )

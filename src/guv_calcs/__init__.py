@@ -10,14 +10,11 @@ from .trigonometry import to_polar, to_cartesian, attitude
 from ._data import (
     get_full_disinfection_table,
     get_disinfection_table,
-    get_tlv,
-    get_tlvs,
-    get_spectral_weightings,
-    get_standards,
     sum_multiwavelength_data,
     plot_disinfection_data,
+    get_spectral_weightings,
 )
-from .safety import PhotStandard
+from .safety import PhotStandard, get_tlvs
 from .units import convert_units, convert_length, convert_time
 from .lamp_helpers import new_lamp_position, get_lamp_positions
 from ._read import read_export_file, file_to_zone
@@ -42,13 +39,11 @@ __all__ = [
     "attitude",
     "get_full_disinfection_table",
     "get_disinfection_table",
-    "get_tlv",
-    "get_tlvs",
-    "get_spectral_weightings",
-    "get_standards",
     "sum_multiwavelength_data",
     "plot_disinfection_data",
+    "get_spectral_weightings",
     "PhotStandard",
+    "get_tlvs",
     "convert_units",
     "convert_length",
     "convert_time",

@@ -11,9 +11,10 @@ from .lamp_surface import LampSurface
 from .lamp_plotter import LampPlotter
 from .lamp_orientation import LampOrientation
 from .trigonometry import to_polar
-from ._data import get_tlvs
+from .safety import get_tlvs
 from .lamp_type import GUVType, LampUnitType, LampType
 from .units import LengthUnits
+from .safety import PhotStandard
 
 VALID_LAMPS = [
     "aerolamp",
@@ -572,26 +573,13 @@ class Lamp:
             self.ies.photometry.total_optical_power() * self.intensity_units.factor * 10
         )
 
-    def get_tlvs(self, standard=0):
-        """
-        get the threshold limit values for this lamp. Returns tuple
-        (skin_limit, eye_limit) Will use the lamp spectrum if provided;
-        if not provided will use wavelength; if neither is defined, returns
-        (None, None). Standard may be a string in:
-            [`ANSI IES RP 27.1-22`, `IEC 62471-6:2022`]
-        Or an integer corresponding to the index of the desired standard.
-        """
+    def get_tlvs(self, standard: "PhotStandard" = PhotStandard.ACGIH):
+        """get the threshold limit values for this lamp."""
         if self.spectra is not None:
-            skin_tlv, eye_tlv = get_tlvs(self.spectra, standard)
+            return get_tlvs(self.spectra, standard)
         elif self.wavelength is not None:
-            skin_tlv, eye_tlv = get_tlvs(self.wavelength, standard)
-        else:
-            skin_tlv, eye_tlv = None, None
-        return skin_tlv, eye_tlv
-
-    def get_limits(self, standard=0):
-        """compatibility alias for `get_tlvs()`"""
-        return self.get_tlvs(standard=standard)
+            return get_tlvs(self.wavelength, standard)
+        return None, None
 
     def get_cartesian(self, scale=1, sigfigs=9):
         """Return lamp's true position coordinates in cartesian space"""

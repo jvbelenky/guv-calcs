@@ -1,16 +1,15 @@
 import csv
 import warnings
-from importlib import resources
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
-from .io import load_csv, rows_to_bytes
+from ._data import get_spectral_weightings
+from .io import rows_to_bytes, load_csv
 
 
 class Spectrum:
     """
     TODO: This is a bit of a mess. Probably it should be a dataclass or something.
-
 
     Attributes:
         wavelengths: 1d arraylike
@@ -24,7 +23,7 @@ class Spectrum:
             really want to.
     """
 
-    def __init__(self, wavelengths, intensities, weights=None):
+    def __init__(self, wavelengths, intensities):
         self.raw_wavelengths = np.array(wavelengths)
         self.raw_intensities = np.array(intensities)
 
@@ -40,10 +39,7 @@ class Spectrum:
         self.wavelengths = self.raw_wavelengths
         self.intensities = self.raw_intensities
 
-        self.weights = self._load_spectral_weightings() if weights is None else weights
-        self.weighted_intensities = (
-            None if self.weights is None else self._weight_spectra()
-        )
+        self.weighted_intensities = self._weight_spectra()
 
     @classmethod
     def from_source(cls, source) -> "Spectrum | None":
@@ -140,50 +136,18 @@ class Spectrum:
         logterp = np.interp(wvs, weight_wvs, np.log10(weight_values))
         return np.power(10, logterp)
 
-    def _load_spectral_weightings(self):
-        """load spectral weightings from within package"""
-
-        fname = "UV Spectral Weighting Curves.csv"
-        path = resources.files("guv_calcs.data").joinpath(fname)
-        with path.open("rb") as file:
-            weights = file.read()
-
-        csv_data = load_csv(weights)
-        reader = csv.reader(csv_data, delimiter=",")
-        headers = next(reader, None)  # get headers
-
-        data = {}
-        for header in headers:
-            data[header] = []
-        for row in reader:
-            for header, value in zip(headers, row):
-                data[header].append(float(value))
-
-        spectral_weightings = {}
-        for i, (key, val) in enumerate(data.items()):
-            if i == 0:
-                wavelengths = np.array(val)
-            else:
-                spectral_weightings[key] = (wavelengths, np.array(val))
-        return spectral_weightings
-
-    def weight(self, standard):
-        """weight by spectral effectiveness"""
-        if standard in self.weights.keys():
-            weight_wavelengths, weights_orig = self.weights[standard]
-            weights = log_interp(self.wavelengths, weight_wavelengths, weights_orig)
-            weighted_intensity = self.intensities * weights
-        else:
-            warnings.warn(f"{standard} not in available weightings.")
-        return weighted_intensity
-
     def _weight_spectra(self):
         """calculate the weighted spectra"""
+        weights_dict = get_spectral_weightings()
+        keys = list(weights_dict)
+        weight_wavelengths = weights_dict[keys[0]]
         weighted_intensities = {}
-        maxval = max(self.intensities)
-        for key, val in self.weights.items():
-            weighted_intensity = self.weight(key)
-            ratio = maxval / max(weighted_intensity)
+        for key in keys[1:]:
+            weights = log_interp(
+                self.wavelengths, weight_wavelengths, weights_dict[key]
+            )
+            weighted_intensity = self.intensities * weights
+            ratio = max(self.intensities) / max(weighted_intensity)
             weighted_intensities[key] = weighted_intensity * ratio
         return weighted_intensities
 
@@ -250,26 +214,32 @@ class Spectrum:
         self._scale(normval / max(self.intensities))
         return self
 
-    def get_tlv(self, standard):
+    def get_tlv(self, weights: dict):
         """return the total uv dose over 8 hours for this specific lamp,
-        per a particular spectral effectiveness standard. units: mJ/cm2"""
-        weights = log_interp(self.wavelengths, *self.weights[standard])  # get weights
+        per a particular spectral effectiveness standard. units: mJ/cm2
+        weights is a dict of wavelength : spectral_effectiveness value
+        """
+        wavelengths = list(weights.keys())
+        values = list(weights.values())
+        weights = log_interp(self.wavelengths, wavelengths, values)  # get weights
         i_new = self.intensities / self.sum()  # scale
         s_lambda = sum_spectrum(self.wavelengths, weights * i_new)
         return 3 / s_lambda
 
-    def get_max_irradiance(self, standard):
+    def get_max_irradiance(self, weights: dict):
         """return max irradiance for this specific spectra, per a particular
         spectral effectiveness standard. units: uW/cm2"""
-        return self.get_tlv(standard) / 60 / 60 / 8 * 1000
+        return self.get_tlv(weights) / 60 / 60 / 8 * 1000
 
-    def get_seconds_to_tlv(self, irradiance, standard):
+    def get_seconds_to_tlv(self, irradiance, weights: dict):
         """
         determine the number of seconds before a TLV is reached
         provided an irradiance value in uW/cm2
         and a spectral effectiveness standard
         """
-        weights = log_interp(self.wavelengths, *self.weights[standard])  # get weights
+        wavelengths = list(weights.keys())
+        values = list(weights.values())
+        weights = log_interp(self.wavelengths, wavelengths, values)  # get weights
         i_new = self.intensities * irradiance / self.sum()  # scale
         weighted_irradiance = sum_spectrum(self.wavelengths, weights * i_new)
         return 3000 / weighted_irradiance
