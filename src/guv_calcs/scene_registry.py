@@ -174,7 +174,8 @@ class ZoneRegistry(Registry["CalcZone"]):
         if isinstance(zone, (CalcPlane, CalcVol)):
             x, y, z = zone.coords.T
             dimensions = x.max(), y.max(), z.max()
-        return self._check_position(dimensions, zone)
+            return self._check_position(dimensions, zone)
+        return None
 
 
 @dataclass

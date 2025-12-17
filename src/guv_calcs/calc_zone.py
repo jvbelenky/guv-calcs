@@ -239,7 +239,6 @@ class CalcZone(object):
 
     def set_dimensions(
         self,
-        *,
         x1=None,
         x2=None,
         y1=None,

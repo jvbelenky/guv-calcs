@@ -22,6 +22,7 @@ class Scene:
     ):
         self.dim = dim
         self.colormap = colormap
+        self.on_collision = on_collision
 
         # self.lamps: dict[str, Lamp] = {}
         self.lamps = LampRegistry(

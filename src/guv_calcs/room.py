@@ -67,7 +67,7 @@ class Room:
         self.calc_zones = self.scene.calc_zones
 
         ### Misc flags
-        self.standard = PhotStandard.from_any(standard)
+        self._standard = PhotStandard.from_any(standard)
         self.air_changes = air_changes
         self.ozone_decay_constant = ozone_decay_constant
         self.precision = precision
@@ -278,9 +278,17 @@ class Room:
 
     # --------------------- Misc flags -----------------------
 
+    @property
+    def standard(self):
+        return self._standard
+        
+    @standard.setter
+    def standard(self, value):
+        self._standard = PhotStandard.from_any(value)
+
     def set_standard(self, standard, preserve_spacing=True):
         """update the photobiological safety standard the Room is subject to"""
-        self.standard = PhotStandard.from_any(standard)
+        self.standard = standard
         self.scene.update_standard_zones(
             standard=self.standard, preserve_spacing=preserve_spacing
         )

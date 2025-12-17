@@ -56,5 +56,9 @@ class PhotStandard(StrEnum):
     def dict(cls) -> dict:
         return {member.value: member.label for member in cls}
 
+    @classmethod
+    def labels(cls) -> list:
+        return [member.label for member in cls]
+
     def __str__(self) -> str:
         return self.label

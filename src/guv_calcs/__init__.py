@@ -17,6 +17,7 @@ from ._data import (
     sum_multiwavelength_data,
     plot_disinfection_data,
 )
+from .safety import PhotStandard
 from .units import convert_units, convert_length, convert_time
 from .lamp_helpers import new_lamp_position, get_lamp_positions
 from ._read import read_export_file, file_to_zone
@@ -47,6 +48,7 @@ __all__ = [
     "get_standards",
     "sum_multiwavelength_data",
     "plot_disinfection_data",
+    "PhotStandard",
     "convert_units",
     "convert_length",
     "convert_time",
