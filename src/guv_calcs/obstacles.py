@@ -1,4 +1,5 @@
 import numpy as np
+from .filters import ConstFilter
 
 
 class BoxObstacle:
@@ -114,9 +115,6 @@ class BoxObstacleOld2:
         if hit.any():
             values[hit] *= 1.0 - self.opacity
             return values
-
-
-from .filters import ConstFilter
 
 
 class BoxObstacleOld:

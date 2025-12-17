@@ -85,7 +85,7 @@ class Registry(Generic[T], MutableMapping[str, T]):
         check if an object's dimensions exceed the room's boundaries.
         """
         msg = None
-        origin, roomdims =  self.dims().origin, self.dims().dimensions
+        origin, roomdims = self.dims().origin, self.dims().dimensions
         for coord, pt1, pt2 in zip(dims, origin, roomdims):
             if coord > pt2 or coord < pt1:
                 msg = f"{obj.name} exceeds room boundaries!"

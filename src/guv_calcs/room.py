@@ -281,7 +281,7 @@ class Room:
     @property
     def standard(self):
         return self._standard
-        
+
     @standard.setter
     def standard(self, value):
         self._standard = PhotStandard.from_any(value)

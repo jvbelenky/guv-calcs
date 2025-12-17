@@ -19,7 +19,7 @@ class LampSurface:
         depth: float = 0.0,
         units: "LengthUnits" = LengthUnits.METERS,
         source_density: int = 1,
-        intensity_map = None, # messy..
+        intensity_map=None,  # messy..
     ):
         """
         TODO: instead of the pose object itself maybe some kind of mappable view?
