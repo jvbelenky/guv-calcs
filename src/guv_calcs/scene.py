@@ -125,7 +125,7 @@ class Scene:
             idx = len(self.lamps) + 1
             if mode.lower() == "downlight":
                 x, y = new_lamp_position(idx, self.dim.x, self.dim.y)
-                lamp.move(x, y, self.dim.z - offset).aim(0.0, 0.0, 0.0)
+                lamp.move(x, y, self.dim.z - offset).aim(x, y, 0.0)
             elif mode.lower() == "tilted":
                 x, y = new_lamp_position_perimeter(idx, self.dim.x, self.dim.y)
                 x = x + offset if x == 0.0 else x - offset
