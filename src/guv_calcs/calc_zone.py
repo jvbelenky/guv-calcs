@@ -93,7 +93,7 @@ class CalcZone(object):
         show_values=True,
         colormap=None,
     ):
-        self.zone_id = zone_id
+        self._zone_id = zone_id
         self.name = str(zone_id) if name is None else str(name)
         self.dose = False if dose is None else dose
         self.hours = hours  # only used if dose is true
@@ -130,11 +130,15 @@ class CalcZone(object):
 
     @property
     def id(self) -> str:
-        return self.zone_id
+        return self._zone_id
 
-    @id.setter
-    def id(self, value: str) -> None:
-        self.zone_id = value
+    @property
+    def zone_id(self) -> str:
+        return self._zone_id
+
+    def _assign_id(self, value: str) -> None:
+        """should only be used by Scene"""
+        self._zone_id = value
 
     @property
     def calctype(self):

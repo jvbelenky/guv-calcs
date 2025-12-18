@@ -118,9 +118,7 @@ class Registry(Generic[T], MutableMapping[str, T]):
             if policy == "increment":
                 key = self._unique_id(key)
             # OVERWRITE keeps key as-is
-        obj.id = key
-        if obj.name is None:
-            obj.name = key
+        obj._assign_id(key)
         self._items[key] = self._validate(obj)
         # self.on_added(key, obj)  # hook
         return key

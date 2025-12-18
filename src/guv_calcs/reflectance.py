@@ -226,14 +226,13 @@ class ReflectiveSurface:
             f"R={self.R:.3g}, "
             f"geometry={self.plane.geometry.__repr__()})"
         )
-
+        
     @property
     def id(self) -> str:
         return self.plane.zone_id
 
-    @id.setter
-    def id(self, value: str) -> None:
-        self.plane.zone_id = value
+    def _assign_id(self, value: str) -> None:
+        self.plane._assign_id(value)
 
     def to_dict(self):
         return {"R": self.R, "plane": self.plane.to_dict()}

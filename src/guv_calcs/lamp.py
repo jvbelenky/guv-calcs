@@ -11,10 +11,8 @@ from .lamp_surface import LampSurface
 from .lamp_plotter import LampPlotter
 from .lamp_orientation import LampOrientation
 from .trigonometry import to_polar
-from .safety import get_tlvs
+from ._data import get_tlvs
 from .lamp_type import GUVType, LampUnitType, LampType
-from .units import LengthUnits
-from .safety import PhotStandard
 
 VALID_LAMPS = [
     "aerolamp",
@@ -92,37 +90,40 @@ class Lamp:
         name=None,
         filedata=None,
         filename=None,
-        x=0.0,
-        y=0.0,
-        z=0.0,
-        angle=0.0,
+        x=None,
+        y=None,
+        z=None,
+        angle=None,
         aimx=None,
         aimy=None,
         aimz=None,
-        intensity_units="mw/sr",
+        intensity_units=None,
         guv_type=None,
         wavelength=None,
         spectra_source=None,
-        width: float = 0.0,
-        length: float = 0.0,
-        depth: float = 0.0,
-        units: str = "meters",
-        source_density: int = 1,
+        width=None,
+        length=None,
+        depth=None,
+        units=None,
+        source_density=None,
         intensity_map=None,
-        enabled: bool = True,
+        enabled=None,
         scaling_factor=None,
     ):
 
-        self.lamp_id = lamp_id or "Lamp"
+        self._lamp_id = lamp_id or "Lamp"
         self.name = str(self.lamp_id) if name is None else str(name)
         self.enabled = True if enabled is None else enabled
 
         # Position / orientation
+        x = 0.0 if x is None else x
+        y = 0.0 if y is None else y
+        z = 0.0 if z is None else z
         self.pose = LampOrientation(
             x=x,
             y=y,
             z=z,
-            angle=angle,
+            angle=0.0 if angle is None else angle,
             aimx=x if aimx is None else aimx,
             aimy=y if aimy is None else aimy,
             aimz=z - 1.0 if aimz is None else aimz,
@@ -130,13 +131,13 @@ class Lamp:
 
         # Surface data
         self.surface = LampSurface(
-            pose=self.pose,
             width=width,
             length=length,
             depth=depth,
-            units=LengthUnits.from_any(units),
+            units=units,
             source_density=source_density,
             intensity_map=intensity_map,
+            pose=self.pose,
         )
 
         # Photometric data
@@ -215,12 +216,16 @@ class Lamp:
         )
 
     @property
-    def id(self) -> str:
-        return self.lamp_id
+    def lamp_id(self) -> str:
+        return self._lamp_id
 
-    @id.setter
-    def id(self, value: str) -> None:
-        self.lamp_id = value
+    @property
+    def id(self) -> str:
+        return self._lamp_id
+
+    def _assign_id(self, value: str) -> None:
+        """should typically only be used by Scene"""
+        self._lamp_id = value
 
     def to_dict(self):
         """
@@ -553,13 +558,19 @@ class Lamp:
         """maximum irradiance value"""
         if self.ies is None:
             raise AttributeError("Lamp has no photometry")
-        return self.ies.photometry.max() * self.intensity_units.factor
+        if self.intensity_units == "mW/sr":
+            return self.ies.photometry.max() / 10
+        else:
+            return self.ies.photometry.max()
 
     def center(self):
         """center irradiance value"""
         if self.ies is None:
             raise AttributeError("Lamp has no photometry")
-        return self.ies.photometry.center() * self.intensity_units.factor
+        if self.intensity_units == "mW/sr":
+            return self.ies.photometry.center() / 10
+        else:
+            return self.ies.photometry.center()
 
     def total(self):
         """just an alias for get_total_power for now"""
@@ -569,17 +580,31 @@ class Lamp:
         """return the lamp's total optical power"""
         if self.ies is None:
             raise AttributeError("Lamp has no photometry")
-        return (
-            self.ies.photometry.total_optical_power() * self.intensity_units.factor * 10
-        )
+        if self.intensity_units == "mW/sr":
+            return self.ies.photometry.total_optical_power()
+        else:
+            return self.ies.photometry.total_optical_power() * 10
 
-    def get_tlvs(self, standard: "PhotStandard" = PhotStandard.ACGIH):
-        """get the threshold limit values for this lamp."""
+    def get_tlvs(self, standard=0):
+        """
+        get the threshold limit values for this lamp. Returns tuple
+        (skin_limit, eye_limit) Will use the lamp spectrum if provided;
+        if not provided will use wavelength; if neither is defined, returns
+        (None, None). Standard may be a string in:
+            [`ANSI IES RP 27.1-22`, `IEC 62471-6:2022`]
+        Or an integer corresponding to the index of the desired standard.
+        """
         if self.spectra is not None:
-            return get_tlvs(self.spectra, standard)
+            skin_tlv, eye_tlv = get_tlvs(self.spectra, standard)
         elif self.wavelength is not None:
-            return get_tlvs(self.wavelength, standard)
-        return None, None
+            skin_tlv, eye_tlv = get_tlvs(self.wavelength, standard)
+        else:
+            skin_tlv, eye_tlv = None, None
+        return skin_tlv, eye_tlv
+
+    def get_limits(self, standard=0):
+        """compatibility alias for `get_tlvs()`"""
+        return self.get_tlvs(standard=standard)
 
     def get_cartesian(self, scale=1, sigfigs=9):
         """Return lamp's true position coordinates in cartesian space"""
@@ -617,7 +642,10 @@ class Lamp:
             msg = "No .ies file provided; scaling not applied"
             warnings.warn(msg, stacklevel=3)
         else:
-            self.ies.photometry.scale_to_max(max_val / self.intensity_units.factor)
+            if self.intensity_units == "mW/sr":
+                self.ies.photometry.scale_to_max(max_val * 10)
+            else:
+                self.ies.photometry.scale_to_max(max_val)
             self._update_scaling_factor()
         return self
 
@@ -637,7 +665,10 @@ class Lamp:
             msg = "No .ies file provided; scaling not applied"
             warnings.warn(msg, stacklevel=3)
         else:
-            self.photometry.scale_to_center(center_val / self.intensity_units.factor)
+            if self.intensity_units == "mW/sr":
+                self.photometry.scale_to_center(center_val * 10)
+            else:
+                self.photometry.scale_to_center(center_val)
             self._update_scaling_factor()
             # self._scale_mode = "center"
         return self
