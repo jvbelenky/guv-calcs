@@ -1,6 +1,6 @@
 from dataclasses import dataclass, replace
 import numpy as np
-from .units import LengthUnits
+from .units import LengthUnits, convert_length
 
 
 @dataclass(frozen=True, slots=True)
@@ -12,12 +12,22 @@ class RoomDimensions:
     units: "LengthUnits" = LengthUnits.METERS
 
     @property
+    def dimensions(self) -> np.ndarray:
+        return np.array([self.x, self.y, self.z])
+
+    @property
     def volume(self) -> float:
         return self.x * self.y * self.z
 
     @property
-    def dimensions(self) -> np.ndarray:
-        return np.array([self.x, self.y, self.z])
+    def cubic_meters(self) -> float:
+        x, y, z = convert_length(self.units, LengthUnits.METERS, self.dimensions)
+        return x * y * z
+
+    @property
+    def cubic_feet(self) -> float:
+        x, y, z = convert_length(self.units, LengthUnits.FEET, self.dimensions)
+        return x * y * z
 
     @property
     def faces(self) -> dict:

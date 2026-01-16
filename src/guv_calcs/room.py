@@ -5,12 +5,13 @@ from .lamp import Lamp
 from .calc_zone import CalcPlane, CalcVol
 from .room_plotter import RoomPlotter
 from .room_dims import RoomDimensions
-from .disinfection_calculator import DisinfectionCalculator
 from .reflectance import ReflectanceManager, ReflectiveSurface
 from .scene import Scene
 from .io import load_room_data, save_room_data, export_room_zip, generate_report
 from .safety import PhotStandard
 from .units import LengthUnits, convert_length
+from .efficacy import Data, plot_disinfection_data
+
 
 DEFAULT_DIMS = {}
 for member in list(LengthUnits):
@@ -80,9 +81,8 @@ class Room:
             enabled=enable_reflectance,
         )
 
-        ### Plotting and data extraction
+        ### Plotting
         self._plotter = RoomPlotter(self)
-        self._disinfection = DisinfectionCalculator(self)
 
         self.calc_state = {}
         self.update_state = {}
@@ -219,14 +219,9 @@ class Room:
             if zone.calctype != "Zone" and zone.enabled:
                 zone_state[key] = zone.calc_state
 
-        filter_state = {}
-        for key, filt in self.scene.filters.items():
-            filter_state[key] = filt.get_calc_state()
-
         calc_state = {}
         calc_state["lamps"] = lamp_state
         calc_state["calc_zones"] = zone_state
-        calc_state["filters"] = filter_state
         calc_state["reflectance"] = self.ref_manager.calc_state
 
         return calc_state
@@ -405,10 +400,10 @@ class Room:
     # -------------------- Scene: lamps, zones, surfaces ---------------------
 
     def lamp(self, lamp_id):
-        return self.scene.lamps.get(lamp_id)
+        return self.scene.lamps[lamp_id]
 
     def zone(self, zone_id):
-        return self.scene.calc_zones.get(zone_id)
+        return self.scene.calc_zones[zone_id]
 
     def add(self, *args, **kwargs):
         self.scene.add(*args, **kwargs)
@@ -519,9 +514,7 @@ class Room:
     def calculate_by_id(self, zone_id, hard=False):
         """calculate just the calc zone selected"""
         valid_lamps = self.scene.get_valid_lamps()
-
         if len(valid_lamps) > 0:
-
             # calculate incidence on the surfaces if the reflectances or lamps have changed
             if self.recalculate_incidence or hard:
                 self.ref_manager.calculate_incidence(valid_lamps, hard=hard)
@@ -534,9 +527,22 @@ class Room:
 
     # ------------------- Data and Plotting ----------------------
 
-    def get_disinfection_data(self, zone_id="WholeRoomFluence"):
-        """return the fluence_dict, dataframe, and violin plot"""
-        return self._disinfection.get_disinfection_data(zone_id=zone_id)
+    def disinfection_plot(self, zone_id="WholeRoomFluence"):
+        """Return a violin plot of expected disinfection rates"""
+        df = self.get_disinfection_table(zone_id)
+        return plot_disinfection_data(df, self.fluence_dict, self.room)
+
+    def disinfection_table(self, zone_id="WholeRoomFluence", category=None):
+        """Return a table of expected disinfection rates"""
+        return Data.with_room(room=self, zone_id=zone_id, category=category).df
+
+    def fluence_dict(self, zone_id):
+        zone = self.zone(zone_id)
+        dct = {wv: 0.0 for wv in self.lamps.wavelengths.values()}
+        for k, v in self.lamps.wavelengths.items():
+            if k in zone.lamp_cache.keys():
+                dct[v] = dct[v] + zone.lamp_cache[k].values.mean()
+        return dct
 
     def plotly(self, fig=None, select_id=None, title=""):
         """return a plotly figure of all the room's components"""

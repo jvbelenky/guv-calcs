@@ -7,12 +7,12 @@ from .filters import MeasuredCorrection, MultFilter, ConstFilter
 from .obstacles import BoxObstacle
 from .spectrum import Spectrum, sum_spectrum
 from .trigonometry import to_polar, to_cartesian, attitude
-from ._data import (
-    get_full_disinfection_table,
+from ._data import get_spectral_weightings
+from .efficacy import (
     get_disinfection_table,
     sum_multiwavelength_data,
     plot_disinfection_data,
-    get_spectral_weightings,
+    Data,
 )
 from .safety import PhotStandard, get_tlvs
 from .units import convert_units, convert_length, convert_time
@@ -37,11 +37,11 @@ __all__ = [
     "to_polar",
     "to_cartesian",
     "attitude",
-    "get_full_disinfection_table",
+    "get_spectral_weightings",
     "get_disinfection_table",
     "sum_multiwavelength_data",
     "plot_disinfection_data",
-    "get_spectral_weightings",
+    "Data",
     "PhotStandard",
     "get_tlvs",
     "convert_units",
