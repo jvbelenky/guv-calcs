@@ -11,8 +11,9 @@ from .lamp_surface import LampSurface
 from .lamp_plotter import LampPlotter
 from .lamp_orientation import LampOrientation
 from .trigonometry import to_polar
-from ._data import get_tlvs
+from .safety import get_tlvs
 from .lamp_type import GUVType, LampUnitType, LampType
+from .units import LengthUnits
 
 VALID_LAMPS = [
     "aerolamp",
@@ -90,10 +91,10 @@ class Lamp:
         name=None,
         filedata=None,
         filename=None,
-        x=None,
-        y=None,
-        z=None,
-        angle=None,
+        x: float = 0.0,
+        y: float = 0.0,
+        z: float = 0.0,
+        angle: float = 0.0,
         aimx=None,
         aimy=None,
         aimz=None,
@@ -101,14 +102,14 @@ class Lamp:
         guv_type=None,
         wavelength=None,
         spectra_source=None,
-        width=None,
-        length=None,
-        depth=None,
-        units=None,
-        source_density=None,
+        width=0.0,
+        length=0.0,
+        depth=0.0,
+        units=LengthUnits.METERS,
+        source_density: int = 1,
         intensity_map=None,
-        enabled=None,
-        scaling_factor=None,
+        enabled: bool = True,
+        scaling_factor: float = 1.0,
     ):
 
         self._lamp_id = lamp_id or "Lamp"
@@ -116,14 +117,11 @@ class Lamp:
         self.enabled = True if enabled is None else enabled
 
         # Position / orientation
-        x = 0.0 if x is None else x
-        y = 0.0 if y is None else y
-        z = 0.0 if z is None else z
         self.pose = LampOrientation(
             x=x,
             y=y,
             z=z,
-            angle=0.0 if angle is None else angle,
+            angle=angle,
             aimx=x if aimx is None else aimx,
             aimy=y if aimy is None else aimy,
             aimz=z - 1.0 if aimz is None else aimz,
@@ -154,7 +152,7 @@ class Lamp:
         self.filedata = filedata  # temp - property eventually to be removed
         self.ies = None
         self._base_ies = None
-        self._scaling_factor = scaling_factor or 1.0
+        self._scaling_factor = scaling_factor
         self._scale_mode = "factor"
         self.load_ies(filedata)
         self.filename = None  # VERY temp - just for illluminate compatibility
@@ -291,6 +289,24 @@ class Lamp:
         return VALID_LAMPS
 
     @classmethod
+    def _prepare_from_key(cls, key: str, kwargs: dict) -> dict:
+        """Common logic for from_keyword / from_index."""
+        if not isinstance(key, str):
+            raise TypeError(f"Keyword must be str, not {type(key)}")
+        if key.lower() not in VALID_LAMPS:
+            raise KeyError(
+                f"{key} is not a valid lamp key. Valid keys are {VALID_LAMPS}"
+            )
+        path = "guv_calcs.data.lamp_data"
+        fn = resources.files(path).joinpath(key.lower() + ".ies")
+        sn = resources.files(path).joinpath(key.lower() + ".csv")
+        kwargs.setdefault("filedata", fn)
+        kwargs.setdefault("spectra_source", sn)
+        if kwargs.get("lamp_id", None) is None:
+            kwargs.setdefault("lamp_id", key)
+        return kwargs
+
+    @classmethod
     def from_keyword(cls, key, **kwargs):
         """define a Lamp object from a predefined keyword"""
         kwargs = cls._prepare_from_key(key, kwargs)
@@ -324,7 +340,17 @@ class Lamp:
             map_fingerprint = None
 
         if self.photometry is not None:
-            photometry_fingerprint = self.photometry.to_fingerprint()
+            # Use to_fingerprint if available, otherwise compute hash from values
+            if hasattr(self.photometry, 'to_fingerprint'):
+                photometry_fingerprint = self.photometry.to_fingerprint()
+            else:
+                # Fallback: create fingerprint from photometry values
+                phot_data = (
+                    self.photometry.values.tobytes()
+                    + self.photometry.thetas.tobytes()
+                    + self.photometry.phis.tobytes()
+                )
+                photometry_fingerprint = hashlib.sha1(phot_data).digest()
         else:
             photometry_fingerprint = None
 
@@ -782,23 +808,3 @@ class Lamp:
     def plot_surface(self, **kwargs):
         """see LampSurface.plot_surface"""
         return self.surface.plot_surface(**kwargs)
-
-    # --------------------------- Internals -----------------------------
-
-    @classmethod
-    def _prepare_from_key(cls, key: str, kwargs: dict) -> dict:
-        """Common logic for from_keyword / from_index."""
-        if not isinstance(key, str):
-            raise TypeError(f"Keyword must be str, not {type(key)}")
-        if key.lower() not in VALID_LAMPS:
-            raise KeyError(
-                f"{key} is not a valid lamp key. Valid keys are {VALID_LAMPS}"
-            )
-        path = "guv_calcs.data.lamp_data"
-        fn = resources.files(path).joinpath(key.lower() + ".ies")
-        sn = resources.files(path).joinpath(key.lower() + ".csv")
-        kwargs.setdefault("filedata", fn)
-        kwargs.setdefault("spectra_source", sn)
-        if kwargs.get("lamp_id", None) is None:
-            kwargs.setdefault("lamp_id", key)
-        return kwargs

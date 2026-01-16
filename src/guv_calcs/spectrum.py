@@ -3,8 +3,7 @@ import warnings
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
-from ._data import get_spectral_weightings
-from .io import rows_to_bytes, load_csv
+from .io import rows_to_bytes, load_csv, get_spectral_weightings
 
 
 class Spectrum:

@@ -157,6 +157,12 @@ class LampRegistry(Registry["Lamp"]):
     def check_position(self, lamp) -> str:
         return self._check_position(lamp.position, lamp)
 
+    @property
+    def wavelengths(self) -> list:
+        return {k: v.wavelength for k, v in self.items()}
+        # lst = [v.wavelength for k,v in self.items() if v.wavelength is not None]
+        # return sorted(set(lst))
+
 
 @dataclass
 class ZoneRegistry(Registry["CalcZone"]):

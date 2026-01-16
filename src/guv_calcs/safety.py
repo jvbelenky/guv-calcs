@@ -1,5 +1,4 @@
 from enum import StrEnum
-import numpy as np
 from .spectrum import Spectrum, log_interp
 from ._data import get_spectral_weightings
 
