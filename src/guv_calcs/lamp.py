@@ -341,7 +341,7 @@ class Lamp:
 
         if self.photometry is not None:
             # Use to_fingerprint if available, otherwise compute hash from values
-            if hasattr(self.photometry, 'to_fingerprint'):
+            if hasattr(self.photometry, "to_fingerprint"):
                 photometry_fingerprint = self.photometry.to_fingerprint()
             else:
                 # Fallback: create fingerprint from photometry values

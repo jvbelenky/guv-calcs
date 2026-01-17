@@ -7,7 +7,7 @@ from .filters import MeasuredCorrection, MultFilter, ConstFilter
 from .obstacles import BoxObstacle
 from .spectrum import Spectrum, sum_spectrum
 from .trigonometry import to_polar, to_cartesian, attitude
-from ._data import get_spectral_weightings
+from .io import get_spectral_weightings
 from .efficacy import (
     get_disinfection_table,
     sum_multiwavelength_data,

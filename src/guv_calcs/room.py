@@ -527,10 +527,9 @@ class Room:
 
     # ------------------- Data and Plotting ----------------------
 
-    def disinfection_plot(self, zone_id="WholeRoomFluence"):
+    def disinfection_plot(self, zone_id="WholeRoomFluence", category=None, **kwargs):
         """Return a violin plot of expected disinfection rates"""
-        df = self.get_disinfection_table(zone_id)
-        return plot_disinfection_data(df, self.fluence_dict, self.room)
+        return Data.with_room(room=self, zone_id=zone_id, category=category).plot(room=self, **kwargs)
 
     def disinfection_table(self, zone_id="WholeRoomFluence", category=None):
         """Return a table of expected disinfection rates"""

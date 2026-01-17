@@ -1,6 +1,6 @@
 from enum import StrEnum
 from .spectrum import Spectrum, log_interp
-from ._data import get_spectral_weightings
+from .io import get_spectral_weightings
 
 
 class PhotStandard(StrEnum):
