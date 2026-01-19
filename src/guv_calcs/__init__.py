@@ -8,12 +8,7 @@ from .obstacles import BoxObstacle
 from .spectrum import Spectrum, sum_spectrum
 from .trigonometry import to_polar, to_cartesian, attitude
 from .io import get_spectral_weightings
-from .efficacy import (
-    get_disinfection_table,
-    sum_multiwavelength_data,
-    plot_disinfection_data,
-    Data,
-)
+from .efficacy import Data
 from .safety import PhotStandard, get_tlvs
 from .units import convert_units, convert_length, convert_time
 from .lamp_helpers import new_lamp_position, get_lamp_positions

@@ -6,6 +6,7 @@ import json
 import zipfile
 import io
 import csv
+from functools import cache
 from packaging.version import Version
 import pandas as pd
 import numpy as np
@@ -397,6 +398,7 @@ def generate_report(self, fname=None):
 # ------- package data loading ---------------
 
 
+@cache
 def get_full_disinfection_table():
     """fetch all inactivation constant data without any filtering"""
     fname = "UVC Inactivation Constants.csv"
