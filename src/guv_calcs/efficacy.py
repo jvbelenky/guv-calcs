@@ -1082,6 +1082,16 @@ def log3(irrad, k1, k2=0, f=0, **kwargs):
     return seconds_to_S(0.001, irrad=irrad, k1=k1, k2=k2, f=f, **kwargs)
 
 
+def log4(irrad, k1, k2=0, f=0, **kwargs):
+    """Time to 99.99% inactivation (4-log reduction)."""
+    return seconds_to_S(0.0001, irrad=irrad, k1=k1, k2=k2, f=f, **kwargs)
+
+
+def log5(irrad, k1, k2=0, f=0, **kwargs):
+    """Time to 99.999% inactivation (5-log reduction)."""
+    return seconds_to_S(0.00001, irrad=irrad, k1=k1, k2=k2, f=f, **kwargs)
+
+
 def seconds_to_S(S, irrad, k1, k2=0, f=0, tol=1e-10, max_iter=100):
     """
     Calculate time in seconds to reach survival fraction S.
