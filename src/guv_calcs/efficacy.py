@@ -320,10 +320,29 @@ class Data:
 
         return time_cols
 
-    def _select_time_display_columns(self, df, time_cols, log_level=2):
+    def _select_time_display_columns(self, df, time_cols, log_level=2, left_axis=None, right_axis=None):
         """
-        Select which time columns to display based on value ranges.
+        Select which time columns to display based on value ranges or user preference.
+
+        Parameters
+        ----------
+        df : DataFrame
+            Data to analyze for automatic unit selection.
+        time_cols : dict
+            Dictionary mapping log levels to unit column names.
+        log_level : int
+            Log reduction level (1, 2, or 3).
+        left_axis : str, optional
+            User-specified left axis unit: "seconds", "minutes", or "hours".
+        right_axis : str or False, optional
+            User-specified right axis unit, or False to disable right axis.
+
         Returns tuple of (left_col, right_col) for display.
+
+        Automatic selection logic (when no user preference):
+        - If median < 100 seconds: seconds on left only (no right axis)
+        - If median < 6000 seconds (100 min): minutes on left, seconds on right
+        - Otherwise: hours on left, minutes on right
         """
         if log_level not in time_cols:
             return None, None
@@ -333,17 +352,44 @@ class Data:
         min_key = cols["minutes"]
         hr_key = cols["hours"]
 
+        unit_to_key = {"seconds": sec_key, "minutes": min_key, "hours": hr_key}
+
+        # User-specified axes override automatic selection
+        if left_axis is not None:
+            left_key = unit_to_key.get(left_axis.lower())
+            if left_key is None:
+                raise ValueError(f"Invalid left_axis '{left_axis}'. Must be 'seconds', 'minutes', or 'hours'.")
+
+            if right_axis is False:
+                return left_key, None
+            elif right_axis is not None:
+                right_key = unit_to_key.get(right_axis.lower())
+                if right_key is None:
+                    raise ValueError(f"Invalid right_axis '{right_axis}'. Must be 'seconds', 'minutes', 'hours', or False.")
+                return left_key, right_key
+            else:
+                # User specified left only - use standard pairing for right
+                if left_axis.lower() == "hours":
+                    return left_key, min_key
+                elif left_axis.lower() == "minutes":
+                    return left_key, sec_key
+                else:  # seconds
+                    return left_key, None
+
         if len(df) == 0:
             return min_key, sec_key
 
-        # Check median values to determine best display units
+        # Automatic selection based on median value
         median_seconds = df[sec_key].median()
 
-        if median_seconds < 120:  # Less than 2 minutes - show seconds/minutes
+        if median_seconds < 100:
+            # Seconds is best - seconds on left only (no right axis)
+            return sec_key, None
+        elif median_seconds < 6000:  # Less than 100 minutes
+            # Minutes is best - minutes on left, seconds on right
             return min_key, sec_key
-        elif median_seconds < 7200:  # Less than 2 hours - show minutes/seconds
-            return min_key, sec_key
-        else:  # 2+ hours - show hours/minutes
+        else:
+            # Hours is best - hours on left, minutes on right
             return hr_key, min_key
 
     @property
@@ -445,7 +491,8 @@ class Data:
         data._df = df
         return data
 
-    def plot(self, title=None, figsize=None, air_changes=None, mode="default", log=2, yscale="auto"):
+    def plot(self, title=None, figsize=None, air_changes=None, mode="default", log=2, yscale="auto",
+             left_axis=None, right_axis=None):
         """
         Plot inactivation data for all species as a violin and scatter plot.
 
@@ -467,7 +514,18 @@ class Data:
         yscale : str, optional
             Y-axis scale: "auto" (default), "linear", or "log".
             "auto" uses log scale if data spans >3 orders of magnitude.
+        left_axis : str, optional
+            For time mode: specify left y-axis unit ("seconds", "minutes", or "hours").
+            If specified, automatically enables time mode. Automatic selection picks
+            units to keep values readable (not in multi-thousands).
+        right_axis : str or False, optional
+            For time mode: specify right y-axis unit, or False to disable right axis.
+            If specified, automatically enables time mode.
         """
+        # Check if user specified time axis - auto-enable time mode
+        time_axis_specified = left_axis is not None or right_axis is not None
+        if time_axis_specified and mode == "default":
+            mode = "time"
         df = self._df
 
         # Dynamic figsize based on number of species
@@ -488,7 +546,9 @@ class Data:
         # Get time columns for the specified log level
         def get_time_labels(log_lvl):
             if hasattr(self, '_time_cols') and log_lvl in self._time_cols:
-                return self._select_time_display_columns(df, self._time_cols, log_level=log_lvl)
+                return self._select_time_display_columns(
+                    df, self._time_cols, log_level=log_lvl, left_axis=left_axis, right_axis=right_axis
+                )
             return None, None
 
         # Determine what to plot based on mode and available data
@@ -632,7 +692,7 @@ class Data:
             ax=ax1,
             alpha=0.4,
             legend=False,
-        )
+            )
 
         # Scatter plot: shows individual points colored by hue, shaped by style
         scatter_kwargs = dict(
@@ -648,16 +708,16 @@ class Data:
             scatter_kwargs.update(hue=hue_col, hue_order=hue_order)
             if palette is not None:
                 scatter_kwargs["palette"] = palette
-            # Violin: use light gray for wavelength colors, match category colors otherwise
-            if use_wavelength_colors:
-                violin_kwargs["color"] = "lightgray"
-            else:
-                # Category colors - match violin to scatter
-                violin_kwargs.update(hue=hue_col, hue_order=hue_order)
-                if palette is not None:
-                    violin_kwargs["palette"] = palette
         else:
             scatter_kwargs["color"] = color
+
+        # Violin coloring: use gray for wavelength colors (scatter shows colors),
+        # but apply category colors to violins when category is the hue
+        if use_wavelength_colors:
+            violin_kwargs["color"] = "lightgray"
+        elif hue_col == "Category":
+            violin_kwargs.update(hue=hue_col, hue_order=hue_order)
+        else:
             violin_kwargs["color"] = color
 
         # Always add style (shapes) if available, regardless of hue

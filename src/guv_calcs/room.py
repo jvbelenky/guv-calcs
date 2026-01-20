@@ -10,8 +10,7 @@ from .scene import Scene
 from .io import load_room_data, save_room_data, export_room_zip, generate_report
 from .safety import PhotStandard
 from .units import LengthUnits, convert_length
-from .efficacy import Data, plot_disinfection_data
-
+from .efficacy import Data
 
 DEFAULT_DIMS = {}
 for member in list(LengthUnits):
@@ -529,7 +528,8 @@ class Room:
 
     def disinfection_plot(self, zone_id="WholeRoomFluence", category=None, **kwargs):
         """Return a violin plot of expected disinfection rates"""
-        return Data.with_room(room=self, zone_id=zone_id, category=category).plot(room=self, **kwargs)
+        data = Data.with_room(room=self, zone_id=zone_id, category=category)
+        return data.plot(air_changes=self.air_changes, **kwargs)
 
     def disinfection_table(self, zone_id="WholeRoomFluence", category=None):
         """Return a table of expected disinfection rates"""
