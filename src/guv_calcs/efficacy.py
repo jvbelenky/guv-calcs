@@ -11,10 +11,9 @@ from .units import LengthUnits
 pd.options.mode.chained_assignment = None
 
 
-def get_disinfection_table(fluence=None, wavelength=None, medium=None, category=None):
-    return Data(
-        medium=medium, category=category, wavelength=wavelength, fluence=fluence
-    ).df
+def get_disinfection_table(fluence=None):
+    """Return disinfection table with optional fluence-based computed columns."""
+    return Data(fluence=fluence).df
 
 
 class Data:
@@ -24,193 +23,123 @@ class Data:
         """Return full disinfection table (cached, returns copy)."""
         return get_full_disinfection_table().copy()
 
-    def __init__(
-        self,
-        medium: str | list | None = None,
-        category: str | list | None = None,
-        wavelength: int | float | list | tuple | None = None,
-        fluence: float | dict | None = None,
-    ):
-        self._base_df = self.get_full()
-        self._medium = medium
-        self._category = category
-        self._wavelength = wavelength
+    def __init__(self, fluence: float | dict | None = None):
+        """
+        Initialize Data with optional fluence computation.
+
+        Parameters
+        ----------
+        fluence : float or dict, optional
+            Fluence value(s) for computing time/eACH columns.
+            Can be a single float or dict mapping wavelength to fluence.
+        """
         self._fluence = fluence
-        self._time_cols = {}  # Will be populated by _finalize_df if fluence provided
+        self._use_metric_units = True  # For CADR display (lps vs cfm)
 
-        base_keys = [
-            "Category",
-            "Species",
-            "Strain",
-            "wavelength [nm]",
-            "k1 [cm2/mJ]",
-            "k2 [cm2/mJ]",
-            "% resistant",
-            "Medium",
-            "Condition",
-            "Reference",
-            "Link",
-        ]
+        # Filter state (set by subset())
+        self._medium = None
+        self._category = None
+        self._wavelength = None
+        self._wavelength_locked = False  # True if fluence is dict
+        self._log = 2  # Log reduction level for time column display (1-5)
 
-        df = self._base_df
+        # Load base data (cached)
+        self._base_df = self.get_full()
+        self._time_cols = {}  # Populated by _compute_all_columns
 
-        # Handle medium filtering
-        if medium is not None:
-            # Treat single-item list as single value
-            if isinstance(medium, list) and len(medium) == 1:
-                medium = medium[0]
-                self._medium = medium
+        # Compute full_df if fluence provided
+        if fluence is not None:
+            # If fluence is dict, lock wavelength to those keys
+            if isinstance(fluence, dict):
+                self._wavelength = list(fluence.keys())
+                self._wavelength_locked = True
+            self._full_df = self._compute_all_columns()
+        else:
+            self._full_df = self._base_df.copy()
 
-            if isinstance(medium, str):
-                # Single medium - filter and remove column
-                if medium not in self.mediums:
-                    raise KeyError(
-                        f"{medium} is not a valid medium; must be in {self.mediums}"
-                    )
-                df = df[df["Medium"] == medium]
-                base_keys.remove("Medium")
-            elif isinstance(medium, list):
-                # List of mediums - filter but keep column
-                invalid = [m for m in medium if m not in self.mediums]
-                if invalid:
-                    raise KeyError(
-                        f"Invalid medium(s) {invalid}; must be in {self.mediums}"
-                    )
-                df = df[df["Medium"].isin(medium)]
-            else:
-                raise TypeError("medium must be a string or list of strings")
+    def _compute_all_columns(self, room: "Room | None" = None) -> pd.DataFrame:
+        """
+        Compute ALL derived columns for the full dataset.
 
-        # Handle category filtering
-        if category is not None:
-            # Treat single-item list as single value
-            if isinstance(category, list) and len(category) == 1:
-                category = category[0]
-                self._category = category
+        Parameters
+        ----------
+        room : Room, optional
+            Room object for CADR calculations. Only used transiently.
 
-            if isinstance(category, str):
-                # Single category - filter and remove column
-                if category not in self.categories:
-                    raise KeyError(
-                        f"{category} is not a valid category; must be in {self.categories}"
-                    )
-                df = df[df["Category"] == category]
-                base_keys.remove("Category")
-            elif isinstance(category, list):
-                # List of categories - filter but keep column
-                invalid = [c for c in category if c not in self.categories]
-                if invalid:
-                    raise KeyError(
-                        f"Invalid category(s) {invalid}; must be in {self.categories}"
-                    )
-                df = df[df["Category"].isin(category)]
-            else:
-                raise TypeError("category must be a string or list of strings")
+        Returns DataFrame with all computed columns (per-wavelength rows).
+        """
+        fluence = self._fluence
+        df = self._base_df.copy()
 
-        # If fluence is a dict, its keys override the wavelength parameter
-        if isinstance(fluence, dict):
-            wavelength = list(fluence.keys())
-            self._wavelength = wavelength if len(wavelength) > 1 else wavelength[0]
-
-        if wavelength is not None:
-            # Convert numpy arrays to lists for consistent handling
-            if isinstance(wavelength, np.ndarray):
-                wavelength = wavelength.tolist()
-                self._wavelength = wavelength
-
-            # Treat single-item list as single value
-            if isinstance(wavelength, list) and len(wavelength) == 1:
-                wavelength = wavelength[0]
-                self._wavelength = wavelength
-
-            if isinstance(wavelength, (int, float)):
-                # Single wavelength - filter and remove column
-                if wavelength not in self.wavelengths:
-                    raise KeyError(
-                        f"{wavelength} is not a valid wavelength; must be in {self.wavelengths}"
-                    )
-                df = df[df["wavelength [nm]"] == wavelength]
-                base_keys.remove("wavelength [nm]")
-            elif isinstance(wavelength, list):
-                # List of specific wavelengths - filter but keep column
-                invalid = [w for w in wavelength if w not in self.wavelengths]
-                if invalid:
-                    raise KeyError(
-                        f"Invalid wavelength(s) {invalid}; must be in {self.wavelengths}"
-                    )
-                df = df[df["wavelength [nm]"].isin(wavelength)]
-            elif isinstance(wavelength, tuple) and len(wavelength) == 2:
-                # Wavelength range (min, max) - filter but keep column
-                wv_min, wv_max = wavelength
-                df = df[(df["wavelength [nm]"] >= wv_min) & (df["wavelength [nm]"] <= wv_max)]
-                if len(df) == 0:
-                    raise KeyError(
-                        f"No wavelengths found in range {wv_min}-{wv_max}; available: {self.wavelengths}"
-                    )
-            else:
-                raise TypeError(
-                    "wavelength must be a number, list of numbers, or tuple (min, max)"
-                )
-
-        # Check if fluence is a dict
+        # Handle fluence dict - extract wavelengths
         is_fluence_dict = isinstance(fluence, dict)
         is_multiwavelength = is_fluence_dict and len(fluence) > 1
 
         if is_multiwavelength:
-            df, fluence = _filter_wavelengths(df, fluence)
-            df = self._build_multiwavelength_df(df, fluence, medium)
-        else:
-            # Single wavelength dict or scalar fluence
-            if is_fluence_dict and len(fluence) == 1:
-                # Filter to only the wavelength in the dict
-                wv = list(fluence.keys())[0]
-                df = df[df["wavelength [nm]"] == wv]
-                if "wavelength [nm]" in base_keys:
-                    base_keys.remove("wavelength [nm]")
+            # Filter to wavelengths in fluence dict (validate wavelengths exist)
+            df_filtered, fluence_cleaned = _filter_wavelengths(df, fluence.copy())
 
-            if fluence is not None:
-                # Calculate time to inactivation for all log levels
-                df["Seconds to 90% inactivation"] = df.apply(
-                    _compute_row, args=[fluence, log1, 0], axis=1
-                )
-                df["Seconds to 99% inactivation"] = df.apply(
-                    _compute_row, args=[fluence, log2, 0], axis=1
-                )
-                df["Seconds to 99.9% inactivation"] = df.apply(
-                    _compute_row, args=[fluence, log3, 0], axis=1
-                )
-                # Only calculate eACH-UV when medium is exactly "Aerosol"
-                if medium == "Aerosol":
-                    df["eACH-UV"] = df.apply(
-                        _compute_row, args=[fluence, eACH_UV, 1], axis=1
-                    )
+            # For display, keep per-wavelength rows filtered to these wavelengths
+            df = df[df["wavelength [nm]"].isin(fluence_cleaned.keys())]
+            # Compute per-wavelength columns
+            fluence = fluence_cleaned
 
-            df = self._finalize_df(df, base_keys, medium, has_fluence=(fluence is not None))
+        # Single wavelength dict case - filter to that wavelength
+        if is_fluence_dict and len(fluence) == 1:
+            wv = list(fluence.keys())[0]
+            df = df[df["wavelength [nm]"] == wv]
 
-        df = df.sort_values("Species")
-        self._df = df
+        # Calculate time to inactivation for all log levels (1-5)
+        log_funcs = {1: log1, 2: log2, 3: log3, 4: log4, 5: log5}
+        log_labels = {1: "90%", 2: "99%", 3: "99.9%", 4: "99.99%", 5: "99.999%"}
 
-    def _build_multiwavelength_df(self, df, fluence_dict, medium):
+        for log_level, func in log_funcs.items():
+            label = log_labels[log_level]
+            sec_key = f"Seconds to {label} inactivation"
+            df[sec_key] = df.apply(_compute_row, args=[fluence, func, 0], axis=1)
+
+        # Calculate eACH-UV for ALL rows (will be NaN for non-Aerosol in display)
+        df["eACH-UV"] = df.apply(_compute_row, args=[fluence, eACH_UV, 1], axis=1)
+
+        # Calculate CADR if room provided
+        if room is not None:
+            cadr_lps, _ = _get_cadr(df["eACH-UV"], room, units="lps")
+            cadr_cfm, _ = _get_cadr(df["eACH-UV"], room, units="cfm")
+            df["CADR-UV [lps]"] = cadr_lps.round(1)
+            df["CADR-UV [cfm]"] = cadr_cfm.round(1)
+
+        # Calculate all time unit variants
+        self._time_cols = self._calculate_all_time_columns(df)
+
+        return df
+
+    def _combine_wavelengths(
+        self, df: pd.DataFrame, fluence_dict: dict
+    ) -> pd.DataFrame:
         """
-        Build combined DataFrame for multi-wavelength exposure.
+        Combine multi-wavelength data into aggregated rows.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DataFrame already filtered by medium/category (from _apply_row_filters).
+        fluence_dict : dict
+            Mapping of wavelength -> fluence value.
+
+        Returns
+        -------
+        pd.DataFrame
+            Combined DataFrame with one row per (Species, Medium) combination,
+            with aggregated eACH-UV and time columns.
         """
         summed_data = []
         wavelengths = list(fluence_dict.keys())
 
-        # Determine grouping columns - include Medium only if multiple mediums
-        # (not filtered to single value)
-        include_medium = "Medium" in df.columns and not isinstance(self._medium, str)
-
-        if include_medium:
-            group_cols = ["Species", "Medium"]
-        else:
-            group_cols = "Species"
+        # Always include Medium in grouping for full_df
+        group_cols = ["Species", "Medium"]
 
         for group_key, group in df.groupby(group_cols):
-            if include_medium:
-                species, med = group_key
-            else:
-                species = group_key
-                med = None
+            species, med = group_key
             category = group["Category"].iloc[0]
 
             # Collect data for each wavelength
@@ -237,71 +166,36 @@ class Data:
                 f_list = [item["f"] for item in combo]
                 irrad_list = [fluence_dict[wv] for wv in wavelengths]
 
-                combined_each = eACH_UV(irrad_list, k1_list, k2_list, f_list)
-                combined_time_log1 = log1(irrad_list, k1_list, k2_list, f_list)
-                combined_time_log2 = log2(irrad_list, k1_list, k2_list, f_list)
-                combined_time_log3 = log3(irrad_list, k1_list, k2_list, f_list)
-
+                # Calculate all log levels
                 row_data = {
                     "Species": species,
                     "Category": category,
-                    "eACH-UV": round(combined_each, 1),
-                    "Seconds to 90% inactivation": round(combined_time_log1, 0),
-                    "Seconds to 99% inactivation": round(combined_time_log2, 0),
-                    "Seconds to 99.9% inactivation": round(combined_time_log3, 0),
+                    "Medium": med,
+                    "eACH-UV": round(eACH_UV(irrad_list, k1_list, k2_list, f_list), 1),
+                    "Seconds to 90% inactivation": round(log1(irrad_list, k1_list, k2_list, f_list), 0),
+                    "Seconds to 99% inactivation": round(log2(irrad_list, k1_list, k2_list, f_list), 0),
+                    "Seconds to 99.9% inactivation": round(log3(irrad_list, k1_list, k2_list, f_list), 0),
+                    "Seconds to 99.99% inactivation": round(log4(irrad_list, k1_list, k2_list, f_list), 0),
+                    "Seconds to 99.999% inactivation": round(log5(irrad_list, k1_list, k2_list, f_list), 0),
                 }
-                if include_medium:
-                    row_data["Medium"] = med
                 summed_data.append(row_data)
 
         result_df = pd.DataFrame(summed_data)
-        keys = ["Category", "Species"]
-        if include_medium:
-            keys.append("Medium")
-        return self._finalize_df(result_df, keys, medium, has_fluence=True)
 
-    def _finalize_df(self, df, base_keys, medium, has_fluence):
+        # Add minutes/hours columns (uses same column names as per-wavelength)
+        self._calculate_all_time_columns(result_df)
+
+        return result_df
+
+    def _calculate_all_time_columns(self, df) -> dict:
         """
-        Finalize DataFrame: convert time units, order columns, fill NaN.
-        """
-        keys = base_keys.copy()
-
-        if has_fluence and "Seconds to 99% inactivation" in df.columns:
-            # Calculate all time columns (seconds/minutes/hours for all log levels)
-            time_cols = self._calculate_all_time_columns(df)
-            self._time_cols = time_cols  # Store for plot method
-
-            # Add ALL time columns to the dataframe (for flexibility in plotting)
-            all_time_keys = []
-            for log_lvl in time_cols:
-                for unit_key in time_cols[log_lvl].values():
-                    if unit_key in df.columns:
-                        all_time_keys.append(unit_key)
-            keys = all_time_keys + keys
-
-        # Only include eACH-UV when medium is exactly "Aerosol"
-        if medium == "Aerosol" and "eACH-UV" in df.columns:
-            keys = ["eACH-UV"] + keys
-
-        # Only keep keys that exist in df
-        keys = [k for k in keys if k in df.columns]
-        result = df[keys].copy()
-
-        # Fill NaN with spaces only for string columns (not numeric)
-        for col in result.columns:
-            if result[col].dtype == object:
-                result[col] = result[col].fillna(" ")
-        return result
-
-    def _calculate_all_time_columns(self, df):
-        """
-        Calculate all time columns for log1/log2/log3 in seconds/minutes/hours.
+        Calculate all time columns for log1-5 in seconds/minutes/hours.
         Stores all in df, returns dict of column names by log level.
         """
-        log_labels = {1: "90%", 2: "99%", 3: "99.9%"}
+        log_labels = {1: "90%", 2: "99%", 3: "99.9%", 4: "99.99%", 5: "99.999%"}
         time_cols = {}
 
-        for log_level in [1, 2, 3]:
+        for log_level in [1, 2, 3, 4, 5]:
             label = log_labels[log_level]
             sec_key = f"Seconds to {label} inactivation"
 
@@ -319,6 +213,209 @@ class Data:
                 }
 
         return time_cols
+
+    def subset(
+        self,
+        medium: str | list | None = None,
+        category: str | list | None = None,
+        wavelength: int | float | list | tuple | None = None,
+        log: int | None = None,
+    ) -> "Data":
+        """
+        Set filters for display. Returns self for chaining.
+
+        Parameters
+        ----------
+        medium : str or list, optional
+            Filter by medium ("Aerosol", "Surface", "Liquid").
+        category : str or list, optional
+            Filter by category ("Virus", "Bacteria", etc.).
+        wavelength : int, float, list, or tuple, optional
+            Filter by wavelength. Tuple (min, max) for range.
+        log : int, optional
+            Log reduction level for time column display (1-5).
+            1=90%, 2=99%, 3=99.9%, 4=99.99%, 5=99.999%. Default is 2.
+
+        Returns
+        -------
+        Data
+            Self, for method chaining.
+        """
+        # Validate and set medium filter
+        if medium is not None:
+            valid_mediums = self.get_valid_mediums()
+            if isinstance(medium, str):
+                if medium not in valid_mediums:
+                    raise KeyError(f"{medium} is not a valid medium; must be in {valid_mediums}")
+            elif isinstance(medium, list):
+                invalid = [m for m in medium if m not in valid_mediums]
+                if invalid:
+                    raise KeyError(f"Invalid medium(s) {invalid}; must be in {valid_mediums}")
+            # Normalize single-item lists
+            if isinstance(medium, list) and len(medium) == 1:
+                medium = medium[0]
+            self._medium = medium
+
+        # Validate and set category filter
+        if category is not None:
+            valid_categories = self.get_valid_categories()
+            if isinstance(category, str):
+                if category not in valid_categories:
+                    raise KeyError(f"{category} is not a valid category; must be in {valid_categories}")
+            elif isinstance(category, list):
+                invalid = [c for c in category if c not in valid_categories]
+                if invalid:
+                    raise KeyError(f"Invalid category(s) {invalid}; must be in {valid_categories}")
+            # Normalize single-item lists
+            if isinstance(category, list) and len(category) == 1:
+                category = category[0]
+            self._category = category
+
+        # Validate and set wavelength filter
+        if wavelength is not None:
+            if self._wavelength_locked:
+                warnings.warn(
+                    "Wavelength filter ignored when fluence is a dict; "
+                    f"using wavelengths from fluence dict: {list(self._fluence.keys())}",
+                    stacklevel=2,
+                )
+                return self
+            valid_wavelengths = self.get_valid_wavelengths()
+            if isinstance(wavelength, (int, float)):
+                if wavelength not in valid_wavelengths:
+                    raise KeyError(f"{wavelength} is not a valid wavelength; must be in {valid_wavelengths}")
+            elif isinstance(wavelength, list):
+                invalid = [w for w in wavelength if w not in valid_wavelengths]
+                if invalid:
+                    raise KeyError(f"Invalid wavelength(s) {invalid}; must be in {valid_wavelengths}")
+            # Normalize single-item lists
+            if isinstance(wavelength, list) and len(wavelength) == 1:
+                wavelength = wavelength[0]
+            self._wavelength = wavelength
+
+        # Validate and set log level
+        if log is not None:
+            if log not in [1, 2, 3, 4, 5]:
+                raise ValueError(f"log must be 1, 2, 3, 4, or 5; got {log}")
+            self._log = log
+
+        return self
+
+    def _apply_row_filters(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply medium/category filters to df.
+
+        Does NOT apply wavelength filter (wavelength filtering happens separately
+        based on context - per-wavelength vs combined data).
+        """
+        if self._medium is not None:
+            if isinstance(self._medium, str):
+                df = df[df["Medium"] == self._medium]
+            elif isinstance(self._medium, list):
+                df = df[df["Medium"].isin(self._medium)]
+
+        if self._category is not None:
+            if isinstance(self._category, str):
+                df = df[df["Category"] == self._category]
+            elif isinstance(self._category, list):
+                df = df[df["Category"].isin(self._category)]
+
+        return df
+
+    def _build_display_df(self) -> pd.DataFrame:
+        """
+        Build display DataFrame by applying filters and selecting appropriate columns.
+        Uses internal filter state (_medium, _category, _wavelength).
+        """
+        df = self._apply_row_filters(self._full_df.copy())
+
+        # Only filter by wavelength if the column exists (multi-wavelength aggregated data doesn't have it)
+        if self._wavelength is not None and "wavelength [nm]" in df.columns:
+            if isinstance(self._wavelength, (int, float)):
+                df = df[df["wavelength [nm]"] == self._wavelength]
+            elif isinstance(self._wavelength, list):
+                df = df[df["wavelength [nm]"].isin(self._wavelength)]
+            elif isinstance(self._wavelength, tuple) and len(self._wavelength) == 2:
+                wv_min, wv_max = self._wavelength
+                df = df[(df["wavelength [nm]"] >= wv_min) & (df["wavelength [nm]"] <= wv_max)]
+
+        return self._select_display_columns(df)
+
+    def _select_display_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Select which columns to display based on context.
+        Always shows base columns, optionally adds CADR, eACH-UV, and one time column.
+        """
+        df = df.copy()
+
+        # Base columns that should ALWAYS appear
+        base_cols = [
+            "Category",
+            "Species",
+            "Strain",
+            "wavelength [nm]",
+            "k1 [cm2/mJ]",
+            "k2 [cm2/mJ]",
+            "% resistant",
+            "Medium",
+            "Condition",
+            "Reference",
+            "Link",
+        ]
+
+        # Build ordered list of columns to display
+        display_cols = []
+
+        # Add efficacy columns (CADR, eACH-UV) at the front if applicable
+        # Show eACH-UV only when medium filter is exactly "Aerosol"
+        show_each = self._medium == "Aerosol" and "eACH-UV" in df.columns
+
+        # Show CADR only when CADR columns exist AND medium is "Aerosol"
+        show_cadr = (self._medium == "Aerosol" and "CADR-UV [lps]" in df.columns)
+
+        if show_cadr:
+            # Use appropriate CADR unit based on stored unit preference
+            if self._use_metric_units:
+                display_cols.append("CADR-UV [lps]")
+            else:
+                display_cols.append("CADR-UV [cfm]")
+
+        if show_each:
+            display_cols.append("eACH-UV")
+
+        # Add ONE time column if fluence was provided (based on _log level)
+        if self._fluence is not None and self._time_cols and self._log in self._time_cols:
+            # Use _select_time_display_columns to get the best unit for this log level
+            time_col, _ = self._select_time_display_columns(
+                df, self._time_cols, log_level=self._log
+            )
+            if time_col and time_col in df.columns:
+                display_cols.append(time_col)
+
+        # Add ALL base columns (always shown)
+        for col in base_cols:
+            if col in df.columns:
+                display_cols.append(col)
+
+        # Filter to only columns that exist
+        display_cols = [c for c in display_cols if c in df.columns]
+
+        # Remove duplicates while preserving order
+        seen = set()
+        final_cols = []
+        for c in display_cols:
+            if c not in seen:
+                seen.add(c)
+                final_cols.append(c)
+
+        result = df[final_cols].copy()
+
+        # Fill NaN with spaces only for string columns
+        for col in result.columns:
+            if result[col].dtype == object:
+                result[col] = result[col].fillna(" ")
+
+        return result
 
     def _select_time_display_columns(self, df, time_cols, log_level=2, left_axis=None, right_axis=None):
         """
@@ -393,17 +490,37 @@ class Data:
             return hr_key, min_key
 
     @property
-    def df(self):
-        return self._df
+    def display_df(self) -> pd.DataFrame:
+        """Return filtered DataFrame with context-appropriate columns."""
+        df = self._build_display_df()
+        return df.sort_values("Species")
+
+    def table(self) -> pd.DataFrame:
+        """Return filtered DataFrame with context-appropriate columns."""
+        return self.display_df
 
     @property
-    def table(self):
-        """alias"""
-        return self.df
+    def df(self) -> pd.DataFrame:
+        """Alias for display_df (for backwards compatibility)."""
+        return self.display_df
 
     @property
-    def base_df(self):
+    def base_df(self) -> pd.DataFrame:
+        """Return the raw CSV data (no computed columns)."""
         return self._base_df
+
+    @property
+    def full_df(self) -> pd.DataFrame:
+        """Return all computed columns (when fluence provided)."""
+        return self._full_df
+
+    @property
+    def combined_df(self) -> pd.DataFrame | None:
+        """Combined multi-wavelength df for plotting, computed on demand."""
+        if not isinstance(self._fluence, dict) or len(self._fluence) <= 1:
+            return None
+        filtered = self._apply_row_filters(self._full_df)
+        return self._combine_wavelengths(filtered, self._fluence)
 
     @property
     def medium(self):
@@ -422,26 +539,30 @@ class Data:
         return self._fluence
 
     @property
+    def log(self):
+        return self._log
+
+    @property
     def keys(self):
-        return self._df.keys()
+        return self.display_df.keys()
 
     @property
     def categories(self):
-        df = self._df if hasattr(self, '_df') else self._base_df
+        df = self.display_df
         if "Category" not in df.columns:
             return None
         return sorted(df["Category"].unique())
 
     @property
     def mediums(self):
-        df = self._df if hasattr(self, '_df') else self._base_df
+        df = self.display_df
         if "Medium" not in df.columns:
             return None
         return sorted(df["Medium"].unique())
 
     @property
     def wavelengths(self):
-        df = self._df if hasattr(self, '_df') else self._base_df
+        df = self.display_df
         if "wavelength [nm]" not in df.columns:
             return None
         return sorted(df["wavelength [nm]"].unique())
@@ -462,33 +583,43 @@ class Data:
         return sorted(cls.get_full()["wavelength [nm]"].unique())
 
     @classmethod
-    def with_room(cls, room, zone_id="WholeRoomFluence", category=None):
+    def with_room(
+        cls,
+        room: "Room",
+        zone_id: str = "WholeRoomFluence",
+    ) -> "Data":
+        """
+        Create Data instance from a Room's fluence values.
+
+        Parameters
+        ----------
+        room : Room
+            Room object with calculated fluence values.
+        zone_id : str, optional
+            Zone ID to get fluence from. Default is "WholeRoomFluence".
+
+        Returns
+        -------
+        Data
+            Data instance with room-based CADR calculations available.
+
+        Notes
+        -----
+        Use .subset() to filter results:
+            Data.with_room(room).subset(medium="Aerosol", category="Virus")
+        """
         fluence_dict = room.fluence_dict(zone_id)
         if len(fluence_dict) == 0:
-            msg = "Fluence value not available; returning full disinfection data table."
-            warnings.warn(msg, stacklevel=3)
-            return cls(category=category)
+            msg = "Fluence not available; returning base table."
+            warnings.warn(msg, stacklevel=2)
+            return cls()
 
-        data = cls(medium="Aerosol", category=category, fluence=fluence_dict)
-        df = data.df
-
-        # For single wavelength, update metadata
-        if len(fluence_dict) == 1:
-            data._wavelength = list(fluence_dict.keys())[0]
-            data._fluence = list(fluence_dict.values())[0]
-            # Drop wavelength column if present
-            if "wavelength [nm]" in df.columns:
-                df = df.drop(columns="wavelength [nm]")
-
-        # Add CADR column
-        cadr, cadr_key = _get_cadr(df["eACH-UV"], room)
-        df[cadr_key] = cadr.round(1)
-
-        # Reorder columns with CADR first
-        keys = [cadr_key] + [k for k in df.keys() if k != cadr_key]
-        df = df[keys]
-
-        data._df = df
+        # Create instance with fluence
+        data = cls(fluence=fluence_dict)
+        # Set unit preference based on room units (for CADR display)
+        data._use_metric_units = room.dim.units in [LengthUnits.METERS, LengthUnits.CENTIMETERS]
+        # Compute full_df with CADR columns (room used transiently, not stored)
+        data._full_df = data._compute_all_columns(room=room)
         return data
 
     def plot(self, title=None, figsize=None, air_changes=None, mode="default", log=2, yscale="auto",
@@ -509,8 +640,8 @@ class Data:
             "default" - shows CADR/eACH-UV (with room), eACH-UV (with fluence), or k1 (no fluence)
             "time" - if fluence is provided, shows time to inactivation instead
         log : int, optional
-            Log reduction level for time mode: 1 (90%), 2 (99%), or 3 (99.9%).
-            Default is 2 (99% inactivation).
+            Log reduction level for time mode: 1 (90%), 2 (99%), 3 (99.9%),
+            4 (99.99%), or 5 (99.999%). Default is 2 (99% inactivation).
         yscale : str, optional
             Y-axis scale: "auto" (default), "linear", or "log".
             "auto" uses log scale if data spans >3 orders of magnitude.
@@ -526,7 +657,13 @@ class Data:
         time_axis_specified = left_axis is not None or right_axis is not None
         if time_axis_specified and mode == "default":
             mode = "time"
-        df = self._df
+
+        # Use combined_df for plotting if available (multi-wavelength), otherwise display_df
+        combined = self.combined_df
+        if combined is not None:
+            df = combined.sort_values("Species")
+        else:
+            df = self.display_df
 
         # Dynamic figsize based on number of species
         if figsize is None:
@@ -885,14 +1022,15 @@ class Data:
         return fig
 
     def _get_key(self, substring):
-        index = np.array([substring in key for key in self._df.keys()])
-        return self._df.keys()[index][0] if sum(index) > 0 else None
+        df = self.display_df
+        index = np.array([substring in key for key in df.keys()])
+        return df.keys()[index][0] if sum(index) > 0 else None
 
     def _generate_title(self, left_label, right_label, use_time_mode=False, log_level=2):
 
         # Use generic "Time to X% inactivation" for time mode
         if use_time_mode:
-            log_labels = {1: "90%", 2: "99%", 3: "99.9%"}
+            log_labels = {1: "90%", 2: "99%", 3: "99.9%", 4: "99.99%", 5: "99.999%"}
             title = f"Time to {log_labels.get(log_level, '99%')} inactivation"
         elif "k1" in left_label:
             # Check if no filters applied
@@ -982,12 +1120,36 @@ def _compute_row(row, fluence_arg, function, sigfigs=1, **kwargs):
     return round(function(irrad=fluence, k1=k1, k2=k2, f=f, **kwargs), sigfigs)
 
 
-def _get_cadr(eACH, room):
-    """compute clean air delivery rate from room volume and eACH value"""
-    if room.dim.units in [LengthUnits.METERS, LengthUnits.CENTIMETERS]:
-        return eACH * room.dim.cubic_meters * 1000 / 60 / 60, "CADR-UV [lps]"
+def _get_cadr(eACH, room, units=None):
+    """
+    Compute clean air delivery rate from room volume and eACH value.
+
+    Parameters
+    ----------
+    eACH : float or Series
+        Equivalent air changes per hour from UV.
+    room : Room
+        Room object with dimension information.
+    units : str, optional
+        Force output units: "lps" or "cfm". If None, uses room units.
+
+    Returns
+    -------
+    tuple
+        (CADR value(s), column key string)
+    """
+    # Get volumes (compute cfm from cubic_meters to avoid units.py bug with numpy arrays)
+    cubic_meters = room.dim.cubic_meters
+    cubic_feet = cubic_meters * 35.3147  # 1 cubic meter = 35.3147 cubic feet
+
+    if units == "lps":
+        return eACH * cubic_meters * 1000 / 60 / 60, "CADR-UV [lps]"
+    elif units == "cfm":
+        return eACH * cubic_feet / 60, "CADR-UV [cfm]"
+    elif room.dim.units in [LengthUnits.METERS, LengthUnits.CENTIMETERS]:
+        return eACH * cubic_meters * 1000 / 60 / 60, "CADR-UV [lps]"
     else:
-        return eACH * room.dim.cubic_feet / 60, "CADR-UV [cfm]"
+        return eACH * cubic_feet / 60, "CADR-UV [cfm]"
 
 
 def _filter_wavelengths(df, fluence_dict):
