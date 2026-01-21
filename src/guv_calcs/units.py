@@ -1,4 +1,5 @@
 from enum import StrEnum
+import numpy as np
 
 
 class UnitEnum(StrEnum):
@@ -71,7 +72,7 @@ def convert(
     factor = s.to_base / d.to_base
     out = tuple(None if a is None else a * factor for a in args)
     if sigfigs is not None:
-        out = tuple(None if a is None else round(a, sigfigs) for a in out)
+        out = tuple(None if a is None else np.round(a, sigfigs) for a in out)
     return out[0] if len(out) == 1 else out
 
 
