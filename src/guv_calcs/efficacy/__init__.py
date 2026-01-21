@@ -1,5 +1,3 @@
-"""Efficacy calculation module for UV disinfection."""
-
 from .data import Data
 from .math import (
     eACH_UV,
@@ -12,12 +10,6 @@ from .math import (
     CADR_CFM,
     CADR_LPS,
 )
-
-
-def get_disinfection_table(fluence=None):
-    """Return disinfection table with optional fluence-based computed columns."""
-    return Data(fluence=fluence).df
-
 
 __all__ = [
     "Data",

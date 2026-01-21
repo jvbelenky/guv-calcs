@@ -87,7 +87,9 @@ def _determine_plot_columns(data, df, mode, log, left_axis, right_axis):
 
     # Check columns in the actual plot DataFrame, not display_df
     eachkey = _get_col_by_substring(df, "eACH")
-    cadrkey = _get_col_by_substring(df, "CADR")
+    # Use correct CADR column based on unit preference
+    cadr_col = "CADR-UV [lps]" if data._use_metric_units else "CADR-UV [cfm]"
+    cadrkey = cadr_col if cadr_col in df.columns else None
     kkey = _get_col_by_substring(df, "k1")
 
     def get_time_labels(log_lvl):

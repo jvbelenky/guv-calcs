@@ -30,63 +30,6 @@ from .plotting import plot as _plot_func
 pd.options.mode.chained_assignment = None
 
 
-# DataFrame-coupled helper functions (not pure math, tied to table structure)
-
-def _compute_row(row, fluence_arg, function, sigfigs=1, **kwargs):
-    """
-    Apply a function to a single row of the disinfection table.
-
-    fluence_arg may be an int, float, or dict of format {wavelength:fluence}
-    """
-    if isinstance(fluence_arg, dict):
-        fluence = fluence_arg.get(row[COL_WAVELENGTH])
-        if fluence is None:
-            return None
-    elif isinstance(fluence_arg, (float, int)):
-        fluence = fluence_arg
-
-    # Fill missing values and convert columns to the correct type
-    k1 = row[COL_K1] if pd.notna(row[COL_K1]) else 0.0
-    k2 = row[COL_K2] if pd.notna(row[COL_K2]) else 0.0
-    f = (
-        float(row[COL_RESISTANT].rstrip("%")) / 100
-        if pd.notna(row[COL_RESISTANT])
-        else 0.0
-    )
-    return round(function(irrad=fluence, k1=k1, k2=k2, f=f, **kwargs), sigfigs)
-
-
-def _filter_wavelengths(df, fluence_dict):
-    """
-    Filter the dataframe only for species which have data for all of the
-    wavelengths that are in fluence_dict.
-
-    Returns filtered df and cleaned fluence_dict.
-    """
-    # remove any wavelengths from the dictionary that aren't in the dataframe
-    wavelengths = df[COL_WAVELENGTH].unique()
-    remove = []
-    for key in fluence_dict.keys():
-        if key not in wavelengths:
-            msg = f"No data is available for wavelength {key} nm. eACH will be an underestimate."
-            warnings.warn(msg, stacklevel=3)
-            remove.append(key)
-    for key in remove:
-        del fluence_dict[key]
-
-    # List of required wavelengths
-    required_wavelengths = fluence_dict.keys()
-    # Group by Species and filter
-    filtered_species = df.groupby(COL_SPECIES)[COL_WAVELENGTH].apply(
-        lambda x: all(wavelength in x.values for wavelength in required_wavelengths)
-    )
-    # Filter the original DataFrame for the Species meeting the condition
-    valid_species = filtered_species[filtered_species].index
-    df = df[df[COL_SPECIES].isin(valid_species)]
-    df = df[df[COL_WAVELENGTH].isin(required_wavelengths)]
-    return df, fluence_dict
-
-
 class Data:
     """
     UV disinfection efficacy data handler.
@@ -99,6 +42,55 @@ class Data:
     def get_full(cls) -> pd.DataFrame:
         """Return full disinfection table (cached, returns copy)."""
         return get_full_disinfection_table().copy()
+
+    @staticmethod
+    def _compute_row(row, fluence_arg, function, sigfigs=1, **kwargs):
+        """
+        Apply a function to a single row of the disinfection table.
+
+        fluence_arg may be an int, float, or dict of format {wavelength:fluence}
+        """
+        if isinstance(fluence_arg, dict):
+            fluence = fluence_arg.get(row[COL_WAVELENGTH])
+            if fluence is None:
+                return None
+        elif isinstance(fluence_arg, (float, int)):
+            fluence = fluence_arg
+
+        k1 = row[COL_K1] if pd.notna(row[COL_K1]) else 0.0
+        k2 = row[COL_K2] if pd.notna(row[COL_K2]) else 0.0
+        f = (
+            float(row[COL_RESISTANT].rstrip("%")) / 100
+            if pd.notna(row[COL_RESISTANT])
+            else 0.0
+        )
+        return round(function(irrad=fluence, k1=k1, k2=k2, f=f, **kwargs), sigfigs)
+
+    @staticmethod
+    def _filter_wavelengths(df, fluence_dict):
+        """
+        Filter dataframe for species with data for all wavelengths in fluence_dict.
+
+        Returns filtered df and cleaned fluence_dict.
+        """
+        wavelengths = df[COL_WAVELENGTH].unique()
+        remove = []
+        for key in fluence_dict.keys():
+            if key not in wavelengths:
+                msg = f"No data is available for wavelength {key} nm. eACH will be an underestimate."
+                warnings.warn(msg, stacklevel=3)
+                remove.append(key)
+        for key in remove:
+            del fluence_dict[key]
+
+        required_wavelengths = fluence_dict.keys()
+        filtered_species = df.groupby(COL_SPECIES)[COL_WAVELENGTH].apply(
+            lambda x: all(wv in x.values for wv in required_wavelengths)
+        )
+        valid_species = filtered_species[filtered_species].index
+        df = df[df[COL_SPECIES].isin(valid_species)]
+        df = df[df[COL_WAVELENGTH].isin(required_wavelengths)]
+        return df, fluence_dict
 
     def __init__(
         self,
@@ -222,6 +214,14 @@ class Data:
     # Core computation methods
     # -------------------------------------------------------------------------
 
+    def _add_cadr_columns(self, df: pd.DataFrame) -> None:
+        """Add CADR columns to DataFrame if volume is available and eACH exists."""
+        if self._volume_m3 is not None and COL_EACH in df.columns:
+            cubic_feet = self._volume_m3 * 35.3147  # 1 m³ = 35.3147 ft³
+            liters = self._volume_m3 * 1000
+            df[COL_CADR_LPS] = (df[COL_EACH] * liters / 3600).round(1)
+            df[COL_CADR_CFM] = (df[COL_EACH] * cubic_feet / 60).round(1)
+
     def _compute_all_columns(self) -> pd.DataFrame:
         """
         Compute ALL derived columns for the full dataset.
@@ -236,7 +236,7 @@ class Data:
         if isinstance(fluence, dict):
             # Validate fluence dict wavelengths exist (warns if any missing)
             # Don't filter df - let _build_display_df handle wavelength filtering
-            _, fluence = _filter_wavelengths(df, fluence.copy())
+            _, fluence = self._filter_wavelengths(df, fluence.copy())
             # Update _fluence_wavelengths with cleaned keys
             self._fluence_wavelengths = list(fluence.keys())
 
@@ -246,17 +246,13 @@ class Data:
         for log_level, func in log_funcs.items():
             label = LOG_LABELS[log_level]
             sec_key = f"Seconds to {label} inactivation"
-            df[sec_key] = df.apply(_compute_row, args=[fluence, func, 0], axis=1)
+            df[sec_key] = df.apply(self._compute_row, args=[fluence, func, 0], axis=1)
 
         # Calculate eACH-UV for ALL rows (will be NaN for non-Aerosol in display)
-        df[COL_EACH] = df.apply(_compute_row, args=[fluence, eACH_UV, 1], axis=1)
+        df[COL_EACH] = df.apply(self._compute_row, args=[fluence, eACH_UV, 1], axis=1)
 
-        # Calculate CADR if volume provided (both units, display controlled by subset)
-        if self._volume_m3 is not None:
-            cubic_feet = self._volume_m3 * 35.3147  # 1 m³ = 35.3147 ft³
-            liters = self._volume_m3 * 1000
-            df[COL_CADR_LPS] = (df[COL_EACH] * liters / 3600).round(1)
-            df[COL_CADR_CFM] = (df[COL_EACH] * cubic_feet / 60).round(1)
+        # Calculate CADR columns
+        self._add_cadr_columns(df)
 
         # Calculate all time unit variants
         self._time_cols = self._calculate_all_time_columns(df)
@@ -334,6 +330,9 @@ class Data:
 
         # Add minutes/hours columns (uses same column names as per-wavelength)
         self._calculate_all_time_columns(result_df)
+
+        # Add CADR columns
+        self._add_cadr_columns(result_df)
 
         return result_df
 
