@@ -100,24 +100,32 @@ class Data:
         """Return full disinfection table (cached, returns copy)."""
         return get_full_disinfection_table().copy()
 
-    def __init__(self, fluence: float | dict | None = None):
+    def __init__(
+        self,
+        fluence: float | dict | None = None,
+        volume_m3: float | None = None,
+    ):
         """
-        Initialize Data with optional fluence computation.
+        Initialize Data with optional fluence and volume for CADR computation.
 
         Parameters
         ----------
         fluence : float or dict, optional
             Fluence value(s) for computing time/eACH columns.
             Can be a single float or dict mapping wavelength to fluence.
+        volume_m3 : float, optional
+            Room volume in cubic meters. If provided, CADR columns are computed.
         """
-        self._fluence = fluence
-        self._use_metric_units = True  # For CADR display (lps vs cfm)
 
-        # Filter state (set by subset())
+        self._fluence = fluence
+        self._volume_m3 = volume_m3
+
+        # Filter/display state (set by subset())
         self._medium = None
         self._category = None
         self._wavelength = None  # User-specified wavelength filter
         self._log = 2  # Log reduction level for time column display (1-5)
+        self._use_metric_units = True  # For CADR display (lps vs cfm)
 
         # Track fluence dict wavelengths separately (always included in display)
         self._fluence_wavelengths = list(fluence.keys()) if isinstance(fluence, dict) else None
@@ -214,14 +222,9 @@ class Data:
     # Core computation methods
     # -------------------------------------------------------------------------
 
-    def _compute_all_columns(self, room: "Room | None" = None) -> pd.DataFrame:
+    def _compute_all_columns(self) -> pd.DataFrame:
         """
         Compute ALL derived columns for the full dataset.
-
-        Parameters
-        ----------
-        room : Room, optional
-            Room object for CADR calculations. Only used transiently.
 
         Returns DataFrame with all computed columns (per-wavelength rows).
         Rows for wavelengths not in fluence dict will have NaN for computed columns.
@@ -248,13 +251,12 @@ class Data:
         # Calculate eACH-UV for ALL rows (will be NaN for non-Aerosol in display)
         df[COL_EACH] = df.apply(_compute_row, args=[fluence, eACH_UV, 1], axis=1)
 
-        # Calculate CADR if room provided
-        if room is not None:
-            from ..units import LengthUnits
-            cadr_lps, _ = _get_cadr(df[COL_EACH], room, units="lps")
-            cadr_cfm, _ = _get_cadr(df[COL_EACH], room, units="cfm")
-            df[COL_CADR_LPS] = cadr_lps.round(1)
-            df[COL_CADR_CFM] = cadr_cfm.round(1)
+        # Calculate CADR if volume provided (both units, display controlled by subset)
+        if self._volume_m3 is not None:
+            cubic_feet = self._volume_m3 * 35.3147  # 1 m³ = 35.3147 ft³
+            liters = self._volume_m3 * 1000
+            df[COL_CADR_LPS] = (df[COL_EACH] * liters / 3600).round(1)
+            df[COL_CADR_CFM] = (df[COL_EACH] * cubic_feet / 60).round(1)
 
         # Calculate all time unit variants
         self._time_cols = self._calculate_all_time_columns(df)
@@ -371,6 +373,7 @@ class Data:
         category: str | list | None = None,
         wavelength: int | float | list | tuple | None = None,
         log: int | None = None,
+        use_metric: bool | None = None,
     ) -> "Data":
         """
         Set filters for display. Returns self for chaining.
@@ -386,6 +389,8 @@ class Data:
         log : int, optional
             Log reduction level for time column display (1-5).
             1=90%, 2=99%, 3=99.9%, 4=99.99%, 5=99.999%. Default is 2.
+        use_metric : bool, optional
+            If True, display CADR in lps; if False, display in cfm. Default True.
 
         Returns
         -------
@@ -422,6 +427,10 @@ class Data:
             if log not in [1, 2, 3, 4, 5]:
                 raise ValueError(f"log must be 1, 2, 3, 4, or 5; got {log}")
             self._log = log
+
+        # Set CADR display units
+        if use_metric is not None:
+            self._use_metric_units = use_metric
 
         return self
 
@@ -759,35 +768,3 @@ class Data:
         return df.keys()[index][0] if sum(index) > 0 else None
 
 
-def _get_cadr(eACH, room, units=None):
-    """
-    Compute clean air delivery rate from room volume and eACH value.
-
-    Parameters
-    ----------
-    eACH : float or Series
-        Equivalent air changes per hour from UV.
-    room : Room
-        Room object with dimension information.
-    units : str, optional
-        Force output units: "lps" or "cfm". If None, uses room units.
-
-    Returns
-    -------
-    tuple
-        (CADR value(s), column key string)
-    """
-    from ..units import LengthUnits
-
-    # Get volumes (compute cfm from cubic_meters to avoid units.py bug with numpy arrays)
-    cubic_meters = room.dim.cubic_meters
-    cubic_feet = cubic_meters * 35.3147  # 1 cubic meter = 35.3147 cubic feet
-
-    if units == "lps":
-        return eACH * cubic_meters * 1000 / 60 / 60, COL_CADR_LPS
-    elif units == "cfm":
-        return eACH * cubic_feet / 60, COL_CADR_CFM
-    elif room.dim.units in [LengthUnits.METERS, LengthUnits.CENTIMETERS]:
-        return eACH * cubic_meters * 1000 / 60 / 60, COL_CADR_LPS
-    else:
-        return eACH * cubic_feet / 60, COL_CADR_CFM

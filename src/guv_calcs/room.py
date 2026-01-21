@@ -526,42 +526,32 @@ class Room:
 
     # ------------------- Data and Plotting ----------------------
 
-    def get_efficacy_data(self, zone_id: str = "WholeRoomFluence") -> Data:
+    def get_efficacy_data(self, zone_id: str = "WholeRoomFluence", **kwargs) -> Data:
         """
-        Create Data instance from this room's fluence values.
+        Create Data instance from this room's fluence values.=
         """
         zone = self.zone(zone_id)
         fluence_dict = {wv: 0.0 for wv in self.lamps.wavelengths.values()}
         for k, v in self.lamps.wavelengths.items():
             if k in zone.lamp_cache.keys():
                 fluence_dict[v] = fluence_dict[v] + zone.lamp_cache[k].values.mean()
-                
         if len(fluence_dict) == 0:
             warnings.warn("Fluence not available; returning base table.", stacklevel=2)
-            return Data()
-
-        data = Data(fluence=fluence_dict)
-        data._use_metric_units = self.dim.units in [LengthUnits.METERS, LengthUnits.CENTIMETERS]
-        data._full_df = data._compute_all_columns(room=self)
-        return data
+            data = Data()     
+        else:
+            data = Data(fluence=fluence_dict, volume_m3=self.dim.cubic_meters)
+        use_metric = self.dim.units in [LengthUnits.METERS, LengthUnits.CENTIMETERS]
+        return data.subset(medium="Aerosol", use_metric=use_metric, **kwargs)            
 
     def disinfection_plot(self, zone_id="WholeRoomFluence", category=None, **kwargs):
-        """Return a violin plot of expected disinfection rates"""
-        data = self.get_efficacy_data(zone_id).subset(medium="Aerosol", category=category)
+        """Return a violin plot of expected disinfection rates"""                
+        data = self.get_efficacy_data(zone_id, category=category)
         return data.plot(air_changes=self.air_changes, **kwargs)
 
     def disinfection_table(self, zone_id="WholeRoomFluence", **kwargs):
         """Return a table of expected disinfection rates"""
-        return self.get_efficacy_data(zone_id).subset(medium="Aerosol", **kwargs).df
-
-    def fluence_dict(self, zone_id):
-        zone = self.zone(zone_id)
-        dct = {wv: 0.0 for wv in self.lamps.wavelengths.values()}
-        for k, v in self.lamps.wavelengths.items():
-            if k in zone.lamp_cache.keys():
-                dct[v] = dct[v] + zone.lamp_cache[k].values.mean()
-        return dct
-
+        return self.get_efficacy_data(zone_id, **kwargs).df
+        
     def plotly(self, fig=None, select_id=None, title=""):
         """return a plotly figure of all the room's components"""
         return self._plotter.plotly(fig=fig, select_id=select_id, title=title)
