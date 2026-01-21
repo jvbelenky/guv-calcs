@@ -182,6 +182,12 @@ class Data:
         """Plot inactivation data. See plotting.plot for full documentation."""
         return _plot_func(self, **kwargs)
 
+    def save(self, filepath: str, **kwargs) -> None:
+        """
+        Save the current display_df to a CSV file.
+        """
+        self.display_df.to_csv(filepath, index=False, **kwargs)
+
     # =========================================================================
     # Public properties - data access
     # =========================================================================
