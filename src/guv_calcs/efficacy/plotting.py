@@ -1,8 +1,6 @@
-"""Plotting functionality for the Data class."""
-
+import warnings
 import math
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
 import seaborn as sns
 
 from .constants import (
@@ -13,373 +11,27 @@ from .constants import (
     COL_SPECIES,
     COL_WAVELENGTH,
     COL_MEDIUM,
+    COL_K1,
     COL_EACH,
+    COL_CADR_LPS,
+    COL_CADR_CFM,
+)
+from .utils import (
+    auto_select_time_columns,
+    wavelength_to_color,
+    format_wavelength,
+    parse_axis_input,
+    get_compatible_group,
+    is_time_column,
 )
 
 
-def wavelength_to_color(wv, wv_min=200, wv_max=310):
-    """
-    Map wavelength to color on UV rainbow scale.
-
-    Custom rainbow colormap with good contrast on white backgrounds.
-    Violet (200nm) -> Blue -> Teal -> Green -> Orange -> Red (310nm)
-    """
-    colors = [
-        (0.5, 0.0, 0.8),    # violet (200nm)
-        (0.2, 0.3, 0.9),    # blue (220nm)
-        (0.0, 0.6, 0.7),    # teal (240nm)
-        (0.1, 0.7, 0.3),    # green (260nm)
-        (0.9, 0.5, 0.0),    # orange (280nm)
-        (0.85, 0.1, 0.1),   # red (310nm)
-    ]
-    cmap = LinearSegmentedColormap.from_list("uv_rainbow", colors)
-    norm = (wv - wv_min) / (wv_max - wv_min)
-    norm = max(0, min(1, norm))  # Clamp to [0, 1]
-    return cmap(norm)
-
-
-def _format_wavelength(wv):
-    """Format wavelength: 222.0 -> '222', 194.1 -> '194.1'."""
-    if wv == int(wv):
-        return str(int(wv))
-    return str(wv)
-
-
-def _build_plot_df(data):
-    """
-    Build DataFrame for plotting (row-filtered, keeps all columns).
-
-    For multi-wavelength fluence, uses combined data.
-    For single wavelength, applies row+wavelength filters.
-    """
-    if isinstance(data._fluence, dict) and len(data._fluence) > 1:
-        # Multi-wavelength: use combined data
-        filtered = data._apply_row_filters(data._full_df)
-        return data._combine_wavelengths(filtered, data._fluence)
-    else:
-        # Single wavelength: apply row+wavelength filters, keep all columns
-        df = data._apply_row_filters(data._full_df.copy())
-        return data._apply_wavelength_filter(df)
-
-
-def _get_col_by_substring(df, substring):
-    """Get column name containing substring from DataFrame, or None."""
-    matches = [col for col in df.columns if substring in col]
-    return matches[0] if matches else None
-
-
-def _determine_plot_columns(data, df, mode, log, left_axis, right_axis):
-    """
-    Determine which columns to plot based on mode and available data.
-
-    Returns
-    -------
-    tuple
-        (left_label, right_label, use_time_mode, log_level)
-    """
-    # Check if user specified time axis - auto-enable time mode
-    time_axis_specified = left_axis is not None or right_axis is not None
-    if time_axis_specified and mode == "default":
-        mode = "time"
-
-    log_level = log
-    use_time_mode = False
-
-    # Check columns in the actual plot DataFrame, not display_df
-    eachkey = _get_col_by_substring(df, "eACH")
-    # Use correct CADR column based on unit preference
-    cadr_col = "CADR-UV [lps]" if data._use_metric_units else "CADR-UV [cfm]"
-    cadrkey = cadr_col if cadr_col in df.columns else None
-    kkey = _get_col_by_substring(df, "k1")
-
-    def get_time_labels(log_lvl):
-        if hasattr(data, '_time_cols') and log_lvl in data._time_cols:
-            time_df = data._apply_row_filters(data._full_df)
-            return data._select_time_display_columns(
-                time_df, data._time_cols, log_level=log_lvl,
-                left_axis=left_axis, right_axis=right_axis
-            )
-        return None, None
-
-    if mode == "time":
-        left_label, right_label = get_time_labels(log)
-        if left_label is None:
-            raise ValueError(f"Time to inactivation (log{log}) not available. Provide fluence to calculate it.")
-        use_time_mode = True
-    else:
-        # Default mode: eACH/CADR if available, otherwise k1, otherwise time
-        if eachkey and cadrkey:
-            left_label = eachkey
-            right_label = cadrkey
-        elif eachkey:
-            left_label = eachkey
-            right_label = None
-        elif kkey:
-            left_label = kkey
-            right_label = None
-        else:
-            # Fall back to time if fluence was provided but eACH/k1 not available
-            left_label, right_label = get_time_labels(log)
-            if left_label is not None:
-                use_time_mode = True
-            else:
-                raise ValueError("No plottable data available (need eACH-UV, k1, or time to inactivation)")
-
-    return left_label, right_label, use_time_mode, log_level
-
-
-def _configure_hue_style(df, data):
-    """
-    Configure hue (colors) and style (shapes) for plotting.
-
-    Returns
-    -------
-    dict
-        Configuration with keys: hue_col, hue_order, palette, color,
-        style, style_order, use_wavelength_colors, wv_col, wv_order
-    """
-    has_medium = COL_MEDIUM in df.columns and len(df[COL_MEDIUM].unique()) > 1
-    has_category = COL_CATEGORY in df.columns and len(df[COL_CATEGORY].unique()) > 1
-    has_wavelength = COL_WAVELENGTH in df.columns and len(df[COL_WAVELENGTH].unique()) > 1
-
-    config = {
-        'hue_col': None,
-        'hue_order': None,
-        'palette': None,
-        'color': None,
-        'style': None,
-        'style_order': None,
-        'use_wavelength_colors': has_wavelength,
-        'wv_col': None,
-        'wv_order': None,
-    }
-
-    if has_wavelength:
-        unique_wvs = sorted(df[COL_WAVELENGTH].unique())
-        n_unique = len(unique_wvs)
-
-        if n_unique > 6:
-            # Use binned ranges for legend, but color by actual wavelength
-            df["wavelength range"] = df[COL_WAVELENGTH].apply(
-                lambda x: f"{int(x // 10 * 10)}-{int(x // 10 * 10 + 10)} nm"
-            )
-            wv_col = "wavelength range"
-            wv_order = sorted(df[wv_col].unique(), key=lambda x: int(x.split("-")[0]))
-            # Compute average wavelength per bucket for legend colors
-            bucket_avg_wv = df.groupby("wavelength range")[COL_WAVELENGTH].mean().to_dict()
-            palette = {bucket: wavelength_to_color(bucket_avg_wv[bucket]) for bucket in wv_order}
-        else:
-            # Use formatted wavelengths for cleaner legend display
-            df["wavelength"] = df[COL_WAVELENGTH].apply(_format_wavelength)
-            wv_col = "wavelength"
-            # Build order based on numeric sort, then map to formatted strings
-            wv_order = [_format_wavelength(wv) for wv in unique_wvs]
-            palette = {_format_wavelength(wv): wavelength_to_color(wv) for wv in unique_wvs}
-
-        config['hue_col'] = wv_col
-        config['hue_order'] = wv_order
-        config['palette'] = palette
-        config['wv_col'] = wv_col
-        config['wv_order'] = wv_order
-
-    elif has_category:
-        # Use category colors when wavelength colors aren't needed
-        config['hue_col'] = COL_CATEGORY
-        config['hue_order'] = [cat for cat in CATEGORY_ORDER if cat in df[COL_CATEGORY].unique()]
-        # palette = None uses seaborn default category colors
-
-    # Style (shapes): use for Medium if not filtered, OR use for wavelength if
-    # single medium specified (colorblind-friendly: both color and shape for wavelength)
-    if has_medium:
-        config['style'] = COL_MEDIUM
-        config['style_order'] = [m for m in MEDIUM_ORDER if m in df[COL_MEDIUM].unique()]
-    elif has_wavelength:
-        # Single medium specified but multiple wavelengths - use shape for wavelength too
-        config['style'] = config['wv_col']
-        config['style_order'] = config['wv_order']
-
-    # Category grouping: if category not filtered, sort by category
-    if has_category:
-        df["_cat_order"] = df[COL_CATEGORY].apply(
-            lambda x: CATEGORY_ORDER.index(x) if x in CATEGORY_ORDER else 99
-        )
-        df.sort_values(["_cat_order", COL_SPECIES], inplace=True)
-
-    # When no hue (single wavelength, no multiple wavelengths), use a consistent color
-    if config['hue_col'] is None:
-        default_palette = sns.color_palette()
-        if data.category is not None and data.category in CATEGORY_ORDER:
-            config['color'] = default_palette[CATEGORY_ORDER.index(data.category)]
-        else:
-            config['color'] = default_palette[0]
-
-    return config
-
-
-def _add_category_separators(ax, fig, df, species_order):
-    """Add vertical lines and category labels between categories on the plot."""
-    # Map species to category
-    species_to_cat = df.groupby(COL_SPECIES)[COL_CATEGORY].first().to_dict()
-
-    # Find category boundaries
-    prev_cat = None
-    boundaries = []
-    for i, species in enumerate(species_order):
-        cat = species_to_cat.get(species)
-        if cat != prev_cat and prev_cat is not None:
-            boundaries.append((i - 0.5, cat))
-        if i == 0:
-            boundaries.append((-0.5, cat))
-        prev_cat = cat
-
-    # Draw vertical lines
-    for x_pos, cat in boundaries:
-        if x_pos > -0.5:  # Don't draw line at the very start
-            ax.axvline(x=x_pos, color="gray", linestyle="--", alpha=0.7, linewidth=1.5)
-
-    # Move species labels down to make room for category labels above
-    ax.tick_params(axis='x', pad=18)
-
-    # Add category labels centered between plot and species labels
-    fig.subplots_adjust(bottom=0.35)
-    for i, (x_pos, cat) in enumerate(boundaries):
-        # Find the end of this category section
-        if i < len(boundaries) - 1:
-            next_x = boundaries[i + 1][0]
-        else:
-            next_x = len(species_order) - 0.5
-        mid_x = (x_pos + next_x) / 2
-        ax.text(mid_x, -0.06, cat, transform=ax.get_xaxis_transform(),
-                ha="center", va="center", fontsize=12)
-
-
-def _position_legend(ax, fig, df, left_label, yscale, show_legend, has_right_axis,
-                     wv_col, style, hue_col):
-    """Position legend based on data distribution."""
-    # Get species order from x-axis
-    species_order = df[COL_SPECIES].unique()
-    n_species = len(species_order)
-
-    # Get data for the rightmost ~25% of species
-    right_species = species_order[-(max(1, n_species // 4)):]
-    right_data = df[df[COL_SPECIES].isin(right_species)][left_label].dropna()
-
-    y_min, y_max = ax.get_ylim()
-    if yscale == "log" and y_min > 0:
-        y_midpoint = math.sqrt(y_min * y_max)  # Geometric mean (visual midpoint)
-    else:
-        y_midpoint = (y_min + y_max) / 2  # Arithmetic mean
-
-    # Put legend opposite to where right-side data is concentrated
-    right_median = right_data.median() if len(right_data) > 0 else y_midpoint
-    inside_loc = "lower right" if right_median > y_midpoint else "upper right"
-
-    if show_legend:
-        handles, labels = ax.get_legend_handles_labels()
-        n_entries = len(labels)
-        # If right axis exists and legend is small, put inside to avoid overlap
-        if has_right_axis and n_entries <= 6:
-            ax.legend(loc=inside_loc, framealpha=0.9)
-        else:
-            # Default: put legend on right side outside plot
-            fig.subplots_adjust(right=0.75)
-            ax.legend(bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
-    elif style is not None:
-        # Show legend for medium shapes only (no category colors in legend)
-        handles, labels = ax.get_legend_handles_labels()
-        # Filter to only show style (Medium) entries, not hue (Category)
-        medium_handles = []
-        medium_labels = []
-        for h, l in zip(handles, labels):
-            if l in MEDIUM_ORDER:
-                medium_handles.append(h)
-                medium_labels.append(l)
-        if medium_handles:
-            n_entries = len(medium_handles)
-            # Put inside on right if small enough, otherwise outside
-            if n_entries <= 6:
-                ax.legend(medium_handles, medium_labels, loc=inside_loc, framealpha=0.9)
-            else:
-                fig.subplots_adjust(right=0.85)
-                ax.legend(medium_handles, medium_labels, bbox_to_anchor=(1.02, 1),
-                          loc="upper left", borderaxespad=0)
-    elif hue_col == COL_CATEGORY:
-        # Category colors but no legend needed
-        ax.legend().set_visible(False)
-
-
-def _generate_title(data, left_label, right_label, use_time_mode, log_level):
-    """Generate plot title based on data state and plot mode."""
-    # Use generic "Time to X% inactivation" for time mode
-    if use_time_mode:
-        title = f"Time to {LOG_LABELS.get(log_level, '99%')} inactivation"
-    elif "k1" in left_label:
-        # Check if no filters applied
-        no_filters = (data.medium is None and data.category is None
-                     and data.wavelength is None and data.fluence is None)
-        if no_filters:
-            title = "UVC susceptibility constants for all data"
-        else:
-            title = "UVC susceptibility constants"
-    else:
-        title = left_label
-        if right_label is not None:
-            title += "/" + right_label
-
-    # Add wavelength context
-    # Multi-wavelength fluence dict: use fluence keys (plot uses combined_df)
-    is_multiwavelength = isinstance(data._fluence, dict) and len(data._fluence) > 1
-    if is_multiwavelength:
-        guv_types = ", ".join(["GUV-" + str(int(wv)) for wv in data._fluence.keys()])
-        title += f" from {guv_types}"
-    elif data.wavelength is not None:
-        if isinstance(data.wavelength, (int, float)):
-            if data.fluence is not None:
-                title += f" from GUV-{int(data.wavelength)}"
-            else:
-                title += f" at {int(data.wavelength)} nm"
-        elif isinstance(data.wavelength, list):
-            if data.fluence is not None:
-                guv_str = ", ".join(f"GUV-{int(w)}" for w in data.wavelength)
-                title += f" from {guv_str}"
-            else:
-                wv_str = ", ".join(str(int(w)) for w in data.wavelength)
-                title += f" at {wv_str} nm"
-        elif isinstance(data.wavelength, tuple):
-            if data.fluence is not None:
-                title += f" from GUV-{int(data.wavelength[0])}-{int(data.wavelength[1])}"
-            else:
-                title += f" at {int(data.wavelength[0])}-{int(data.wavelength[1])} nm"
-
-    # Add medium ("in Medium" or "on Surface") and/or category
-    if data.medium is not None:
-        if isinstance(data.medium, list):
-            title += f" in {', '.join(data.medium)}"
-        elif data.medium == "Surface":
-            title += " on Surface"
-        else:
-            title += f" in {data.medium}"
-    if data.category is not None:
-        # Always use "for" with categories
-        cat_str = ', '.join(data.category) if isinstance(data.category, list) else data.category
-        title += f" for {cat_str}"
-
-    if data.fluence is not None:
-        if isinstance(data.fluence, dict):
-            if len(data.fluence) > 1:
-                f = [round(val, 2) for val in data.fluence.values()]
-                title += f"\nwith average fluence rates: {f} uW/cm²"
-            else:
-                # Single-wavelength dict - extract the value
-                val = list(data.fluence.values())[0]
-                title += f"\nwith average fluence rate {round(val, 2)} uW/cm²"
-        else:
-            title += f"\nwith average fluence rate {round(data.fluence, 2)} uW/cm²"
-    return title
-
+# =============================================================================
+# Main plot function
+# =============================================================================
 
 def plot(data, title=None, figsize=None, air_changes=None, mode="default", log=2,
-         yscale="auto", left_axis=None, right_axis=None):
+         yscale="auto", left_axis=None, right_axis=None, time_units=None):
     """
     Plot inactivation data for all species as a violin and scatter plot.
 
@@ -410,6 +62,10 @@ def plot(data, title=None, figsize=None, air_changes=None, mode="default", log=2
     right_axis : str or False, optional
         For time mode: specify right y-axis unit, or False to disable right axis.
         If specified, automatically enables time mode.
+    time_units : str, optional
+        Time unit for display: "seconds", "minutes", or "hours".
+        If specified, enables time mode and shows the specified unit on left axis.
+        Can be combined with `log` parameter to control which log level.
     """
     # Build plotting DataFrame
     df = _build_plot_df(data)
@@ -421,9 +77,12 @@ def plot(data, title=None, figsize=None, air_changes=None, mode="default", log=2
         figsize = (width, 5)
 
     # Determine columns to plot
-    left_label, right_label, use_time_mode, log_level = _determine_plot_columns(
-        data, df, mode, log, left_axis, right_axis
+    left_label, right_label, use_time_mode, effective_log = _determine_plot_columns(
+        data, df, mode, log, left_axis, right_axis, time_units
     )
+
+    # Filter out rows with NaN in the plotted column
+    df = df[df[left_label].notna()]
 
     # Configure hue and style (modifies df in place for wavelength columns)
     df = df.copy()  # Avoid modifying original
@@ -546,7 +205,7 @@ def plot(data, title=None, figsize=None, air_changes=None, mode="default", log=2
         )
 
     # Set title
-    final_title = title or _generate_title(data, left_label, right_label, use_time_mode, log_level)
+    final_title = title or _generate_title(data, left_label, right_label, use_time_mode, effective_log)
     if "\n" in final_title:
         fig.suptitle(final_title)
     else:
@@ -564,3 +223,401 @@ def plot(data, title=None, figsize=None, air_changes=None, mode="default", log=2
                      wv_col, style, hue_col)
 
     return fig
+
+
+# =============================================================================
+# Data organizing utilities
+# =============================================================================
+
+def _build_plot_df(data):
+    """Build DataFrame for plotting (uses full DFs, not display DFs)."""
+    if data.combined_full_df is not None:
+        # Use full combined df with all columns, apply row filters
+        return data._apply_row_filters(data.combined_full_df.copy())
+    # Use full_df with all columns, apply row and wavelength filters
+    df = data._apply_row_filters(data._full_df.copy())
+    return data._apply_wavelength_filter(df)
+
+
+def _determine_plot_columns(data, df, mode, log, left_axis, right_axis, time_units=None):
+    """
+    Determine which columns to plot based on mode and available data.
+
+    Returns (left_label, right_label, use_time_mode, effective_log).
+
+    Supports forgiving user input parsing:
+    - "each", "eACH", "EACH" -> COL_EACH
+    - "cadr", "CADR" -> COL_CADR_LPS or COL_CADR_CFM based on use_metric_units
+    - "k1", "K1" -> COL_K1
+    - "log1", "90%", "0.9", 0.9 -> time column for log1
+    - "log2", "99%", "0.99" -> time column for log2
+    - etc.
+    - "seconds", "minutes", "hours" -> time column in that unit
+
+    Priority for default mode: eACH+CADR > eACH > k1 > time.
+    Time mode requires fluence; falls back to k1 with warning if unavailable.
+    """
+    time_cols = data._time_cols
+    use_metric = data._use_metric_units
+
+    # Handle time_units parameter - enables time mode with specific unit
+    if time_units is not None:
+        time_units_lower = time_units.lower()
+        valid_units = {"seconds", "minutes", "hours", "sec", "min", "hr", "s", "m", "h"}
+        if time_units_lower not in valid_units:
+            raise ValueError(f"Invalid time_units '{time_units}'. Must be 'seconds', 'minutes', or 'hours'.")
+        # Normalize to standard names
+        unit_map = {"sec": "seconds", "s": "seconds", "min": "minutes", "m": "minutes", "hr": "hours", "h": "hours"}
+        time_units = unit_map.get(time_units_lower, time_units_lower)
+
+        # If left_axis specifies a log level, use that; otherwise use the log parameter
+        left_parsed, left_log = parse_axis_input(left_axis, time_cols, use_metric, log)
+        effective_log = left_log or log
+
+        # Build the time column name directly
+        if effective_log in time_cols and time_units in time_cols[effective_log]:
+            time_col = time_cols[effective_log][time_units]
+            if time_col in df.columns and df[time_col].notna().any():
+                return time_col, None, True, effective_log
+
+        warnings.warn(f"Time column for {time_units} at log{effective_log} not available.", stacklevel=3)
+
+    # Parse user-specified axes
+    left_parsed, left_log = parse_axis_input(left_axis, time_cols, use_metric, log)
+    right_parsed, right_log = parse_axis_input(right_axis, time_cols, use_metric, log)
+
+    # If user specified a log level through axis input, use it
+    effective_log = left_log or right_log or log
+
+    # Auto-enable time mode if user specified time-related axis
+    if left_parsed is not None and is_time_column(left_parsed, time_cols):
+        mode = "time"
+    elif right_parsed is not None and is_time_column(right_parsed, time_cols):
+        mode = "time"
+
+    # Check what columns are available
+    # eACH and CADR only make sense for Aerosol medium
+    is_aerosol = data._medium == "Aerosol"
+    has_each = is_aerosol and COL_EACH in df.columns and df[COL_EACH].notna().any()
+    cadr_col = COL_CADR_LPS if use_metric else COL_CADR_CFM
+    has_cadr = is_aerosol and cadr_col in df.columns and df[cadr_col].notna().any()
+    has_k1 = COL_K1 in df.columns and df[COL_K1].notna().any()
+    has_time = data._fluence is not None and time_cols
+
+    # If user specified either axis, use what they specified
+    if left_parsed is not None or right_parsed is not None:
+        # Validate left axis if specified
+        if left_parsed is not None:
+            if left_parsed not in df.columns or not df[left_parsed].notna().any():
+                warnings.warn(
+                    f"Requested column '{left_parsed}' not available in data. Using defaults.",
+                    stacklevel=3
+                )
+                left_parsed = None
+
+        # Validate right axis if specified
+        if right_parsed is not None:
+            if right_parsed not in df.columns or not df[right_parsed].notna().any():
+                warnings.warn(
+                    f"Right axis column '{right_parsed}' not available.",
+                    stacklevel=3
+                )
+                right_parsed = None
+
+        # Check compatibility if both axes specified
+        if left_parsed is not None and right_parsed is not None:
+            left_group = get_compatible_group(left_parsed, time_cols)
+            if right_parsed not in left_group:
+                warnings.warn(
+                    f"Columns '{left_parsed}' and '{right_parsed}' are not linearly "
+                    f"related and cannot be co-plotted. Showing only left axis.",
+                    stacklevel=3
+                )
+                right_parsed = None
+
+        # If left axis specified, use it (with optional right)
+        if left_parsed is not None:
+            use_time = is_time_column(left_parsed, time_cols)
+            return left_parsed, right_parsed, use_time, effective_log
+
+        # If only right axis specified, use it as left (no auto-fill)
+        if right_parsed is not None:
+            use_time = is_time_column(right_parsed, time_cols)
+            return right_parsed, None, use_time, effective_log
+
+    # Time mode (explicit)
+    if mode == "time":
+        if has_time:
+            left, right = auto_select_time_columns(df, time_cols, effective_log)
+            return left, right, True, effective_log
+        warnings.warn("Time mode requested but fluence not provided. Showing k1.", stacklevel=3)
+        return COL_K1, None, False, effective_log
+
+    # Default mode: prefer eACH/CADR > eACH > k1 > time
+    if has_each and has_cadr:
+        return COL_EACH, cadr_col, False, effective_log
+    if has_each:
+        return COL_EACH, None, False, effective_log
+    if has_k1:
+        return COL_K1, None, False, effective_log
+    if has_time:
+        left, right = auto_select_time_columns(df, time_cols, effective_log)
+        return left, right, True, effective_log
+
+    raise ValueError("No plottable data available (need eACH-UV, k1, or time to inactivation)")
+
+
+# =============================================================================
+# Plotting utilities
+# =============================================================================
+
+def _configure_hue_style(df, data):
+    """
+    Configure hue (colors) and style (shapes) for plotting.
+
+    Returns
+    -------
+    dict
+        Configuration with keys: hue_col, hue_order, palette, color,
+        style, style_order, use_wavelength_colors, wv_col, wv_order
+    """
+    has_medium = COL_MEDIUM in df.columns and len(df[COL_MEDIUM].unique()) > 1
+    has_category = COL_CATEGORY in df.columns and len(df[COL_CATEGORY].unique()) > 1
+    has_wavelength = COL_WAVELENGTH in df.columns and len(df[COL_WAVELENGTH].unique()) > 1
+
+    config = {
+        'hue_col': None,
+        'hue_order': None,
+        'palette': None,
+        'color': None,
+        'style': None,
+        'style_order': None,
+        'use_wavelength_colors': has_wavelength,
+        'wv_col': None,
+        'wv_order': None,
+    }
+
+    if has_wavelength:
+        unique_wvs = sorted(df[COL_WAVELENGTH].unique())
+        n_unique = len(unique_wvs)
+
+        if n_unique > 6:
+            # Use binned ranges for legend, but color by actual wavelength
+            df["wavelength range"] = df[COL_WAVELENGTH].apply(
+                lambda x: f"{int(x // 10 * 10)}-{int(x // 10 * 10 + 10)} nm"
+            )
+            wv_col = "wavelength range"
+            wv_order = sorted(df[wv_col].unique(), key=lambda x: int(x.split("-")[0]))
+            # Compute average wavelength per bucket for legend colors
+            bucket_avg_wv = df.groupby("wavelength range")[COL_WAVELENGTH].mean().to_dict()
+            palette = {bucket: wavelength_to_color(bucket_avg_wv[bucket]) for bucket in wv_order}
+        else:
+            # Use formatted wavelengths for cleaner legend display
+            df["wavelength"] = df[COL_WAVELENGTH].apply(format_wavelength)
+            wv_col = "wavelength"
+            # Build order based on numeric sort, then map to formatted strings
+            wv_order = [format_wavelength(wv) for wv in unique_wvs]
+            palette = {format_wavelength(wv): wavelength_to_color(wv) for wv in unique_wvs}
+
+        config['hue_col'] = wv_col
+        config['hue_order'] = wv_order
+        config['palette'] = palette
+        config['wv_col'] = wv_col
+        config['wv_order'] = wv_order
+
+    elif has_category:
+        # Use category colors when wavelength colors aren't needed
+        config['hue_col'] = COL_CATEGORY
+        config['hue_order'] = [cat for cat in CATEGORY_ORDER if cat in df[COL_CATEGORY].unique()]
+        # palette = None uses seaborn default category colors
+
+    # Style (shapes): use for Medium if not filtered, OR use for wavelength if
+    # single medium specified (colorblind-friendly: both color and shape for wavelength)
+    if has_medium:
+        config['style'] = COL_MEDIUM
+        config['style_order'] = [m for m in MEDIUM_ORDER if m in df[COL_MEDIUM].unique()]
+    elif has_wavelength:
+        # Single medium specified but multiple wavelengths - use shape for wavelength too
+        config['style'] = config['wv_col']
+        config['style_order'] = config['wv_order']
+
+    # Category grouping: if category not filtered, sort by category
+    if has_category:
+        df["_cat_order"] = df[COL_CATEGORY].apply(
+            lambda x: CATEGORY_ORDER.index(x) if x in CATEGORY_ORDER else 99
+        )
+        df.sort_values(["_cat_order", COL_SPECIES], inplace=True)
+
+    # When no hue (single wavelength, no multiple wavelengths), use a consistent color
+    if config['hue_col'] is None:
+        default_palette = sns.color_palette()
+        if data.category is not None and data.category in CATEGORY_ORDER:
+            config['color'] = default_palette[CATEGORY_ORDER.index(data.category)]
+        else:
+            config['color'] = default_palette[0]
+
+    return config
+
+
+def _generate_title(data, left_label, right_label, use_time_mode, log_level):
+    """Generate plot title based on data state and plot mode."""
+    # Use generic "Time to X% inactivation" for time mode
+    if use_time_mode:
+        title = f"Time to {LOG_LABELS.get(log_level, '99%')} inactivation"
+    elif "k1" in left_label:
+        # Check if no filters applied
+        no_filters = (data.medium is None and data.category is None
+                     and data.wavelength is None and data.fluence is None)
+        if no_filters:
+            title = "UVC susceptibility constants for all data"
+        else:
+            title = "UVC susceptibility constants"
+    else:
+        title = left_label
+        if right_label is not None:
+            title += "/" + right_label
+
+    # Add wavelength context
+    # Multi-wavelength fluence dict: use fluence keys (plot uses combined_df)
+    is_multiwavelength = isinstance(data._fluence, dict) and len(data._fluence) > 1
+    if is_multiwavelength:
+        guv_types = ", ".join(["GUV-" + str(int(wv)) for wv in data._fluence.keys()])
+        title += f" from {guv_types}"
+    elif data.wavelength is not None:
+        if isinstance(data.wavelength, (int, float)):
+            if data.fluence is not None:
+                title += f" from GUV-{int(data.wavelength)}"
+            else:
+                title += f" at {int(data.wavelength)} nm"
+        elif isinstance(data.wavelength, list):
+            if data.fluence is not None:
+                guv_str = ", ".join(f"GUV-{int(w)}" for w in data.wavelength)
+                title += f" from {guv_str}"
+            else:
+                wv_str = ", ".join(str(int(w)) for w in data.wavelength)
+                title += f" at {wv_str} nm"
+        elif isinstance(data.wavelength, tuple):
+            if data.fluence is not None:
+                title += f" from GUV-{int(data.wavelength[0])}-{int(data.wavelength[1])}"
+            else:
+                title += f" at {int(data.wavelength[0])}-{int(data.wavelength[1])} nm"
+
+    # Add medium ("in Medium" or "on Surface") and/or category
+    if data.medium is not None:
+        if isinstance(data.medium, list):
+            title += f" in {', '.join(data.medium)}"
+        elif data.medium == "Surface":
+            title += " on Surface"
+        else:
+            title += f" in {data.medium}"
+    if data.category is not None:
+        # Always use "for" with categories
+        cat_str = ', '.join(data.category) if isinstance(data.category, list) else data.category
+        title += f" for {cat_str}"
+
+    if data.fluence is not None:
+        # Use "irradiance" for Surface, "average fluence rate" for Aerosol/Liquid
+        rate_term = "irradiance" if data.medium == "Surface" else "average fluence rate"
+        if isinstance(data.fluence, dict):
+            if len(data.fluence) > 1:
+                f = [round(val, 2) for val in data.fluence.values()]
+                title += f"\nwith {rate_term}s: {f} µW/cm²"
+            else:
+                # Single-wavelength dict - extract the value
+                val = list(data.fluence.values())[0]
+                title += f"\nwith {rate_term} {round(val, 2)} µW/cm²"
+        else:
+            title += f"\nwith {rate_term} {round(data.fluence, 2)} µW/cm²"
+    return title
+
+
+def _add_category_separators(ax, fig, df, species_order):
+    """Add vertical lines and category labels between categories on the plot."""
+    # Map species to category
+    species_to_cat = df.groupby(COL_SPECIES)[COL_CATEGORY].first().to_dict()
+
+    # Find category boundaries
+    prev_cat = None
+    boundaries = []
+    for i, species in enumerate(species_order):
+        cat = species_to_cat.get(species)
+        if cat != prev_cat and prev_cat is not None:
+            boundaries.append((i - 0.5, cat))
+        if i == 0:
+            boundaries.append((-0.5, cat))
+        prev_cat = cat
+
+    # Draw vertical lines
+    for x_pos, cat in boundaries:
+        if x_pos > -0.5:  # Don't draw line at the very start
+            ax.axvline(x=x_pos, color="gray", linestyle="--", alpha=0.7, linewidth=1.5)
+
+    # Move species labels down to make room for category labels above
+    ax.tick_params(axis='x', pad=18)
+
+    # Add category labels centered between plot and species labels
+    fig.subplots_adjust(bottom=0.35)
+    for i, (x_pos, cat) in enumerate(boundaries):
+        # Find the end of this category section
+        if i < len(boundaries) - 1:
+            next_x = boundaries[i + 1][0]
+        else:
+            next_x = len(species_order) - 0.5
+        mid_x = (x_pos + next_x) / 2
+        ax.text(mid_x, -0.06, cat, transform=ax.get_xaxis_transform(),
+                ha="center", va="center", fontsize=12)
+
+
+def _position_legend(ax, fig, df, left_label, yscale, show_legend, has_right_axis,
+                     wv_col, style, hue_col):
+    """Position legend based on data distribution."""
+    # Get species order from x-axis
+    species_order = df[COL_SPECIES].unique()
+    n_species = len(species_order)
+
+    # Get data for the rightmost ~25% of species
+    right_species = species_order[-(max(1, n_species // 4)):]
+    right_data = df[df[COL_SPECIES].isin(right_species)][left_label].dropna()
+
+    y_min, y_max = ax.get_ylim()
+    if yscale == "log" and y_min > 0:
+        y_midpoint = math.sqrt(y_min * y_max)  # Geometric mean (visual midpoint)
+    else:
+        y_midpoint = (y_min + y_max) / 2  # Arithmetic mean
+
+    # Put legend opposite to where right-side data is concentrated
+    right_median = right_data.median() if len(right_data) > 0 else y_midpoint
+    inside_loc = "lower right" if right_median > y_midpoint else "upper right"
+
+    if show_legend:
+        handles, labels = ax.get_legend_handles_labels()
+        n_entries = len(labels)
+        # If right axis exists and legend is small, put inside to avoid overlap
+        if has_right_axis and n_entries <= 6:
+            ax.legend(loc=inside_loc, framealpha=0.9)
+        else:
+            # Default: put legend on right side outside plot
+            fig.subplots_adjust(right=0.75)
+            ax.legend(bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
+    elif style is not None:
+        # Show legend for medium shapes only (no category colors in legend)
+        handles, labels = ax.get_legend_handles_labels()
+        # Filter to only show style (Medium) entries, not hue (Category)
+        medium_handles = []
+        medium_labels = []
+        for h, l in zip(handles, labels):
+            if l in MEDIUM_ORDER:
+                medium_handles.append(h)
+                medium_labels.append(l)
+        if medium_handles:
+            n_entries = len(medium_handles)
+            # Put inside on right if small enough, otherwise outside
+            if n_entries <= 6:
+                ax.legend(medium_handles, medium_labels, loc=inside_loc, framealpha=0.9)
+            else:
+                fig.subplots_adjust(right=0.85)
+                ax.legend(medium_handles, medium_labels, bbox_to_anchor=(1.02, 1),
+                          loc="upper left", borderaxespad=0)
+    elif hue_col == COL_CATEGORY:
+        # Category colors but no legend needed
+        ax.legend().set_visible(False)

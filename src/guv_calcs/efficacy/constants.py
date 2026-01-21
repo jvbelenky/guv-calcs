@@ -39,3 +39,33 @@ BASE_DISPLAY_COLS = [
     COL_REFERENCE,
     COL_LINK,
 ]
+
+# Axis input aliases for forgiving parsing
+AXIS_ALIASES = {
+    "each": COL_EACH,
+    "each-uv": COL_EACH,
+    "eachuv": COL_EACH,
+    "k1": COL_K1,
+    "k2": COL_K2,
+    # CADR handled specially (depends on use_metric)
+}
+
+# Log level aliases (map to log number)
+LOG_ALIASES = {
+    "log1": 1, "90": 1, "0.9": 1,
+    "log2": 2, "99": 2, "0.99": 2,
+    "log3": 3, "99.9": 3, "0.999": 3,
+    "log4": 4, "99.99": 4, "0.9999": 4,
+    "log5": 5, "99.999": 5, "0.99999": 5,
+}
+
+# Time unit aliases
+TIME_UNIT_ALIASES = {
+    "seconds": "seconds", "sec": "seconds", "s": "seconds",
+    "minutes": "minutes", "min": "minutes", "m": "minutes",
+    "hours": "hours", "hr": "hours", "h": "hours",
+}
+
+# Compatible column groups (columns that can be co-plotted)
+RATE_COLS = {COL_EACH, COL_CADR_LPS, COL_CADR_CFM}
+SUSCEPTIBILITY_COLS = {COL_K1, COL_K2}

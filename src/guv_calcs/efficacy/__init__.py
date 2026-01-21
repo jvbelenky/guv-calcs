@@ -11,9 +11,9 @@ from .math import (
     CADR_LPS,
 )
 
+
 __all__ = [
     "Data",
-    "get_disinfection_table",
     "eACH_UV",
     "log1",
     "log2",
