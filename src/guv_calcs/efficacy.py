@@ -39,9 +39,11 @@ class Data:
         # Filter state (set by subset())
         self._medium = None
         self._category = None
-        self._wavelength = None
-        self._wavelength_locked = False  # True if fluence is dict
+        self._wavelength = None  # User-specified wavelength filter
         self._log = 2  # Log reduction level for time column display (1-5)
+
+        # Track fluence dict wavelengths separately (always included in display)
+        self._fluence_wavelengths = list(fluence.keys()) if isinstance(fluence, dict) else None
 
         # Load base data (cached)
         self._base_df = self.get_full()
@@ -49,10 +51,6 @@ class Data:
 
         # Compute full_df if fluence provided
         if fluence is not None:
-            # If fluence is dict, lock wavelength to those keys
-            if isinstance(fluence, dict):
-                self._wavelength = list(fluence.keys())
-                self._wavelength_locked = True
             self._full_df = self._compute_all_columns()
         else:
             self._full_df = self._base_df.copy()
@@ -67,27 +65,18 @@ class Data:
             Room object for CADR calculations. Only used transiently.
 
         Returns DataFrame with all computed columns (per-wavelength rows).
+        Rows for wavelengths not in fluence dict will have NaN for computed columns.
         """
         fluence = self._fluence
         df = self._base_df.copy()
 
-        # Handle fluence dict - extract wavelengths
-        is_fluence_dict = isinstance(fluence, dict)
-        is_multiwavelength = is_fluence_dict and len(fluence) > 1
-
-        if is_multiwavelength:
-            # Filter to wavelengths in fluence dict (validate wavelengths exist)
-            df_filtered, fluence_cleaned = _filter_wavelengths(df, fluence.copy())
-
-            # For display, keep per-wavelength rows filtered to these wavelengths
-            df = df[df["wavelength [nm]"].isin(fluence_cleaned.keys())]
-            # Compute per-wavelength columns
-            fluence = fluence_cleaned
-
-        # Single wavelength dict case - filter to that wavelength
-        if is_fluence_dict and len(fluence) == 1:
-            wv = list(fluence.keys())[0]
-            df = df[df["wavelength [nm]"] == wv]
+        # Handle fluence dict - validate wavelengths exist
+        if isinstance(fluence, dict):
+            # Validate fluence dict wavelengths exist (warns if any missing)
+            # Don't filter df - let _build_display_df handle wavelength filtering
+            _, fluence = _filter_wavelengths(df, fluence.copy())
+            # Update _fluence_wavelengths with cleaned keys
+            self._fluence_wavelengths = list(fluence.keys())
 
         # Calculate time to inactivation for all log levels (1-5)
         log_funcs = {1: log1, 2: log2, 3: log3, 4: log4, 5: log5}
@@ -272,14 +261,9 @@ class Data:
             self._category = category
 
         # Validate and set wavelength filter
+        # When fluence is a dict, user-specified wavelengths are ADDED to the fluence
+        # dict wavelengths (fluence wavelengths are always included in display)
         if wavelength is not None:
-            if self._wavelength_locked:
-                warnings.warn(
-                    "Wavelength filter ignored when fluence is a dict; "
-                    f"using wavelengths from fluence dict: {list(self._fluence.keys())}",
-                    stacklevel=2,
-                )
-                return self
             valid_wavelengths = self.get_valid_wavelengths()
             if isinstance(wavelength, (int, float)):
                 if wavelength not in valid_wavelengths:
@@ -300,6 +284,37 @@ class Data:
             self._log = log
 
         return self
+
+    def _get_effective_wavelengths(self) -> list | tuple | None:
+        """
+        Get effective wavelengths for display (merged fluence + user-specified).
+
+        Returns list of wavelengths, tuple (range), or None if no filter.
+        Fluence dict wavelengths are always included when present.
+        """
+        # If user specified a range (tuple), use it directly
+        # (fluence wavelengths should already be in the range or user knows what they're doing)
+        if isinstance(self._wavelength, tuple):
+            return self._wavelength
+
+        # Collect wavelengths to include
+        wavelengths = set()
+
+        # Always include fluence dict wavelengths if present
+        if self._fluence_wavelengths:
+            wavelengths.update(self._fluence_wavelengths)
+
+        # Add user-specified wavelengths
+        if self._wavelength is not None:
+            if isinstance(self._wavelength, (int, float)):
+                wavelengths.add(self._wavelength)
+            elif isinstance(self._wavelength, list):
+                wavelengths.update(self._wavelength)
+
+        # Return None if no wavelengths to filter by, otherwise sorted list
+        if not wavelengths:
+            return None
+        return sorted(wavelengths)
 
     def _apply_row_filters(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -325,18 +340,22 @@ class Data:
     def _build_display_df(self) -> pd.DataFrame:
         """
         Build display DataFrame by applying filters and selecting appropriate columns.
-        Uses internal filter state (_medium, _category, _wavelength).
+        Uses internal filter state (_medium, _category) and effective wavelengths
+        (merged from fluence dict wavelengths + user-specified wavelengths).
         """
         df = self._apply_row_filters(self._full_df.copy())
 
-        # Only filter by wavelength if the column exists (multi-wavelength aggregated data doesn't have it)
-        if self._wavelength is not None and "wavelength [nm]" in df.columns:
-            if isinstance(self._wavelength, (int, float)):
-                df = df[df["wavelength [nm]"] == self._wavelength]
-            elif isinstance(self._wavelength, list):
-                df = df[df["wavelength [nm]"].isin(self._wavelength)]
-            elif isinstance(self._wavelength, tuple) and len(self._wavelength) == 2:
-                wv_min, wv_max = self._wavelength
+        # Get effective wavelengths (merged fluence + user-specified)
+        effective_wv = self._get_effective_wavelengths()
+
+        # Only filter by wavelength if the column exists and we have wavelengths to filter by
+        if effective_wv is not None and "wavelength [nm]" in df.columns:
+            if isinstance(effective_wv, (int, float)):
+                df = df[df["wavelength [nm]"] == effective_wv]
+            elif isinstance(effective_wv, list):
+                df = df[df["wavelength [nm]"].isin(effective_wv)]
+            elif isinstance(effective_wv, tuple) and len(effective_wv) == 2:
+                wv_min, wv_max = effective_wv
                 df = df[(df["wavelength [nm]"] >= wv_min) & (df["wavelength [nm]"] <= wv_max)]
 
         return self._select_display_columns(df)
@@ -415,7 +434,33 @@ class Data:
             if result[col].dtype == object:
                 result[col] = result[col].fillna(" ")
 
-        return result
+        # Apply shared output column selection (drop single-value cols)
+        return self._select_output_columns(result)
+
+    def _select_output_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply shared column selection: drop single-value cols, select best time col."""
+        df = df.copy()
+
+        # Drop single-value columns
+        for col in ["Medium", "Category", "wavelength [nm]"]:
+            if col in df.columns and len(df[col].unique()) == 1:
+                df = df.drop(columns=[col])
+
+        # Keep only the relevant time column for current log level
+        # Only attempt if we have time_cols info and the seconds column exists in df
+        if self._time_cols and self._log in self._time_cols:
+            sec_col = self._time_cols[self._log].get("seconds")
+            if sec_col and sec_col in df.columns:
+                time_col, _ = self._select_time_display_columns(df, self._time_cols, log_level=self._log)
+                # Drop all other time columns
+                all_time_cols = []
+                for log_cols in self._time_cols.values():
+                    all_time_cols.extend(log_cols.values())
+                for col in all_time_cols:
+                    if col in df.columns and col != time_col:
+                        df = df.drop(columns=[col])
+
+        return df
 
     def _select_time_display_columns(self, df, time_cols, log_level=2, left_axis=None, right_axis=None):
         """
@@ -520,7 +565,9 @@ class Data:
         if not isinstance(self._fluence, dict) or len(self._fluence) <= 1:
             return None
         filtered = self._apply_row_filters(self._full_df)
-        return self._combine_wavelengths(filtered, self._fluence)
+        result = self._combine_wavelengths(filtered, self._fluence)
+        result = self._select_output_columns(result)
+        return result.sort_values("Species")
 
     @property
     def medium(self):
@@ -532,7 +579,8 @@ class Data:
 
     @property
     def wavelength(self):
-        return self._wavelength
+        """Return effective wavelengths (merged fluence + user-specified)."""
+        return self._get_effective_wavelengths()
 
     @property
     def fluence(self):
@@ -658,12 +706,24 @@ class Data:
         if time_axis_specified and mode == "default":
             mode = "time"
 
-        # Use combined_df for plotting if available (multi-wavelength), otherwise display_df
-        combined = self.combined_df
-        if combined is not None:
-            df = combined.sort_values("Species")
+        # Build plotting df: need all time columns, don't apply _select_output_columns
+        # (that's for user-facing output, not plotting)
+        if isinstance(self._fluence, dict) and len(self._fluence) > 1:
+            # Multi-wavelength: use combined data
+            filtered = self._apply_row_filters(self._full_df)
+            df = self._combine_wavelengths(filtered, self._fluence)
         else:
-            df = self.display_df
+            # Single wavelength: apply row+wavelength filters, keep all columns
+            df = self._apply_row_filters(self._full_df.copy())
+            effective_wv = self._get_effective_wavelengths()
+            if effective_wv is not None and "wavelength [nm]" in df.columns:
+                if isinstance(effective_wv, (int, float)):
+                    df = df[df["wavelength [nm]"] == effective_wv]
+                elif isinstance(effective_wv, list):
+                    df = df[df["wavelength [nm]"].isin(effective_wv)]
+                elif isinstance(effective_wv, tuple) and len(effective_wv) == 2:
+                    wv_min, wv_max = effective_wv
+                    df = df[(df["wavelength [nm]"] >= wv_min) & (df["wavelength [nm]"] <= wv_max)]
 
         # Dynamic figsize based on number of species
         if figsize is None:
@@ -681,10 +741,13 @@ class Data:
         log_level = log  # Store for title generation
 
         # Get time columns for the specified log level
+        # Use row-filtered _full_df (not column-filtered df) since we need all time columns
+        # to determine best unit via median calculation
         def get_time_labels(log_lvl):
             if hasattr(self, '_time_cols') and log_lvl in self._time_cols:
+                time_df = self._apply_row_filters(self._full_df)
                 return self._select_time_display_columns(
-                    df, self._time_cols, log_level=log_lvl, left_axis=left_axis, right_axis=right_axis
+                    time_df, self._time_cols, log_level=log_lvl, left_axis=left_axis, right_axis=right_axis
                 )
             return None, None
 
@@ -714,8 +777,8 @@ class Data:
                     raise ValueError("No plottable data available (need eACH-UV, k1, or time to inactivation)")
 
         # Determine hue (colors) and style (shapes) based on available columns
-        has_medium = "Medium" in df.columns  # Medium NOT filtered
-        has_category = "Category" in df.columns  # Category NOT filtered
+        has_medium = "Medium" in df.columns and len(df["Medium"].unique()) > 1
+        has_category = "Category" in df.columns and len(df["Category"].unique()) > 1
         has_wavelength = "wavelength [nm]" in df.columns and len(df["wavelength [nm]"].unique()) > 1
 
         # Category ordering for grouping
@@ -1046,15 +1109,18 @@ class Data:
                 title += "/" + right_label
 
         # Add wavelength context
-        if self.wavelength is not None:
+        # Multi-wavelength fluence dict: use fluence keys (plot uses combined_df)
+        is_multiwavelength = isinstance(self._fluence, dict) and len(self._fluence) > 1
+        if is_multiwavelength:
+            guv_types = ", ".join(["GUV-" + str(int(wv)) for wv in self._fluence.keys()])
+            title += f" from {guv_types}"
+        elif self.wavelength is not None:
             if isinstance(self.wavelength, (int, float)):
-                # Single wavelength
                 if self.fluence is not None:
                     title += f" from GUV-{int(self.wavelength)}"
                 else:
                     title += f" at {int(self.wavelength)} nm"
             elif isinstance(self.wavelength, list):
-                # List of wavelengths
                 if self.fluence is not None:
                     guv_str = ", ".join(f"GUV-{int(w)}" for w in self.wavelength)
                     title += f" from {guv_str}"
@@ -1062,14 +1128,10 @@ class Data:
                     wv_str = ", ".join(str(int(w)) for w in self.wavelength)
                     title += f" at {wv_str} nm"
             elif isinstance(self.wavelength, tuple):
-                # Wavelength range
                 if self.fluence is not None:
                     title += f" from GUV-{int(self.wavelength[0])}-{int(self.wavelength[1])}"
                 else:
                     title += f" at {int(self.wavelength[0])}-{int(self.wavelength[1])} nm"
-        elif isinstance(self._fluence, dict):
-            guv_types = ", ".join(["GUV-" + str(int(wv)) for wv in self._fluence.keys()])
-            title += f" from {guv_types}"
 
         # Add medium ("in Medium" or "on Surface") and/or category
         if self.medium is not None:
