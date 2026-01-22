@@ -541,17 +541,29 @@ class Room:
         else:
             data = Data(fluence=fluence_dict, volume_m3=self.dim.cubic_meters)
         use_metric = self.dim.units in [LengthUnits.METERS, LengthUnits.CENTIMETERS]
-        return data.subset(medium="Aerosol", use_metric=use_metric, **kwargs)            
-
-    def disinfection_plot(self, zone_id="WholeRoomFluence", category=None, **kwargs):
-        """Return a violin plot of expected disinfection rates"""                
-        data = self.get_efficacy_data(zone_id, category=category)
-        return data.plot(air_changes=self.air_changes, **kwargs)
-
+        
+        if zone.calctype=="Plane" and zone.horiz:
+            medium = "Surface"
+        else:
+            medium = "Aerosol"        
+        return data.subset(medium=medium, use_metric=use_metric, **kwargs)            
+    
     def disinfection_table(self, zone_id="WholeRoomFluence", **kwargs):
         """Return a table of expected disinfection rates"""
         return self.get_efficacy_data(zone_id, **kwargs).df
-        
+    
+    def disinfection_plot(self, zone_id="WholeRoomFluence", category=None, **kwargs):
+        """a violin plot of expected disinfection rates for all available species"""                
+        data = self.get_efficacy_data(zone_id, category=category)
+        return data.plot(air_changes=self.air_changes, **kwargs)
+
+    def survival_plot(self, zone_id="WholeRoomFluence", species=None, **kwargs):
+        """
+        Plot survival fraction over time for pathogens in a calculation zone.
+        """
+        data = self.get_efficacy_data(zone_id)
+        return data.plot_survival(fluence=total_fluence, species=species, **kwargs)
+
     def plotly(self, fig=None, select_id=None, title=""):
         """return a plotly figure of all the room's components"""
         return self._plotter.plotly(fig=fig, select_id=select_id, title=title)

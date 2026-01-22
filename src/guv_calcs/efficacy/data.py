@@ -21,6 +21,7 @@ from .constants import (
 )
 from .math import eACH_UV, log1, log2, log3, log4, log5
 from .plotting import plot as _plot_func
+from .plotting import plot_survival as _plot_survival_func
 from .utils import auto_select_time_columns
 
 pd.options.mode.chained_assignment = None
@@ -182,6 +183,10 @@ class Data:
         """Plot inactivation data. See plotting.plot for full documentation."""
         return _plot_func(self, **kwargs)
 
+    def plot_survival(self, **kwargs):
+        """Plot survival fraction over time. See plotting.plot_survival for full documentation."""
+        return _plot_survival_func(self, **kwargs)
+
     def save(self, filepath: str, **kwargs) -> None:
         """
         Save the current display_df to a CSV file.
@@ -280,6 +285,13 @@ class Data:
         if COL_CATEGORY not in df.columns:
             return None
         return sorted(df[COL_CATEGORY].unique())
+        
+    @property
+    def species(self):
+        df = self.display_df
+        if COL_SPECIES not in df.columns:
+            return None
+        return sorted(df[COL_SPECIES].unique())
 
     @property
     def mediums(self):

@@ -2,6 +2,7 @@ import warnings
 import math
 import matplotlib.pyplot as plt
 import seaborn as sns
+import numpy as np
 
 from .constants import (
     LOG_LABELS,
@@ -12,6 +13,8 @@ from .constants import (
     COL_WAVELENGTH,
     COL_MEDIUM,
     COL_K1,
+    COL_K2,
+    COL_RESISTANT,
     COL_EACH,
     COL_CADR_LPS,
     COL_CADR_CFM,
@@ -621,3 +624,438 @@ def _position_legend(ax, fig, df, left_label, yscale, show_legend, has_right_axi
     elif hue_col == COL_CATEGORY:
         # Category colors but no legend needed
         ax.legend().set_visible(False)
+
+
+# =============================================================================
+# Survival fraction plot
+# =============================================================================
+
+def plot_survival(
+    data,
+    fluence=None,
+    species=None,
+    labels=None,
+    title=None,
+    time_units=None,
+    xrange=None,
+    yrange=(0, 1),
+    figsize=(6.4, 4.8),
+    show_ci=True,
+):
+    """
+    Plot survival fraction over time with optional 95% CI bands.
+
+    Parameters
+    ----------
+    data : Data
+        Data instance to plot from.
+    fluence : float or list of float, optional
+        Irradiance value(s) in µW/cm². If not provided, uses data's fluence.
+        Provide a list for multiple curves at different irradiances.
+    species : str or list of str, optional
+        Species name(s) to plot. If None and fluence is a single value, plots
+        all available species. Required when fluence is a list.
+    labels : list of str, optional
+        Custom labels for legend. If not provided, uses species names or
+        fluence values.
+    title : str, optional
+        Custom plot title. If not provided, auto-generates based on mode.
+    time_units : str, optional
+        Time unit for x-axis: 'seconds', 'minutes', or 'hours'.
+        If not provided, auto-selects based on data range.
+    xrange : tuple, optional
+        (min, max) tuple for x-axis limits.
+    yrange : tuple, optional
+        (min, max) tuple for y-axis limits. Default is (0, 1).
+    figsize : tuple, optional
+        Figure size (width, height). Default is (6.4, 4.8).
+    show_ci : bool, optional
+        Whether to show 95% CI bands. Default is True.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure.
+
+    Notes
+    -----
+    Two modes are supported:
+    - Single species + multiple irradiances: one curve per irradiance
+    - Single irradiance + multiple species: one curve per species
+
+    The survival model uses the full two-phase equation:
+        S(t) = (1-f)*exp(-k1*I/1000*t) + f*exp(-k2*I/1000*t)
+
+    95% CI bands are calculated using k1 ± 1.96*SEM propagated through
+    the survival formula.
+    """
+    # Get fluence from data if not provided
+    if fluence is None:
+        if data._fluence is None:
+            raise ValueError("fluence must be provided either to Data() or to plot_survival()")
+        if isinstance(data._fluence, dict):
+            raise ValueError("plot_survival requires a single fluence value, not a dict")
+        fluence = data._fluence
+
+    # Normalize fluence to list
+    fluence_list = [fluence] if isinstance(fluence, (int, float)) else list(fluence)
+    multi_fluence = len(fluence_list) > 1
+
+    # Validate: species is required when fluence is a list
+    if multi_fluence and species is None:
+        raise ValueError(
+            "species must be specified when fluence is a list. "
+            "Provide a single species name to plot multiple irradiance curves."
+        )
+
+    # Build the plot dataframe
+    df = _build_plot_df(data)
+
+    # Normalize species to list
+    if species is None:
+        # Use all available species from filtered data
+        species_list = list(df[COL_SPECIES].unique())
+        if len(species_list) == 0:
+            raise ValueError("No species found in filtered data")
+    elif isinstance(species, str):
+        species_list = [species]
+    else:
+        species_list = list(species)
+
+    multi_species = len(species_list) > 1
+
+    if multi_fluence and multi_species:
+        raise ValueError(
+            "Cannot plot multiple species with multiple fluence values. "
+            "Use either a single species with multiple fluences, or multiple species with a single fluence."
+        )
+
+    # Filter to requested species
+    df = df[df[COL_SPECIES].isin(species_list)]
+    if len(df) == 0:
+        raise ValueError(f"No data found for species: {species_list}")
+
+    # Get k1, k2, f values for each species, skipping those without data
+    species_data = {}
+    skipped_species = []
+    for sp in species_list:
+        sp_df = df[df[COL_SPECIES] == sp]
+        k1_vals = sp_df[COL_K1].dropna().values
+        k2_vals = sp_df[COL_K2].fillna(0).values if COL_K2 in sp_df.columns else np.zeros(len(k1_vals))
+        f_vals = sp_df[COL_RESISTANT].apply(
+            lambda x: float(x.rstrip('%')) / 100 if isinstance(x, str) and x.strip() else 0.0
+        ).values if COL_RESISTANT in sp_df.columns else np.zeros(len(k1_vals))
+
+        if len(k1_vals) == 0:
+            skipped_species.append(sp)
+            warnings.warn(f"No k1 values found for species '{sp}', skipping.", stacklevel=2)
+            continue
+
+        species_data[sp] = {
+            'k1_mean': np.mean(k1_vals),
+            'k1_sem': np.std(k1_vals, ddof=1) / np.sqrt(len(k1_vals)) if len(k1_vals) > 1 else 0,
+            'k2_mean': np.mean(k2_vals),
+            'f_mean': np.mean(f_vals),
+        }
+
+    # Update species_list to only include those with data
+    species_list = [sp for sp in species_list if sp in species_data]
+
+    if len(species_list) == 0:
+        raise ValueError("No species with valid k1 data found.")
+
+    # Determine number of curves and labels
+    if multi_fluence:
+        n_curves = len(fluence_list)
+        if labels is None:
+            labels = [f"{f} µW/cm²" for f in fluence_list]
+    else:
+        n_curves = len(species_list)
+        if labels is None:
+            labels = species_list.copy()
+
+    if labels is not None and len(labels) != n_curves:
+        raise ValueError(f"Number of labels ({len(labels)}) must match number of curves ({n_curves})")
+
+    # Calculate time range for plotting
+    # For single mode, extend to 99.9% to show all inactivation lines
+    # For multi mode, use 99% as before
+    single_mode = len(species_list) == 1 and len(fluence_list) == 1
+    target_survival = 0.001 if single_mode else 0.01
+
+    max_time = 0
+    for sp in species_list:
+        sd = species_data[sp]
+        for f in fluence_list:
+            t_target = _time_to_survival(target_survival, f, sd['k1_mean'], sd['k2_mean'], sd['f_mean'])
+            max_time = max(max_time, t_target)
+
+    # Auto-select time units based on max_time (in seconds)
+    if time_units is None:
+        if max_time < 100:
+            time_units = 'seconds'
+        elif max_time < 6000:
+            time_units = 'minutes'
+        else:
+            time_units = 'hours'
+
+    # Normalize time units
+    time_unit_map = {'sec': 'seconds', 's': 'seconds', 'min': 'minutes', 'm': 'minutes', 'hr': 'hours', 'h': 'hours'}
+    time_units = time_unit_map.get(time_units.lower(), time_units.lower())
+
+    # Time divisor for conversion
+    time_divisors = {'seconds': 1, 'minutes': 60, 'hours': 3600}
+    time_div = time_divisors.get(time_units, 1)
+
+    # Create time array
+    if xrange is not None:
+        t_min, t_max = xrange[0] * time_div, xrange[1] * time_div
+    else:
+        t_min, t_max = 0, max_time * 1.1  # Add 10% padding
+
+    t_seconds = np.linspace(t_min, t_max, 500)
+    t_display = t_seconds / time_div
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Color palette
+    colors = plt.cm.tab10.colors
+
+    # Plot each curve
+    if multi_fluence:
+        # Single species, multiple fluences
+        sp = species_list[0]
+        sd = species_data[sp]
+        for i, f in enumerate(fluence_list):
+            label = labels[i] if labels else f"{f} µW/cm²"
+            color = colors[i % len(colors)]
+
+            # Calculate survival curve
+            S_mean = _survival_curve(t_seconds, f, sd['k1_mean'], sd['k2_mean'], sd['f_mean'])
+
+            # Calculate CI bounds if requested and SEM > 0
+            if show_ci and sd['k1_sem'] > 0:
+                k1_lo = sd['k1_mean'] - 1.96 * sd['k1_sem']
+                k1_hi = sd['k1_mean'] + 1.96 * sd['k1_sem']
+                S_lo = _survival_curve(t_seconds, f, k1_hi, sd['k2_mean'], sd['f_mean'])  # Higher k1 = faster decay = lower S
+                S_hi = _survival_curve(t_seconds, f, k1_lo, sd['k2_mean'], sd['f_mean'])  # Lower k1 = slower decay = higher S
+                ax.fill_between(t_display, S_lo, S_hi, alpha=0.2, color=color)
+
+            ax.plot(t_display, S_mean, label=label, color=color, linewidth=2)
+    elif single_mode:
+        # Single species, single fluence - special mode with inactivation lines
+        sp = species_list[0]
+        sd = species_data[sp]
+        f = fluence_list[0]
+
+        # Calculate survival curve
+        S_mean = _survival_curve(t_seconds, f, sd['k1_mean'], sd['k2_mean'], sd['f_mean'])
+
+        # Calculate CI bounds if requested and SEM > 0
+        if show_ci and sd['k1_sem'] > 0:
+            k1_lo = sd['k1_mean'] - 1.96 * sd['k1_sem']
+            k1_hi = sd['k1_mean'] + 1.96 * sd['k1_sem']
+            S_lo = _survival_curve(t_seconds, f, k1_hi, sd['k2_mean'], sd['f_mean'])
+            S_hi = _survival_curve(t_seconds, f, k1_lo, sd['k2_mean'], sd['f_mean'])
+            ax.fill_between(t_display, S_lo, S_hi, alpha=0.2, color='black')
+
+        # Plot curve in black
+        ax.plot(t_display, S_mean, color='black', linewidth=2)
+
+        # Calculate times to log reductions and add vertical lines
+        log_colors = {'90%': 'blue', '99%': 'green', '99.9%': 'orange'}
+        log_targets = {'90%': 0.1, '99%': 0.01, '99.9%': 0.001}
+
+        for log_label, target in log_targets.items():
+            t_log = _time_to_survival(target, f, sd['k1_mean'], sd['k2_mean'], sd['f_mean'])
+            t_log_display = t_log / time_div
+            # Only draw line if it's within the plot range
+            if t_log_display <= t_display[-1]:
+                ax.axvline(
+                    x=t_log_display,
+                    label=f'{log_label} Inactivation',
+                    linestyle='--',
+                    linewidth=1,
+                    color=log_colors[log_label]
+                )
+    else:
+        # Multiple species, single fluence
+        f = fluence_list[0]
+        for i, sp in enumerate(species_list):
+            sd = species_data[sp]
+            label = labels[i] if labels else sp
+            color = colors[i % len(colors)]
+
+            # Calculate survival curve
+            S_mean = _survival_curve(t_seconds, f, sd['k1_mean'], sd['k2_mean'], sd['f_mean'])
+
+            # Calculate CI bounds if requested and SEM > 0
+            if show_ci and sd['k1_sem'] > 0:
+                k1_lo = sd['k1_mean'] - 1.96 * sd['k1_sem']
+                k1_hi = sd['k1_mean'] + 1.96 * sd['k1_sem']
+                S_lo = _survival_curve(t_seconds, f, k1_hi, sd['k2_mean'], sd['f_mean'])
+                S_hi = _survival_curve(t_seconds, f, k1_lo, sd['k2_mean'], sd['f_mean'])
+                ax.fill_between(t_display, S_lo, S_hi, alpha=0.2, color=color)
+
+            ax.plot(t_display, S_mean, label=label, color=color, linewidth=2)
+
+    # Set axis labels
+    ax.set_xlabel(f"Time ({time_units})")
+    ax.set_ylabel("Survival fraction")
+
+    # Set axis limits with padding
+    if yrange is not None:
+        ax.set_ylim(yrange)
+    if xrange is not None:
+        ax.set_xlim(xrange)
+    else:
+        # Add padding to x-axis so data doesn't touch edges
+        ax.set_xlim(t_display[0], t_display[-1])
+
+    # Add margins so data doesn't touch plot edges
+    ax.margins(x=0.02, y=0.02)
+
+    ax.grid(True, linestyle='--', alpha=0.7)
+
+    # Position legend - inside plot for single mode, outside for multi
+    if single_mode:
+        ax.legend(loc='best')
+    else:
+        ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1), borderaxespad=0)
+
+    # Generate title if not provided
+    if title is None:
+        title = _generate_survival_title(data, species_list, fluence_list, multi_fluence)
+    ax.set_title(title)
+
+    # Adjust layout to make room for legend
+    fig.tight_layout()
+    if not single_mode:
+        fig.subplots_adjust(right=0.75)
+
+    return fig
+
+
+def _survival_curve(t, irrad, k1, k2, f):
+    """
+    Calculate survival fraction at time t.
+
+    S(t) = (1-f)*exp(-k1*I/1000*t) + f*exp(-k2*I/1000*t)
+
+    Parameters
+    ----------
+    t : array-like
+        Time in seconds.
+    irrad : float
+        Irradiance in µW/cm².
+    k1 : float
+        Primary susceptibility constant in cm²/mJ.
+    k2 : float
+        Secondary susceptibility constant in cm²/mJ.
+    f : float
+        Resistant fraction (0-1).
+
+    Returns
+    -------
+    array-like
+        Survival fraction at each time point.
+    """
+    t = np.asarray(t)
+    return (1 - f) * np.exp(-k1 * irrad / 1000 * t) + f * np.exp(-k2 * irrad / 1000 * t)
+
+
+def _time_to_survival(S_target, irrad, k1, k2, f, tol=1e-10, max_iter=100):
+    """
+    Calculate time to reach target survival fraction.
+
+    Uses bisection method for the two-phase model.
+
+    Parameters
+    ----------
+    S_target : float
+        Target survival fraction (e.g., 0.01 for 99% inactivation).
+    irrad : float
+        Irradiance in µW/cm².
+    k1 : float
+        Primary susceptibility constant.
+    k2 : float
+        Secondary susceptibility constant.
+    f : float
+        Resistant fraction.
+
+    Returns
+    -------
+    float
+        Time in seconds to reach target survival.
+    """
+    if k1 <= 0:
+        return float('inf')
+
+    def S_of_t(t):
+        return (1 - f) * math.exp(-k1 * irrad / 1000 * t) + f * math.exp(-k2 * irrad / 1000 * t)
+
+    # Bracket the root
+    t_low = 0.0
+    t_high = 1.0
+    while S_of_t(t_high) > S_target and t_high < 1e10:
+        t_high *= 2.0
+
+    if t_high >= 1e10:
+        return t_high
+
+    # Bisection
+    for _ in range(max_iter):
+        t_mid = 0.5 * (t_low + t_high)
+        if S_of_t(t_mid) > S_target:
+            t_low = t_mid
+        else:
+            t_high = t_mid
+        if abs(t_high - t_low) < tol:
+            break
+
+    return 0.5 * (t_low + t_high)
+
+
+def _generate_survival_title(data, species_list, fluence_list, multi_fluence):
+    """Generate auto title for survival plot."""
+    # Get wavelength info
+    wv_str = ""
+    if data.wavelength is not None:
+        if isinstance(data.wavelength, (int, float)):
+            wv_str = f"GUV-{int(data.wavelength)}"
+        elif isinstance(data.wavelength, list) and len(data.wavelength) == 1:
+            wv_str = f"GUV-{int(data.wavelength[0])}"
+
+    # Get medium info
+    medium_str = ""
+    if data.medium is not None:
+        if data.medium == "Surface":
+            medium_str = "on Surface"
+        else:
+            medium_str = f"in {data.medium}"
+
+    single_mode = len(species_list) == 1 and len(fluence_list) == 1
+    fluence = fluence_list[0]
+
+    if multi_fluence:
+        # Single species, multiple irradiances
+        species = species_list[0]
+        title = f"Estimated {species} reduction {medium_str}"
+        if wv_str:
+            title += f" by {wv_str}"
+        title += " (95% CI)"
+    elif single_mode:
+        # Single species, single irradiance
+        species = species_list[0]
+        title = f"Estimated {species} reduction {medium_str}"
+        if wv_str:
+            title += f" by {wv_str}"
+        title += f" at {fluence} µW/cm² (95% CI)"
+    else:
+        # Multiple species, single irradiance
+        title = f"Estimated reduction {medium_str}"
+        if wv_str:
+            title += f" by {wv_str}"
+        title += f" at {fluence} µW/cm² (95% CI)"
+
+    return title
