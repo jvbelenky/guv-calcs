@@ -80,8 +80,6 @@ def parse_axis_input(value, time_cols, use_metric_units=True, log_level=None):
     """
     Parse user-friendly axis input to actual column name.
 
-    Parameters
-    ----------
     value : str, int, float, or None
         User input like "each", "log3", "99.9%", 0.999, etc.
     time_cols : dict
@@ -91,8 +89,7 @@ def parse_axis_input(value, time_cols, use_metric_units=True, log_level=None):
     log_level : int, optional
         Default log level for time unit specification (e.g., "minutes" uses this log level).
 
-    Returns
-    -------
+    Returns:
     tuple
         (column_name, resolved_log_level) or (None, None) if not found.
         resolved_log_level is set when the input specified a log level.
@@ -197,20 +194,6 @@ def _auto_select_time_unit(time_cols, log_level):
 def get_compatible_group(col, time_cols):
     """
     Get the compatible column group for a column.
-
-    Columns in the same group are linearly related and can be co-plotted.
-
-    Parameters
-    ----------
-    col : str
-        Column name to check.
-    time_cols : dict
-        Dict mapping log level -> {unit: column_name}.
-
-    Returns
-    -------
-    set
-        Set of column names that are linearly compatible with col.
     """
     # Check rate group (eACH, CADR variants)
     if col in RATE_COLS:
@@ -231,44 +214,8 @@ def get_compatible_group(col, time_cols):
 
 
 def is_time_column(col, time_cols):
-    """
-    Check if a column is a time column.
-
-    Parameters
-    ----------
-    col : str
-        Column name to check.
-    time_cols : dict
-        Dict mapping log level -> {unit: column_name}.
-
-    Returns
-    -------
-    bool
-        True if col is a time column, False otherwise.
-    """
+    """True if col is a time column, False otherwise."""
     for cols in time_cols.values():
         if col in cols.values():
             return True
     return False
-
-
-def get_log_level_for_column(col, time_cols):
-    """
-    Get the log level for a time column.
-
-    Parameters
-    ----------
-    col : str
-        Column name (should be a time column).
-    time_cols : dict
-        Dict mapping log level -> {unit: column_name}.
-
-    Returns
-    -------
-    int or None
-        Log level (1-5) if col is a time column, None otherwise.
-    """
-    for log_level, cols in time_cols.items():
-        if col in cols.values():
-            return log_level
-    return None

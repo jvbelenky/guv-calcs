@@ -550,24 +550,20 @@ class Room:
     
     def disinfection_table(self, zone_id="WholeRoomFluence", **kwargs):
         """Return a table of expected disinfection rates"""
-        return self.get_efficacy_data(zone_id, **kwargs).df
+        return self.get_efficacy_data(zone_id, **kwargs).display_df
     
     def disinfection_plot(self, zone_id="WholeRoomFluence", category=None, **kwargs):
         """a violin plot of expected disinfection rates for all available species"""                
         data = self.get_efficacy_data(zone_id, category=category)
-        return data.plot(air_changes=self.air_changes, **kwargs)
+        return data.plot_swarm(air_changes=self.air_changes, **kwargs)
 
     def survival_plot(self, zone_id="WholeRoomFluence", species=None, **kwargs):
         """
         Plot survival fraction over time for pathogens in a calculation zone.
         """
         data = self.get_efficacy_data(zone_id)
-        return data.plot_survival(fluence=total_fluence, species=species, **kwargs)
-
-    def plotly(self, fig=None, select_id=None, title=""):
-        """return a plotly figure of all the room's components"""
-        return self._plotter.plotly(fig=fig, select_id=select_id, title=title)
+        return data.plot_survival(species=species, **kwargs)
 
     def plot(self, fig=None, select_id=None, title=""):
-        """alias for plotly"""
+        """return a plotly figure of all the room's components"""
         return self._plotter.plotly(fig=fig, select_id=select_id, title=title)

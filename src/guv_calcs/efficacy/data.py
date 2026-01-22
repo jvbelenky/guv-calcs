@@ -1,5 +1,3 @@
-"""Data class for UV efficacy calculations."""
-
 import warnings
 import pandas as pd
 from itertools import product
@@ -20,8 +18,7 @@ from .constants import (
     BASE_DISPLAY_COLS,
 )
 from .math import eACH_UV, log1, log2, log3, log4, log5
-from .plotting import plot as _plot_func
-from .plotting import plot_survival as _plot_survival_func
+from .plotting import plot_swarm, plot_survival
 from .utils import auto_select_time_columns
 
 pd.options.mode.chained_assignment = None
@@ -179,13 +176,16 @@ class Data:
         """Return filtered DataFrame with context-appropriate columns."""
         return self.display_df
 
-    def plot(self, **kwargs):
+    def plot_swarm(self, **kwargs):
         """Plot inactivation data. See plotting.plot for full documentation."""
-        return _plot_func(self, **kwargs)
+        return plot_swarm(self, **kwargs)
 
     def plot_survival(self, **kwargs):
         """Plot survival fraction over time. See plotting.plot_survival for full documentation."""
-        return _plot_survival_func(self, **kwargs)
+        # Only use data's fluence if not explicitly provided
+        if 'fluence' not in kwargs and self.fluence is not None:
+            kwargs['fluence'] = self.fluence
+        return plot_survival(self, **kwargs)
 
     def save(self, filepath: str, **kwargs) -> None:
         """
@@ -204,11 +204,6 @@ class Data:
         df = self._apply_wavelength_filter(df)
         df = self._select_display_columns(df)
         return df.sort_values(COL_SPECIES)
-
-    @property
-    def df(self) -> pd.DataFrame:
-        """Alias for display_df (for backwards compatibility)."""
-        return self.display_df
 
     @property
     def base_df(self) -> pd.DataFrame:
@@ -312,6 +307,22 @@ class Data:
     # =========================================================================
 
     @staticmethod
+    def _extract_kinetic_params(row):
+        """
+        Extract k1, k2, f kinetic parameters from a dataframe row.
+
+        Returns dict with k1, k2, f values (handling NaN and % parsing).
+        """
+        k1 = row[COL_K1] if pd.notna(row[COL_K1]) else 0.0
+        k2 = row[COL_K2] if pd.notna(row[COL_K2]) else 0.0
+        f = (
+            float(row[COL_RESISTANT].rstrip("%")) / 100
+            if pd.notna(row[COL_RESISTANT])
+            else 0.0
+        )
+        return {"k1": k1, "k2": k2, "f": f}
+
+    @staticmethod
     def _compute_row(row, fluence_arg, function, sigfigs=1, **kwargs):
         """
         Apply a function to a single row of the disinfection table.
@@ -325,14 +336,8 @@ class Data:
         elif isinstance(fluence_arg, (float, int)):
             fluence = fluence_arg
 
-        k1 = row[COL_K1] if pd.notna(row[COL_K1]) else 0.0
-        k2 = row[COL_K2] if pd.notna(row[COL_K2]) else 0.0
-        f = (
-            float(row[COL_RESISTANT].rstrip("%")) / 100
-            if pd.notna(row[COL_RESISTANT])
-            else 0.0
-        )
-        return round(function(irrad=fluence, k1=k1, k2=k2, f=f, **kwargs), sigfigs)
+        params = Data._extract_kinetic_params(row)
+        return round(function(irrad=fluence, **params, **kwargs), sigfigs)
 
     @staticmethod
     def _filter_wavelengths(df, fluence_dict):
@@ -434,11 +439,7 @@ class Data:
             for wv in wavelengths:
                 wv_rows = group[group[COL_WAVELENGTH] == wv]
                 data_by_wv[wv] = [
-                    {
-                        "k1": row[COL_K1] if pd.notna(row[COL_K1]) else 0.0,
-                        "k2": row[COL_K2] if pd.notna(row[COL_K2]) else 0.0,
-                        "f": float(row[COL_RESISTANT].rstrip("%")) / 100 if pd.notna(row[COL_RESISTANT]) else 0.0,
-                    }
+                    self._extract_kinetic_params(row)
                     for _, row in wv_rows.iterrows()
                 ]
 
