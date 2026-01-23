@@ -188,23 +188,36 @@ class ReflectanceManager:
         return values
 
 
-class ReflectiveSurface:
+class Surface:
     """
-    Class that represents a single reflective surface defined by a calculation
-    zone and a float value R between 0 and 1.
+    Class that represents a single surface defined by a calculation plane
+    and optical properties R (reflectance) and T (transmittance).
+
+    Constraints:
+        - R and T must each be in [0, 1]
+        - R + T must be <= 1 (the remainder is absorbed)
     """
 
-    def __init__(self, R, plane):
+    def __init__(self, R: float, plane: CalcPlane, T: float = 0.0):
 
         if not isinstance(R, (float, int)):
             raise TypeError("R must be a float in range [0, 1]")
         if R > 1 or R < 0:
             raise ValueError("R must be a float in range [0, 1]")
 
+        if not isinstance(T, (float, int)):
+            raise TypeError("T must be a float in range [0, 1]")
+        if T > 1 or T < 0:
+            raise ValueError("T must be a float in range [0, 1]")
+
+        if R + T > 1:
+            raise ValueError("R + T must be <= 1 (cannot reflect and transmit more than 100%)")
+
         if not isinstance(plane, CalcPlane):
             raise TypeError("plane must be a CalcPlane object")
 
         self.R = R
+        self.T = T
         self.plane = plane
         self.zone_dict: dict[str, SurfaceZoneCache] = {}
 
@@ -216,17 +229,17 @@ class ReflectiveSurface:
         raise AttributeError
 
     def __eq__(self, other):
-        if not isinstance(other, ReflectiveSurface):
+        if not isinstance(other, Surface):
             return NotImplemented
-        return self.R == other.R and self.plane.to_dict() == other.plane.to_dict()
+        return self.R == other.R and self.T == other.T and self.plane.to_dict() == other.plane.to_dict()
 
     def __repr__(self):
         return (
-            f"ReflectiveSurface(id={self.plane.zone_id}, "
-            f"R={self.R:.3g}, "
+            f"Surface(id={self.plane.zone_id}, "
+            f"R={self.R:.3g}, T={self.T:.3g}, "
             f"geometry={self.plane.geometry.__repr__()})"
         )
-        
+
     @property
     def id(self) -> str:
         return self.plane.zone_id
@@ -235,14 +248,15 @@ class ReflectiveSurface:
         self.plane._assign_id(value)
 
     def to_dict(self):
-        return {"R": self.R, "plane": self.plane.to_dict()}
+        return {"R": self.R, "T": self.T, "plane": self.plane.to_dict()}
 
     @classmethod
     def from_dict(cls, data):
         plane_data = data.get("plane", {})
         plane = CalcPlane.from_dict(plane_data)
         R = data.get("R", 0.0)
-        return cls(R=R, plane=plane)
+        T = data.get("T", 0.0)
+        return cls(R=R, T=T, plane=plane)
 
     @property
     def calc_state(self):
@@ -258,7 +272,16 @@ class ReflectiveSurface:
     def set_reflectance(self, R: float):
         if not (0 <= R <= 1):
             raise ValueError("R must be in [0, 1]")
+        if R + self.T > 1:
+            raise ValueError("R + T must be <= 1")
         self.R = float(R)
+
+    def set_transmittance(self, T: float):
+        if not (0 <= T <= 1):
+            raise ValueError("T must be in [0, 1]")
+        if self.R + T > 1:
+            raise ValueError("R + T must be <= 1")
+        self.T = float(T)
 
     def set_spacing(self, x_spacing=None, y_spacing=None):
         self.plane.set_spacing(x_spacing=x_spacing, y_spacing=y_spacing)
@@ -450,5 +473,5 @@ def init_room_surfaces(
             num_points=(num_x[wall], num_y[wall]),
             horiz=True,
         )
-        surfaces[wall] = ReflectiveSurface(R=reflectance, plane=plane)
+        surfaces[wall] = Surface(R=reflectance, plane=plane)
     return surfaces

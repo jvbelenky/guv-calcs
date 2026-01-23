@@ -5,7 +5,7 @@ from typing import Generic, TypeVar, Optional, Dict, Callable
 from .room_dims import RoomDimensions
 from .lamp import Lamp
 from .calc_zone import CalcZone, CalcPlane, CalcVol
-from .reflectance import ReflectiveSurface
+from .reflectance import Surface
 import warnings
 
 # from .filters import FilterBase
@@ -183,12 +183,12 @@ class ZoneRegistry(Registry["CalcZone"]):
 
 
 @dataclass
-class SurfaceRegistry(Registry["ReflectiveSurface"]):
+class SurfaceRegistry(Registry["Surface"]):
     base_id = "Surface"
 
     def _validate(self, surface):
-        if not isinstance(surface, ReflectiveSurface):
-            raise TypeError(f"Must be ReflectiveSurface, not {type(surface)}")
+        if not isinstance(surface, Surface):
+            raise TypeError(f"Must be Surface, not {type(surface)}")
         return surface
 
     def check_position(self, surface) -> str:

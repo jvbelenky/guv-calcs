@@ -6,7 +6,7 @@ from .lamp import Lamp
 from .calc_zone import CalcZone, CalcPlane, CalcVol
 from .filters import FilterBase
 from .obstacles import BoxObstacle
-from .reflectance import ReflectiveSurface, init_room_surfaces
+from .reflectance import Surface, init_room_surfaces
 from .lamp_helpers import new_lamp_position, new_lamp_position_perimeter
 from .safety import PhotStandard
 from .scene_registry import LampRegistry, ZoneRegistry, SurfaceRegistry
@@ -34,8 +34,7 @@ class Scene:
             dims=lambda: self.dim,
             on_collision=on_collision,
         )
-        # to be replaced by a more general Surface - perhaps populated entirely by Obstacles
-        # self.surfaces: dict[str, ReflectiveSurface] = {}
+        # self.surfaces: dict[str, Surface] = {}
         self.surfaces = SurfaceRegistry(
             dims=lambda: self.dim,
             on_collision=on_collision,
@@ -65,7 +64,7 @@ class Scene:
                 self.add_filter(obj, on_collision=on_collision)
             elif isinstance(obj, BoxObstacle):
                 self.add_obstacle(obj, on_collision=on_collision)
-            elif isinstance(obj, ReflectiveSurface):
+            elif isinstance(obj, Surface):
                 self.add_surface(obj, on_collision=on_collision)
             elif isinstance(obj, dict):
                 self.add(*obj.values(), on_collision=on_collision)

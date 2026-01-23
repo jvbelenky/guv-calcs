@@ -5,7 +5,7 @@ from .lamp import Lamp
 from .calc_zone import CalcPlane, CalcVol
 from .room_plotter import RoomPlotter
 from .room_dims import RoomDimensions
-from .reflectance import ReflectanceManager, ReflectiveSurface
+from .reflectance import ReflectanceManager, Surface
 from .scene import Scene
 from .io import load_room_data, save_room_data, export_room_zip, generate_report
 from .safety import PhotStandard
@@ -166,7 +166,7 @@ class Room:
         room = cls(**{k: v for k, v in data.items() if k in room_kwargs})
 
         for surface_id, surface in data.get("surfaces", {}).items():
-            surf = ReflectiveSurface.from_dict(surface)
+            surf = Surface.from_dict(surface)
             room.add_surface(surf, on_collision="overwrite")
 
         for lampid, lamp in data.get("lamps", {}).items():
