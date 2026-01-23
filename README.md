@@ -34,3 +34,4 @@ Distributed under the MIT License. See `LICENSE.txt` for more information.
 Vivian Belenky - jvb@osluv.org
 
 Project Link: [https://github.com/jvbelenky/guv-calcs/](https://github.com/jvbelenky/guv-calcs/)
+
