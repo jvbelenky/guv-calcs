@@ -1,5 +1,7 @@
 import warnings
 import math
+import re
+import textwrap
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
@@ -209,12 +211,10 @@ def plot_swarm(data, title=None, figsize=None, air_changes=None, mode="default",
             transform=ax1.get_yaxis_transform(),
         )
 
-    # Set title
+    # Set title (wrap to figure width)
     final_title = title or _generate_title(data, left_label, right_label, use_time_mode, effective_log)
-    if "\n" in final_title:
-        fig.suptitle(final_title)
-    else:
-        ax1.set_title(final_title)
+    final_title = _wrap_title(final_title, fig)
+    fig.suptitle(final_title)
 
     # Add category separators if category is not filtered
     if has_category:
@@ -466,74 +466,190 @@ def _configure_hue_style(df, data):
 
 def _generate_title(data, left_label, right_label, use_time_mode, log_level):
     """Generate plot title based on data state and plot mode."""
-    # Use generic "Time to X% inactivation" for time mode
+    # Determine stem based on mode
     if use_time_mode:
-        title = f"Time to {LOG_LABELS.get(log_level, '99%')} inactivation"
+        stem = f"Time to {LOG_LABELS.get(log_level, '99%')} inactivation"
     elif "k1" in left_label:
-        # Check if no filters applied
         no_filters = (data.medium is None and data.category is None
                      and data.wavelength is None and data.fluence is None)
-        if no_filters:
-            title = "UVC susceptibility constants for all data"
-        else:
-            title = "UVC susceptibility constants"
+        stem = "UVC susceptibility constants for all data" if no_filters else "UVC susceptibility constants"
     else:
-        title = left_label
+        stem = left_label
         if right_label is not None:
-            title += "/" + right_label
+            stem += "/" + right_label
 
-    # Add wavelength context
-    # Multi-wavelength fluence dict: use fluence keys (plot uses combined_df)
-    is_multiwavelength = isinstance(data._fluence, dict) and len(data._fluence) > 1
-    if is_multiwavelength:
-        guv_types = ", ".join(["GUV-" + str(int(wv)) for wv in data._fluence.keys()])
-        title += f" from {guv_types}"
-    elif data.wavelength is not None:
-        if isinstance(data.wavelength, (int, float)):
-            if data.fluence is not None:
-                title += f" from GUV-{int(data.wavelength)}"
-            else:
-                title += f" at {int(data.wavelength)} nm"
-        elif isinstance(data.wavelength, list):
-            if data.fluence is not None:
-                guv_str = ", ".join(f"GUV-{int(w)}" for w in data.wavelength)
-                title += f" from {guv_str}"
-            else:
-                wv_str = ", ".join(str(int(w)) for w in data.wavelength)
-                title += f" at {wv_str} nm"
-        elif isinstance(data.wavelength, tuple):
-            if data.fluence is not None:
-                title += f" from GUV-{int(data.wavelength[0])}-{int(data.wavelength[1])}"
-            else:
-                title += f" at {int(data.wavelength[0])}-{int(data.wavelength[1])} nm"
-
-    # Add medium ("in Medium" or "on Surface") and/or category
-    if data.medium is not None:
-        if isinstance(data.medium, list):
-            title += f" in {', '.join(data.medium)}"
-        elif data.medium == "Surface":
-            title += " on Surface"
-        else:
-            title += f" in {data.medium}"
-    if data.category is not None:
-        # Always use "for" with categories
-        cat_str = ', '.join(data.category) if isinstance(data.category, list) else data.category
-        title += f" for {cat_str}"
-
+    # Determine fluence value (extract from dict if needed)
+    fluence = None
     if data.fluence is not None:
-        # Use "irradiance" for Surface, "average fluence rate" for Aerosol/Liquid
-        rate_term = "irradiance" if data.medium == "Surface" else "average fluence rate"
         if isinstance(data.fluence, dict):
-            if len(data.fluence) > 1:
-                f = [round(val, 2) for val in data.fluence.values()]
-                title += f"\nwith {rate_term}s: {f} µW/cm²"
+            if len(data.fluence) == 1:
+                fluence = list(data.fluence.values())[0]
             else:
-                # Single-wavelength dict - extract the value
-                val = list(data.fluence.values())[0]
-                title += f"\nwith {rate_term} {round(val, 2)} µW/cm²"
+                fluence = sum(data.fluence.values())  # Total for display
         else:
-            title += f"\nwith {rate_term} {round(data.fluence, 2)} µW/cm²"
-    return title
+            fluence = data.fluence
+
+    return _build_title(
+        data,
+        stem,
+        fluence=fluence,
+        fluence_dict=data._fluence if isinstance(data._fluence, dict) else None,
+        category=data.category,
+    )
+
+
+def _get_wavelength_str(data, fluence_dict=None):
+    """
+    Get wavelength string like 'GUV-222' or 'GUV-222, GUV-254'.
+
+    Parameters
+    ----------
+    data : Data
+        Data instance for wavelength info.
+    fluence_dict : dict, optional
+        Multi-wavelength fluence dict (for wavelength extraction).
+
+    Returns
+    -------
+    str
+        Formatted wavelength string, or empty string if no wavelength info.
+    """
+    # Multi-wavelength from explicit dict
+    if fluence_dict and len(fluence_dict) > 1:
+        return ", ".join(f"GUV-{int(wv)}" for wv in fluence_dict.keys())
+
+    # Multi-wavelength from data
+    if isinstance(data._fluence, dict) and len(data._fluence) > 1:
+        return ", ".join(f"GUV-{int(wv)}" for wv in data._fluence.keys())
+
+    # Single wavelength
+    if data.wavelength is not None:
+        if isinstance(data.wavelength, (int, float)):
+            return f"GUV-{int(data.wavelength)}"
+        elif isinstance(data.wavelength, list) and len(data.wavelength) == 1:
+            return f"GUV-{int(data.wavelength[0])}"
+
+    return ""
+
+
+def _build_title(data, stem, fluence=None, fluence_dict=None, suffix="", fluence_label="at", category=None):
+    """
+    Build plot title with pattern:
+    - Single wavelength: {stem} {medium} by {wavelength} {fluence_label} {fluence} {category} {suffix}
+    - Multi-wavelength: {stem} {medium} by {wavelengths}\\nwith {rate_term} {fluences} {category} {suffix}
+
+    Parameters
+    ----------
+    data : Data
+        Data instance for medium/wavelength info.
+    stem : str
+        Title stem, e.g. "Estimated reduction" or "eACH-UV".
+    fluence : float, optional
+        Fluence value to display (for single-wavelength).
+    fluence_dict : dict, optional
+        Multi-wavelength fluence dict {wavelength: fluence}.
+    suffix : str, optional
+        Suffix like "(95% CI)".
+    fluence_label : str, optional
+        Word before fluence for single-wavelength, e.g. "at".
+    category : str or list, optional
+        Category filter to display (e.g. "Bacteria", ["Bacteria", "Viruses"]).
+
+    Returns
+    -------
+    str
+        Formatted title string.
+    """
+    parts = [stem]
+
+    # Medium: "in Aerosol" or "on Surface"
+    if data.medium:
+        if isinstance(data.medium, list):
+            parts.append(f"in {', '.join(data.medium)}")
+        elif data.medium == "Surface":
+            parts.append("on Surface")
+        else:
+            parts.append(f"in {data.medium}")
+
+    # Check if multi-wavelength
+    is_multi_wavelength = (
+        (fluence_dict and len(fluence_dict) > 1) or
+        (isinstance(data._fluence, dict) and len(data._fluence) > 1)
+    )
+
+    # Wavelength: "by GUV-222" or "by GUV-222, GUV-254"
+    wv_str = _get_wavelength_str(data, fluence_dict)
+    if wv_str:
+        parts.append(f"by {wv_str}")
+
+    # Fluence handling
+    if is_multi_wavelength:
+        # Multi-wavelength: newline then "with fluence rates [5, 3] µW/cm²"
+        fd = fluence_dict if fluence_dict else data._fluence
+        fluence_values = [round(v, 2) for v in fd.values()]
+        rate_term = "irradiances" if data.medium == "Surface" else "fluence rates"
+        # Join first part, then add newline, then fluence + rest
+        first_line = " ".join(parts)
+        second_line_parts = [f"with {rate_term} {fluence_values} µW/cm²"]
+        if category is not None:
+            cat_str = ', '.join(category) if isinstance(category, list) else category
+            second_line_parts.append(f"for {cat_str}")
+        if suffix:
+            second_line_parts.append(suffix)
+        return first_line + "\n" + " ".join(second_line_parts)
+    else:
+        # Single wavelength
+        if fluence is not None:
+            parts.append(f"{fluence_label} {round(fluence, 2)} µW/cm²")
+
+        # Category: "for Bacteria"
+        if category is not None:
+            cat_str = ', '.join(category) if isinstance(category, list) else category
+            parts.append(f"for {cat_str}")
+
+        # Suffix: "(95% CI)"
+        if suffix:
+            parts.append(suffix)
+
+        return " ".join(parts)
+
+
+def _wrap_title(title, fig, chars_per_inch=12):
+    """
+    Wrap title text to fit the figure width.
+
+    Parameters
+    ----------
+    title : str
+        The title string to wrap.
+    fig : matplotlib.figure.Figure
+        The figure to fit the title to.
+    chars_per_inch : float, optional
+        Approximate characters per inch at default font size. Default is 12.
+
+    Returns
+    -------
+    str
+        Title with newlines inserted for wrapping.
+    """
+    fig_width = fig.get_figwidth()
+    wrap_width = int(fig_width * chars_per_inch)
+
+    # Split on existing newlines first, then wrap each line separately
+    result_lines = []
+    for line in title.split('\n'):
+        # Replace spaces within parentheses/brackets with non-breaking spaces to keep units together
+        protected = re.sub(r'[\(\[]([^\)\]]+)[\)\]]',
+                          lambda m: m.group(0)[0] + m.group(1).replace(' ', '\xa0') + m.group(0)[-1],
+                          line)
+
+        # Wrap the line
+        wrapped = textwrap.wrap(protected, width=wrap_width, break_on_hyphens=False)
+
+        # Restore regular spaces and add to result
+        result_lines.extend(w.replace('\xa0', ' ') for w in wrapped)
+
+    return "\n".join(result_lines)
 
 
 def _add_category_separators(ax, fig, df, species_order):
@@ -642,7 +758,7 @@ def plot_survival(
     xrange=None,
     yrange=(0, 1),
     figsize=(6.4, 4.8),
-    show_ci=True,
+    show_ci=None,
 ):
     """
     Plot survival fraction over time with optional 95% CI bands.
@@ -672,7 +788,8 @@ def plot_survival(
     figsize : tuple, optional
         Figure size (width, height). Default is (6.4, 4.8).
     show_ci : bool, optional
-        Whether to show 95% CI bands. Default is True.
+        Whether to show 95% CI bands. If None (default), auto-determined based
+        on number of species: enabled for ≤4 species, disabled for >4.
 
     Returns
     -------
@@ -842,6 +959,10 @@ def plot_survival(
     if len(species_list) == 0:
         raise ValueError("No species with valid k1 data found.")
 
+    # Auto-determine show_ci if not explicitly set
+    if show_ci is None:
+        show_ci = len(species_list) <= 4
+
     # Determine number of curves and labels
     if multi_fluence:
         n_curves = len(fluence_list)
@@ -971,9 +1092,12 @@ def plot_survival(
         ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1), borderaxespad=0)
 
     # Generate title if not provided
+    # Set title (wrap to figure width)
     if title is None:
         title = _generate_survival_title(data, species_list, fluence_list, multi_fluence,
-                                         multi_wavelength, fluence_dict if multi_wavelength else None)
+                                         multi_wavelength, fluence_dict if multi_wavelength else None,
+                                         show_ci=show_ci)
+    title = _wrap_title(title, fig)
     ax.set_title(title)
 
     # Adjust layout to make room for legend
@@ -1038,55 +1162,33 @@ def _plot_survival_with_ci(ax, t_seconds, t_display, fluence, species_data, show
 
 
 def _generate_survival_title(data, species_list, fluence_list, multi_fluence,
-                              multi_wavelength=False, fluence_dict=None):
+                              multi_wavelength=False, fluence_dict=None, show_ci=True):
     """Generate auto title for survival plot."""
-    # Get wavelength info
-    wv_str = ""
-    if multi_wavelength and fluence_dict:
-        # Multi-wavelength: show all wavelengths
-        wv_strs = [f"GUV-{int(wv)}" for wv in fluence_dict.keys()]
-        wv_str = " + ".join(wv_strs)
-    elif data.wavelength is not None:
-        if isinstance(data.wavelength, (int, float)):
-            wv_str = f"GUV-{int(data.wavelength)}"
-        elif isinstance(data.wavelength, list) and len(data.wavelength) == 1:
-            wv_str = f"GUV-{int(data.wavelength[0])}"
-
-    # Get medium info
-    medium_str = ""
-    if data.medium is not None:
-        if data.medium == "Surface":
-            medium_str = "on Surface"
-        else:
-            medium_str = f"in {data.medium}"
-
     single_mode = len(species_list) == 1 and not multi_fluence
+
+    # Determine the stem based on mode
+    if single_mode or multi_fluence:
+        species = species_list[0]
+        stem = f"Estimated {species} reduction"
+    else:
+        stem = "Estimated reduction"
 
     # For multi-wavelength, show total fluence
     if multi_wavelength and fluence_dict:
-        total_fluence = round(sum(fluence_dict.values()), 2)
+        total_fluence = sum(fluence_dict.values())
     else:
-        total_fluence = round(fluence_list[0], 2)
+        total_fluence = fluence_list[0]
 
-    if multi_fluence:
-        # Single species, multiple irradiances
-        species = species_list[0]
-        title = f"Estimated {species} reduction {medium_str}"
-        if wv_str:
-            title += f" by {wv_str}"
-        title += " (95% CI)"
-    elif single_mode:
-        # Single species, single irradiance (or multi-wavelength)
-        species = species_list[0]
-        title = f"Estimated {species} reduction {medium_str}"
-        if wv_str:
-            title += f" by {wv_str}"
-        title += f" at {total_fluence} µW/cm² (95% CI)"
-    else:
-        # Multiple species, single irradiance
-        title = f"Estimated reduction {medium_str}"
-        if wv_str:
-            title += f" by {wv_str}"
-        title += f" at {total_fluence} µW/cm² (95% CI)"
+    # multi_fluence mode: no fluence in title (multiple curves show different fluences)
+    fluence_value = None if multi_fluence else total_fluence
 
-    return title
+    # Only include CI suffix if CI bands are shown
+    suffix = "(95% CI)" if show_ci else ""
+
+    return _build_title(
+        data,
+        stem,
+        fluence=fluence_value,
+        fluence_dict=fluence_dict,
+        suffix=suffix
+    )

@@ -176,7 +176,7 @@ class Data:
         """Return filtered DataFrame with context-appropriate columns."""
         return self.display_df
 
-    def plot_swarm(self, **kwargs):
+    def plot(self, **kwargs):
         """Plot inactivation data. See plotting.plot for full documentation."""
         return plot_swarm(self, **kwargs)
 
