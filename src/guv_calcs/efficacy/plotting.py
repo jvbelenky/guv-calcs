@@ -18,6 +18,7 @@ from .constants import (
     COL_EACH,
     COL_CADR_LPS,
     COL_CADR_CFM,
+    TIME_UNIT_ALIASES,
 )
 from .utils import (
     auto_select_time_columns,
@@ -27,13 +28,14 @@ from .utils import (
     get_compatible_group,
     is_time_column,
 )
+from .math import seconds_to_S
 
 
 # =============================================================================
 # Main plot function
 # =============================================================================
 
-def plot(data, title=None, figsize=None, air_changes=None, mode="default", log=2,
+def plot_swarm(data, title=None, figsize=None, air_changes=None, mode="default", log=2,
          yscale="auto", left_axis=None, right_axis=None, time_units=None):
     """
     Plot inactivation data for all species as a violin and scatter plot.
@@ -693,15 +695,31 @@ def plot_survival(
     if fluence is None:
         if data._fluence is None:
             raise ValueError("fluence must be provided either to Data() or to plot_survival()")
-        if isinstance(data._fluence, dict):
-            raise ValueError("plot_survival requires a single fluence value, not a dict")
         fluence = data._fluence
 
-    # Normalize fluence to list
-    fluence_list = [fluence] if isinstance(fluence, (int, float)) else list(fluence)
-    multi_fluence = len(fluence_list) > 1
+    # Determine if multi-wavelength mode (dict fluence with multiple wavelengths)
+    multi_wavelength = isinstance(fluence, dict) and len(fluence) > 1
 
-    # Validate: species is required when fluence is a list
+    # Handle dict fluence - extract single value or keep as dict for multi-wavelength
+    if isinstance(fluence, dict):
+        if len(fluence) == 1:
+            fluence = list(fluence.values())[0]
+        # else: keep as dict for multi-wavelength processing
+
+    # For multi-wavelength, fluence_list is used differently
+    if multi_wavelength:
+        fluence_dict = fluence
+        wavelengths = list(fluence_dict.keys())
+        fluence_list = [sum(fluence_dict.values())]  # Total fluence for display
+        multi_fluence = False
+    else:
+        fluence_dict = None
+        wavelengths = None
+        # Normalize fluence to list
+        fluence_list = [fluence] if isinstance(fluence, (int, float)) else list(fluence)
+        multi_fluence = len(fluence_list) > 1
+
+    # Validate: species is required when fluence is a list (multiple single-wavelength fluences)
     if multi_fluence and species is None:
         raise ValueError(
             "species must be specified when fluence is a list. "
@@ -709,12 +727,26 @@ def plot_survival(
         )
 
     # Build the plot dataframe
-    df = _build_plot_df(data)
+    # For multi-wavelength, use combined_full_df which pre-filters to species with data at all wavelengths
+    if multi_wavelength:
+        if data.combined_full_df is not None:
+            # Use combined_full_df for species list (already filtered)
+            combined_df = data._apply_row_filters(data.combined_full_df.copy())
+        else:
+            combined_df = None
+        # Also get full df for k-value extraction per wavelength
+        df = data._apply_row_filters(data._full_df.copy())
+    else:
+        df = _build_plot_df(data)
+        combined_df = None
 
     # Normalize species to list
     if species is None:
-        # Use all available species from filtered data
-        species_list = list(df[COL_SPECIES].unique())
+        if multi_wavelength and combined_df is not None:
+            # Use species from combined_df (already filtered to those with data at all wavelengths)
+            species_list = list(combined_df[COL_SPECIES].unique())
+        else:
+            species_list = list(df[COL_SPECIES].unique())
         if len(species_list) == 0:
             raise ValueError("No species found in filtered data")
     elif isinstance(species, str):
@@ -735,28 +767,74 @@ def plot_survival(
     if len(df) == 0:
         raise ValueError(f"No data found for species: {species_list}")
 
-    # Get k1, k2, f values for each species, skipping those without data
+    # Get k1, k2, f values for each species
     species_data = {}
     skipped_species = []
+
     for sp in species_list:
         sp_df = df[df[COL_SPECIES] == sp]
-        k1_vals = sp_df[COL_K1].dropna().values
-        k2_vals = sp_df[COL_K2].fillna(0).values if COL_K2 in sp_df.columns else np.zeros(len(k1_vals))
-        f_vals = sp_df[COL_RESISTANT].apply(
-            lambda x: float(x.rstrip('%')) / 100 if isinstance(x, str) and x.strip() else 0.0
-        ).values if COL_RESISTANT in sp_df.columns else np.zeros(len(k1_vals))
 
-        if len(k1_vals) == 0:
-            skipped_species.append(sp)
-            warnings.warn(f"No k1 values found for species '{sp}', skipping.", stacklevel=2)
-            continue
+        if multi_wavelength:
+            # Multi-wavelength: get k values per wavelength
+            irrad_list = []
+            k1_list = []
+            k2_list = []
+            f_list = []
+            k1_sem_list = []
 
-        species_data[sp] = {
-            'k1_mean': np.mean(k1_vals),
-            'k1_sem': np.std(k1_vals, ddof=1) / np.sqrt(len(k1_vals)) if len(k1_vals) > 1 else 0,
-            'k2_mean': np.mean(k2_vals),
-            'f_mean': np.mean(f_vals),
-        }
+            missing_wv = False
+            for wv in wavelengths:
+                wv_df = sp_df[sp_df[COL_WAVELENGTH] == wv]
+                k1_vals = wv_df[COL_K1].dropna().values
+
+                if len(k1_vals) == 0:
+                    missing_wv = True
+                    break
+
+                k2_vals = wv_df[COL_K2].fillna(0).values if COL_K2 in wv_df.columns else np.zeros(len(k1_vals))
+                f_vals = wv_df[COL_RESISTANT].apply(
+                    lambda x: float(x.rstrip('%')) / 100 if isinstance(x, str) and x.strip() else 0.0
+                ).values if COL_RESISTANT in wv_df.columns else np.zeros(len(k1_vals))
+
+                irrad_list.append(fluence_dict[wv])
+                k1_list.append(np.mean(k1_vals))
+                k2_list.append(np.mean(k2_vals))
+                f_list.append(np.mean(f_vals))
+                k1_sem_list.append(np.std(k1_vals, ddof=1) / np.sqrt(len(k1_vals)) if len(k1_vals) > 1 else 0)
+
+            if missing_wv:
+                skipped_species.append(sp)
+                warnings.warn(f"Species '{sp}' missing data for one or more wavelengths, skipping.", stacklevel=2)
+                continue
+
+            species_data[sp] = {
+                'irrad_list': irrad_list,
+                'k1_list': k1_list,
+                'k2_list': k2_list,
+                'f_list': f_list,
+                'k1_sem_list': k1_sem_list,
+                'multi_wavelength': True,
+            }
+        else:
+            # Single wavelength: get mean k values
+            k1_vals = sp_df[COL_K1].dropna().values
+            k2_vals = sp_df[COL_K2].fillna(0).values if COL_K2 in sp_df.columns else np.zeros(len(k1_vals))
+            f_vals = sp_df[COL_RESISTANT].apply(
+                lambda x: float(x.rstrip('%')) / 100 if isinstance(x, str) and x.strip() else 0.0
+            ).values if COL_RESISTANT in sp_df.columns else np.zeros(len(k1_vals))
+
+            if len(k1_vals) == 0:
+                skipped_species.append(sp)
+                warnings.warn(f"No k1 values found for species '{sp}', skipping.", stacklevel=2)
+                continue
+
+            species_data[sp] = {
+                'k1_mean': np.mean(k1_vals),
+                'k1_sem': np.std(k1_vals, ddof=1) / np.sqrt(len(k1_vals)) if len(k1_vals) > 1 else 0,
+                'k2_mean': np.mean(k2_vals),
+                'f_mean': np.mean(f_vals),
+                'multi_wavelength': False,
+            }
 
     # Update species_list to only include those with data
     species_list = [sp for sp in species_list if sp in species_data]
@@ -780,15 +858,19 @@ def plot_survival(
     # Calculate time range for plotting
     # For single mode, extend to 99.9% to show all inactivation lines
     # For multi mode, use 99% as before
-    single_mode = len(species_list) == 1 and len(fluence_list) == 1
+    single_mode = len(species_list) == 1 and not multi_fluence
     target_survival = 0.001 if single_mode else 0.01
 
     max_time = 0
     for sp in species_list:
         sd = species_data[sp]
-        for f in fluence_list:
-            t_target = _time_to_survival(target_survival, f, sd['k1_mean'], sd['k2_mean'], sd['f_mean'])
+        if sd['multi_wavelength']:
+            t_target = seconds_to_S(target_survival, sd['irrad_list'], sd['k1_list'], sd['k2_list'], sd['f_list'])
             max_time = max(max_time, t_target)
+        else:
+            for f in fluence_list:
+                t_target = seconds_to_S(target_survival, f, sd['k1_mean'], sd['k2_mean'], sd['f_mean'])
+                max_time = max(max_time, t_target)
 
     # Auto-select time units based on max_time (in seconds)
     if time_units is None:
@@ -800,8 +882,7 @@ def plot_survival(
             time_units = 'hours'
 
     # Normalize time units
-    time_unit_map = {'sec': 'seconds', 's': 'seconds', 'min': 'minutes', 'm': 'minutes', 'hr': 'hours', 'h': 'hours'}
-    time_units = time_unit_map.get(time_units.lower(), time_units.lower())
+    time_units = TIME_UNIT_ALIASES.get(time_units.lower(), time_units.lower())
 
     # Time divisor for conversion
     time_divisors = {'seconds': 1, 'minutes': 60, 'hours': 3600}
@@ -818,8 +899,8 @@ def plot_survival(
 
     fig, ax = plt.subplots(figsize=figsize)
 
-    # Color palette
-    colors = plt.cm.tab10.colors
+    # Color palette - use tab20 for more colors, supports up to 20 curves
+    colors = plt.cm.tab20.colors
 
     # Plot each curve
     if multi_fluence:
@@ -829,45 +910,23 @@ def plot_survival(
         for i, f in enumerate(fluence_list):
             label = labels[i] if labels else f"{f} µW/cm²"
             color = colors[i % len(colors)]
-
-            # Calculate survival curve
-            S_mean = _survival_curve(t_seconds, f, sd['k1_mean'], sd['k2_mean'], sd['f_mean'])
-
-            # Calculate CI bounds if requested and SEM > 0
-            if show_ci and sd['k1_sem'] > 0:
-                k1_lo = sd['k1_mean'] - 1.96 * sd['k1_sem']
-                k1_hi = sd['k1_mean'] + 1.96 * sd['k1_sem']
-                S_lo = _survival_curve(t_seconds, f, k1_hi, sd['k2_mean'], sd['f_mean'])  # Higher k1 = faster decay = lower S
-                S_hi = _survival_curve(t_seconds, f, k1_lo, sd['k2_mean'], sd['f_mean'])  # Lower k1 = slower decay = higher S
-                ax.fill_between(t_display, S_lo, S_hi, alpha=0.2, color=color)
-
-            ax.plot(t_display, S_mean, label=label, color=color, linewidth=2)
+            _plot_survival_with_ci(ax, t_seconds, t_display, f, sd, show_ci, label, color)
     elif single_mode:
         # Single species, single fluence - special mode with inactivation lines
         sp = species_list[0]
         sd = species_data[sp]
         f = fluence_list[0]
-
-        # Calculate survival curve
-        S_mean = _survival_curve(t_seconds, f, sd['k1_mean'], sd['k2_mean'], sd['f_mean'])
-
-        # Calculate CI bounds if requested and SEM > 0
-        if show_ci and sd['k1_sem'] > 0:
-            k1_lo = sd['k1_mean'] - 1.96 * sd['k1_sem']
-            k1_hi = sd['k1_mean'] + 1.96 * sd['k1_sem']
-            S_lo = _survival_curve(t_seconds, f, k1_hi, sd['k2_mean'], sd['f_mean'])
-            S_hi = _survival_curve(t_seconds, f, k1_lo, sd['k2_mean'], sd['f_mean'])
-            ax.fill_between(t_display, S_lo, S_hi, alpha=0.2, color='black')
-
-        # Plot curve in black
-        ax.plot(t_display, S_mean, color='black', linewidth=2)
+        _plot_survival_with_ci(ax, t_seconds, t_display, f, sd, show_ci, label=None, color='black')
 
         # Calculate times to log reductions and add vertical lines
         log_colors = {'90%': 'blue', '99%': 'green', '99.9%': 'orange'}
         log_targets = {'90%': 0.1, '99%': 0.01, '99.9%': 0.001}
 
         for log_label, target in log_targets.items():
-            t_log = _time_to_survival(target, f, sd['k1_mean'], sd['k2_mean'], sd['f_mean'])
+            if sd.get('multi_wavelength', False):
+                t_log = seconds_to_S(target, sd['irrad_list'], sd['k1_list'], sd['k2_list'], sd['f_list'])
+            else:
+                t_log = seconds_to_S(target, f, sd['k1_mean'], sd['k2_mean'], sd['f_mean'])
             t_log_display = t_log / time_div
             # Only draw line if it's within the plot range
             if t_log_display <= t_display[-1]:
@@ -885,19 +944,7 @@ def plot_survival(
             sd = species_data[sp]
             label = labels[i] if labels else sp
             color = colors[i % len(colors)]
-
-            # Calculate survival curve
-            S_mean = _survival_curve(t_seconds, f, sd['k1_mean'], sd['k2_mean'], sd['f_mean'])
-
-            # Calculate CI bounds if requested and SEM > 0
-            if show_ci and sd['k1_sem'] > 0:
-                k1_lo = sd['k1_mean'] - 1.96 * sd['k1_sem']
-                k1_hi = sd['k1_mean'] + 1.96 * sd['k1_sem']
-                S_lo = _survival_curve(t_seconds, f, k1_hi, sd['k2_mean'], sd['f_mean'])
-                S_hi = _survival_curve(t_seconds, f, k1_lo, sd['k2_mean'], sd['f_mean'])
-                ax.fill_between(t_display, S_lo, S_hi, alpha=0.2, color=color)
-
-            ax.plot(t_display, S_mean, label=label, color=color, linewidth=2)
+            _plot_survival_with_ci(ax, t_seconds, t_display, f, sd, show_ci, label, color)
 
     # Set axis labels
     ax.set_xlabel(f"Time ({time_units})")
@@ -925,7 +972,8 @@ def plot_survival(
 
     # Generate title if not provided
     if title is None:
-        title = _generate_survival_title(data, species_list, fluence_list, multi_fluence)
+        title = _generate_survival_title(data, species_list, fluence_list, multi_fluence,
+                                         multi_wavelength, fluence_dict if multi_wavelength else None)
     ax.set_title(title)
 
     # Adjust layout to make room for legend
@@ -942,85 +990,63 @@ def _survival_curve(t, irrad, k1, k2, f):
 
     S(t) = (1-f)*exp(-k1*I/1000*t) + f*exp(-k2*I/1000*t)
 
-    Parameters
-    ----------
-    t : array-like
-        Time in seconds.
-    irrad : float
-        Irradiance in µW/cm².
-    k1 : float
-        Primary susceptibility constant in cm²/mJ.
-    k2 : float
-        Secondary susceptibility constant in cm²/mJ.
-    f : float
-        Resistant fraction (0-1).
-
-    Returns
-    -------
-    array-like
-        Survival fraction at each time point.
+    For multi-wavelength, pass lists for irrad, k1, k2, f. The k*I values
+    are summed across wavelengths.
     """
     t = np.asarray(t)
-    return (1 - f) * np.exp(-k1 * irrad / 1000 * t) + f * np.exp(-k2 * irrad / 1000 * t)
+    if isinstance(irrad, (list, tuple)):
+        # Multi-wavelength: sum k*I across wavelengths
+        k1_irrad_sum = sum(k * i / 1000 for k, i in zip(k1, irrad))
+        k2_irrad_sum = sum(k * i / 1000 for k, i in zip(k2, irrad))
+        f_eff = sum(f) / len(f)
+        return (1 - f_eff) * np.exp(-k1_irrad_sum * t) + f_eff * np.exp(-k2_irrad_sum * t)
+    else:
+        return (1 - f) * np.exp(-k1 * irrad / 1000 * t) + f * np.exp(-k2 * irrad / 1000 * t)
 
 
-def _time_to_survival(S_target, irrad, k1, k2, f, tol=1e-10, max_iter=100):
+def _plot_survival_with_ci(ax, t_seconds, t_display, fluence, species_data, show_ci, label, color):
     """
-    Calculate time to reach target survival fraction.
+    Plot a single survival curve with optional 95% CI band.
 
-    Uses bisection method for the two-phase model.
-
-    Parameters
-    ----------
-    S_target : float
-        Target survival fraction (e.g., 0.01 for 99% inactivation).
-    irrad : float
-        Irradiance in µW/cm².
-    k1 : float
-        Primary susceptibility constant.
-    k2 : float
-        Secondary susceptibility constant.
-    f : float
-        Resistant fraction.
-
-    Returns
-    -------
-    float
-        Time in seconds to reach target survival.
+    Handles both single-wavelength and multi-wavelength species_data.
     """
-    if k1 <= 0:
-        return float('inf')
+    sd = species_data
 
-    def S_of_t(t):
-        return (1 - f) * math.exp(-k1 * irrad / 1000 * t) + f * math.exp(-k2 * irrad / 1000 * t)
+    if sd.get('multi_wavelength', False):
+        # Multi-wavelength mode
+        S_mean = _survival_curve(t_seconds, sd['irrad_list'], sd['k1_list'], sd['k2_list'], sd['f_list'])
 
-    # Bracket the root
-    t_low = 0.0
-    t_high = 1.0
-    while S_of_t(t_high) > S_target and t_high < 1e10:
-        t_high *= 2.0
+        # CI for multi-wavelength: vary each k1 by its SEM
+        if show_ci and any(sem > 0 for sem in sd['k1_sem_list']):
+            k1_lo = [k - 1.96 * sem for k, sem in zip(sd['k1_list'], sd['k1_sem_list'])]
+            k1_hi = [k + 1.96 * sem for k, sem in zip(sd['k1_list'], sd['k1_sem_list'])]
+            S_lo = _survival_curve(t_seconds, sd['irrad_list'], k1_hi, sd['k2_list'], sd['f_list'])
+            S_hi = _survival_curve(t_seconds, sd['irrad_list'], k1_lo, sd['k2_list'], sd['f_list'])
+            ax.fill_between(t_display, S_lo, S_hi, alpha=0.2, color=color)
+    else:
+        # Single-wavelength mode
+        S_mean = _survival_curve(t_seconds, fluence, sd['k1_mean'], sd['k2_mean'], sd['f_mean'])
 
-    if t_high >= 1e10:
-        return t_high
+        if show_ci and sd['k1_sem'] > 0:
+            k1_lo = sd['k1_mean'] - 1.96 * sd['k1_sem']
+            k1_hi = sd['k1_mean'] + 1.96 * sd['k1_sem']
+            S_lo = _survival_curve(t_seconds, fluence, k1_hi, sd['k2_mean'], sd['f_mean'])
+            S_hi = _survival_curve(t_seconds, fluence, k1_lo, sd['k2_mean'], sd['f_mean'])
+            ax.fill_between(t_display, S_lo, S_hi, alpha=0.2, color=color)
 
-    # Bisection
-    for _ in range(max_iter):
-        t_mid = 0.5 * (t_low + t_high)
-        if S_of_t(t_mid) > S_target:
-            t_low = t_mid
-        else:
-            t_high = t_mid
-        if abs(t_high - t_low) < tol:
-            break
-
-    return 0.5 * (t_low + t_high)
+    ax.plot(t_display, S_mean, label=label, color=color, linewidth=2)
 
 
-def _generate_survival_title(data, species_list, fluence_list, multi_fluence):
+def _generate_survival_title(data, species_list, fluence_list, multi_fluence,
+                              multi_wavelength=False, fluence_dict=None):
     """Generate auto title for survival plot."""
     # Get wavelength info
     wv_str = ""
-    if data.wavelength is not None:
+    if multi_wavelength and fluence_dict:
+        # Multi-wavelength: show all wavelengths
+        wv_strs = [f"GUV-{int(wv)}" for wv in fluence_dict.keys()]
+        wv_str = " + ".join(wv_strs)
+    elif data.wavelength is not None:
         if isinstance(data.wavelength, (int, float)):
             wv_str = f"GUV-{int(data.wavelength)}"
         elif isinstance(data.wavelength, list) and len(data.wavelength) == 1:
@@ -1034,8 +1060,13 @@ def _generate_survival_title(data, species_list, fluence_list, multi_fluence):
         else:
             medium_str = f"in {data.medium}"
 
-    single_mode = len(species_list) == 1 and len(fluence_list) == 1
-    fluence = fluence_list[0]
+    single_mode = len(species_list) == 1 and not multi_fluence
+
+    # For multi-wavelength, show total fluence
+    if multi_wavelength and fluence_dict:
+        total_fluence = round(sum(fluence_dict.values()), 2)
+    else:
+        total_fluence = round(fluence_list[0], 2)
 
     if multi_fluence:
         # Single species, multiple irradiances
@@ -1045,17 +1076,17 @@ def _generate_survival_title(data, species_list, fluence_list, multi_fluence):
             title += f" by {wv_str}"
         title += " (95% CI)"
     elif single_mode:
-        # Single species, single irradiance
+        # Single species, single irradiance (or multi-wavelength)
         species = species_list[0]
         title = f"Estimated {species} reduction {medium_str}"
         if wv_str:
             title += f" by {wv_str}"
-        title += f" at {fluence} µW/cm² (95% CI)"
+        title += f" at {total_fluence} µW/cm² (95% CI)"
     else:
         # Multiple species, single irradiance
         title = f"Estimated reduction {medium_str}"
         if wv_str:
             title += f" by {wv_str}"
-        title += f" at {fluence} µW/cm² (95% CI)"
+        title += f" at {total_fluence} µW/cm² (95% CI)"
 
     return title
