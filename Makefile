@@ -49,7 +49,13 @@ clean:
 	@find . -type f -name "*.kate-swp" -delete
 	@echo "Done"
 
-test: 
-	$(PYTHON_INTERPRETER) tests/test.py
+test:
+	$(PYTHON_INTERPRETER) -m pytest tests/ -v
+
+test-cov:
+	$(PYTHON_INTERPRETER) -m pytest tests/ --cov=src/guv_calcs --cov-report=term-missing
+
+test-fast:
+	$(PYTHON_INTERPRETER) -m pytest tests/ -v -x --ignore=tests/test_e2e.py
 	
 all: install lint test
