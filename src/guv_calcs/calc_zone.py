@@ -406,6 +406,14 @@ class CalcVol(CalcZone):
         return super().__repr__() + f"geometry: {self.geometry.__repr__()})"
 
     @classmethod
+    def from_dict(cls, data):
+        keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
+        if data.get("geometry") is not None:
+            geometry = VolGrid.from_dict(data.pop("geometry"))
+            data["geometry"] = geometry
+        return cls(**{k: v for k, v in data.items() if k in keys})
+
+    @classmethod
     def from_dims(
         cls,
         dims: RoomDimensions,
