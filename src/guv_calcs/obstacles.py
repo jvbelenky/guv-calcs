@@ -1,8 +1,225 @@
 import numpy as np
 from .filters import ConstFilter
+from .calc_zone import CalcPlane
+from .reflectance import Surface
+
+
+def _box_face_points(mins, maxs, face: str):
+    """
+    Return (p0, pU, pV) corner points for a box face.
+
+    The points define a plane where:
+    - p0 is the origin corner
+    - pU defines the U-axis edge (p0 → pU)
+    - pV defines the V-axis edge (p0 → pV)
+    - Normal = cross(U, V) points OUTWARD from the box
+
+    Parameters
+    ----------
+    mins, maxs : array-like
+        Box corners (x_min, y_min, z_min) and (x_max, y_max, z_max)
+    face : str
+        One of: 'xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'
+
+    Returns
+    -------
+    tuple of (p0, pU, pV) as numpy arrays
+    """
+    x1, y1, z1 = mins
+    x2, y2, z2 = maxs
+
+    # Each face defined so that cross(pU-p0, pV-p0) points outward
+    face_points = {
+        # -X face: normal points -X, so we need cross product to give (-1, 0, 0)
+        "xmin": ([x1, y2, z1], [x1, y1, z1], [x1, y2, z2]),
+        # +X face: normal points +X
+        "xmax": ([x2, y1, z1], [x2, y2, z1], [x2, y1, z2]),
+        # -Y face: normal points -Y
+        "ymin": ([x1, y1, z1], [x2, y1, z1], [x1, y1, z2]),
+        # +Y face: normal points +Y
+        "ymax": ([x2, y2, z1], [x1, y2, z1], [x2, y2, z2]),
+        # -Z face: normal points -Z
+        "zmin": ([x1, y2, z1], [x2, y2, z1], [x1, y1, z1]),
+        # +Z face: normal points +Z
+        "zmax": ([x1, y1, z2], [x2, y1, z2], [x1, y2, z2]),
+    }
+
+    if face not in face_points:
+        raise ValueError(f"face must be one of {list(face_points.keys())}, got {face!r}")
+
+    p0, pU, pV = face_points[face]
+    return np.array(p0), np.array(pU), np.array(pV)
 
 
 class BoxObstacle:
+    """
+    A box-shaped obstacle defined by two corner points.
+
+    Creates 6 surfaces (one per face) that can participate in reflectance
+    calculations and occlusion filtering.
+    """
+
+    FACE_KEYS = ("xmin", "xmax", "ymin", "ymax", "zmin", "zmax")
+
+    def __init__(
+        self,
+        p1,
+        p2,
+        obs_id: str = None,
+        name: str = None,
+        R: float = 0.0,
+        T: float = 0.0,
+        face_overrides: dict = None,
+        spacing: float = None,
+        num_points: int = 10,
+        enabled: bool = True,
+    ):
+        """
+        Create a box obstacle from two corner points.
+
+        Parameters
+        ----------
+        p1, p2 : array-like
+            Two opposite corners of the box (x, y, z)
+        obs_id : str, optional
+            Unique identifier for this obstacle
+        name : str, optional
+            Display name for this obstacle
+        R : float, default=0.0
+            Default reflectance for all faces [0, 1]
+        T : float, default=0.0
+            Default transmittance for all faces [0, 1]
+        face_overrides : dict, optional
+            Per-face overrides, e.g. {"xmin": {"R": 0.5, "T": 0.1}}
+        spacing : float, optional
+            Grid spacing for surface calculations
+        num_points : int, default=10
+            Number of grid points per axis for surface calculations
+        enabled : bool, default=True
+            Whether this obstacle is active
+        """
+        self._obs_id = obs_id or "Obstacle"
+        self.name = name if name is not None else str(self._obs_id)
+        self.enabled = enabled
+
+        self.p1 = np.asarray(p1, float)
+        self.p2 = np.asarray(p2, float)
+
+        # Default optical properties
+        self._default_R = R
+        self._default_T = T
+        self._face_overrides = face_overrides or {}
+        self._spacing = spacing
+        self._num_points = num_points
+
+        # Create surfaces for each face
+        self.surfaces = {}
+        self._build_surfaces()
+
+    @property
+    def obs_id(self) -> str:
+        return self._obs_id
+
+    @property
+    def id(self) -> str:
+        return self._obs_id
+
+    def _assign_id(self, value: str) -> None:
+        """Used by registry to assign unique ID"""
+        old_id = self._obs_id
+        self._obs_id = value
+        # Update surface IDs to match
+        new_surfaces = {}
+        for fk in self.FACE_KEYS:
+            old_key = f"{old_id}:{fk}"
+            new_key = f"{value}:{fk}"
+            if old_key in self.surfaces:
+                surface = self.surfaces[old_key]
+                surface.plane._assign_id(new_key)
+                new_surfaces[new_key] = surface
+        self.surfaces = new_surfaces
+
+    def _build_surfaces(self):
+        """Create Surface objects for each face of the box."""
+        mins = np.minimum(self.p1, self.p2)
+        maxs = np.maximum(self.p1, self.p2)
+
+        for fk in self.FACE_KEYS:
+            sid = f"{self._obs_id}:{fk}"
+
+            # Get optical properties (face override or default)
+            overrides = self._face_overrides.get(fk, {})
+            R = overrides.get("R", self._default_R)
+            T = overrides.get("T", self._default_T)
+
+            # Get the corner points for this face
+            p0, pU, pV = _box_face_points(mins, maxs, fk)
+
+            # Create the CalcPlane using from_points (supports arbitrary orientation)
+            # num_points_init expects a tuple (num_u, num_v) for the 2D grid
+            num_pts = (self._num_points, self._num_points) if self._num_points else None
+            plane = CalcPlane.from_points(
+                p0=p0,
+                pU=pU,
+                pV=pV,
+                zone_id=sid,
+                spacing=self._spacing,
+                num_points_init=num_pts,
+                # Surface-appropriate settings
+                horiz=True,
+                vert=False,
+                use_normal=True,
+            )
+
+            self.surfaces[sid] = Surface(R=R, T=T, plane=plane)
+
+    def set_corners(self, p1, p2):
+        """Update the box corners and rebuild all surface geometry."""
+        self.p1 = np.asarray(p1, float)
+        self.p2 = np.asarray(p2, float)
+        self._build_surfaces()
+
+    def to_dict(self) -> dict:
+        """Serialize the obstacle for storage."""
+        return {
+            "obs_id": self._obs_id,
+            "name": self.name,
+            "p1": list(self.p1),
+            "p2": list(self.p2),
+            "R": self._default_R,
+            "T": self._default_T,
+            "face_overrides": self._face_overrides,
+            "spacing": self._spacing,
+            "num_points": self._num_points,
+            "enabled": self.enabled,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "BoxObstacle":
+        """Deserialize an obstacle from storage."""
+        return cls(
+            p1=data["p1"],
+            p2=data["p2"],
+            obs_id=data.get("obs_id"),
+            name=data.get("name"),
+            R=data.get("R", 0.0),
+            T=data.get("T", 0.0),
+            face_overrides=data.get("face_overrides"),
+            spacing=data.get("spacing"),
+            num_points=data.get("num_points", 10),
+            enabled=data.get("enabled", True),
+        )
+
+    def __repr__(self):
+        return (
+            f"BoxObstacle(id={self._obs_id!r}, "
+            f"p1={list(self.p1)}, p2={list(self.p2)}, "
+            f"R={self._default_R}, T={self._default_T}, "
+            f"enabled={self.enabled})"
+        )
+
+
+class BoxObstacleSlab:
     def __init__(
         self,
         lo,
@@ -119,7 +336,7 @@ class BoxObstacleOld2:
 
 class BoxObstacleOld:
     def __init__(self, lo, hi, obs_id=None, name=None, enabled=True):
-        self.obs_id = obs_id or "Obstacle"
+        self._obs_id = obs_id or "Obstacle"
         self.name = str(self.obs_id) if name is None else str(name)
         self.enabled = enabled
 
