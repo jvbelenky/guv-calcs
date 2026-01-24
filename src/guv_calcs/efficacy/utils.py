@@ -6,7 +6,6 @@ from .constants import (
     LOG_ALIASES,
     TIME_UNIT_ALIASES,
     RATE_COLS,
-    SUSCEPTIBILITY_COLS,
 )
 
 
@@ -187,17 +186,16 @@ def _auto_select_time_unit(time_cols, log_level):
 
 def get_compatible_group(col, time_cols):
     """
-    Get the compatible column group for a column.
+    Get the colinear column group for a column.
+
+    Colinear columns are linearly related and can share axes on a plot.
+    Note: k1 and k2 are NOT colinear - they are independent kinetic parameters.
     """
-    # Check rate group (eACH, CADR variants)
+    # Check rate group (eACH, CADR variants - all derived from same calculation)
     if col in RATE_COLS:
         return RATE_COLS
 
-    # Check susceptibility group (k1, k2)
-    if col in SUSCEPTIBILITY_COLS:
-        return SUSCEPTIBILITY_COLS
-
-    # Check time groups (each log level is its own group)
+    # Check time groups (each log level has seconds/minutes/hours variants)
     for log_level, cols in time_cols.items():
         time_group = set(cols.values())  # {seconds_col, minutes_col, hours_col}
         if col in time_group:

@@ -1,27 +1,54 @@
+import re
 import warnings
-import pandas as pd
+from collections.abc import Callable
 from itertools import product
+
+import pandas as pd
 
 from ..io import get_full_disinfection_table
 from .constants import (
     LOG_LABELS,
     COL_CATEGORY,
     COL_SPECIES,
+    COL_STRAIN,
     COL_WAVELENGTH,
     COL_K1,
     COL_K2,
     COL_RESISTANT,
     COL_MEDIUM,
+    COL_CONDITION,
+    COL_REFERENCE,
     COL_EACH,
     COL_CADR_LPS,
     COL_CADR_CFM,
     BASE_DISPLAY_COLS,
 )
-from .math import eACH_UV, log1, log2, log3, log4, log5
+from .math import CADR_CFM, CADR_LPS, eACH_UV, log1, log2, log3, log4, log5
 from .plotting import plot_swarm, plot_survival
 from .utils import auto_select_time_columns
 
 pd.options.mode.chained_assignment = None
+
+# Function name mapping for average_value()
+FUNCTION_MAP = {
+    "log1": log1,
+    "log2": log2,
+    "log3": log3,
+    "log4": log4,
+    "log5": log5,
+    "each": eACH_UV,
+    "each-uv": eACH_UV,
+    "each_uv": eACH_UV,
+    "eACH_UV": eACH_UV,
+    "cadr-lps": CADR_LPS,
+    "CADR-LPS": CADR_LPS,
+    "cadr_lps": CADR_LPS,
+    "CADR_LPS": CADR_LPS,
+    "cadr-cfm": CADR_CFM,
+    "CADR-CFM": CADR_CFM,
+    "cadr_cfm": CADR_CFM,
+    "CADR_CFM": CADR_CFM,
+}
 
 
 class Data:
@@ -203,6 +230,202 @@ class Data:
         """
         self.display_df.to_csv(filepath, index=False, **kwargs)
 
+    def average_value(
+        self,
+        function: str | Callable,
+        species: str | list | None = None,
+        strain: str | list | None = None,
+        condition: str | list | None = None,
+        medium: str | list | None = None,
+        **kwargs,
+    ) -> float | dict | None:
+        """
+        Compute a derived value from averaged k parameters.
+
+        Filters the data by the specified criteria (in addition to existing
+        medium/category/wavelength filters), averages k1, k2, f across matching
+        rows, then applies the specified function.
+
+        When any filter parameter is a list, returns a (nested) dict keyed by
+        those values instead of a single float.
+
+        function : str or callable
+            One of: 'log1', 'log2', 'log3', 'log4', 'log5', 'eACH_UV',
+            'CADR_LPS', 'CADR_CFM', or a callable with signature
+            f(irrad, k1, k2, f) -> float
+        species : str or list, optional
+            Filter by species name (smart partial match - all query words
+            must appear in target, e.g., "e. coli" matches "Escherichia coli").
+            If a list, returns dict keyed by species values.
+        strain : str or list, optional
+            Filter by strain (partial match, case-insensitive).
+            If a list, returns dict keyed by strain values.
+        condition : str or list, optional
+            Filter by condition (partial match, case-insensitive).
+            If a list, returns dict keyed by condition values.
+        medium : str or list, optional
+            Filter by medium ("Aerosol", "Surface", "Liquid"). Overrides
+            instance medium filter if provided.
+            If a list, returns dict keyed by medium values.
+        **kwargs
+            Additional column filters as column_name=value (exact match)
+
+        Returns
+        -------
+        float, dict, or None
+            The computed value using averaged k parameters, or None if
+            fluence is not set or no rows match the filters. Returns a
+            (nested) dict when any filter parameter is a list.
+
+        Examples
+        --------
+        >>> data = Data(fluence=0.5)
+        >>> data.average_value("log2", species="E. coli")
+        1.23
+
+        >>> data.average_value("log2", species=["E. coli", "Staph"])
+        {"E. coli": 1.23, "Staph": 4.56}
+
+        >>> data.average_value("log2", species=["E. coli"], medium=["Aerosol", "Surface"])
+        {"E. coli": {"Aerosol": 1.23, "Surface": 2.34}}
+        """
+        if self._fluence is None:
+            warnings.warn("fluence must be set to compute average_value", stacklevel=2)
+            return None
+
+        # Check for parametric (list) inputs
+        # Order: species -> strain -> medium -> condition (condition depends on medium)
+        parametric = []
+        if isinstance(species, list):
+            parametric.append(("species", species))
+        if isinstance(strain, list):
+            parametric.append(("strain", strain))
+        if isinstance(medium, list):
+            parametric.append(("medium", medium))
+        if isinstance(condition, list):
+            parametric.append(("condition", condition))
+
+        # If any parametric inputs, build nested dict recursively
+        if parametric:
+            return self._average_value_parametric(
+                function, parametric, species, strain, condition, medium, **kwargs
+            )
+
+        # Non-parametric case: return single value
+        return self._average_value_single(
+            function, species, strain, condition, medium, **kwargs
+        )
+
+    def _average_value_parametric(
+        self,
+        function: str | Callable,
+        parametric: list[tuple[str, list]],
+        species: str | list | None,
+        strain: str | list | None,
+        condition: str | list | None,
+        medium: str | list | None,
+        **kwargs,
+    ) -> dict:
+        """
+        Build nested dict for parametric average_value calls.
+
+        Iterates over the first parametric dimension, recursively calling
+        average_value for each value in that dimension.
+        """
+        param_name, param_values = parametric[0]
+        remaining_parametric = parametric[1:]
+
+        result = {}
+        for val in param_values:
+            # Build kwargs for recursive call with this dimension fixed
+            call_kwargs = {
+                "species": val if param_name == "species" else species,
+                "strain": val if param_name == "strain" else strain,
+                "condition": val if param_name == "condition" else condition,
+                "medium": val if param_name == "medium" else medium,
+                **kwargs,
+            }
+
+            # If there are remaining parametric dimensions, rebuild the list args
+            # so the recursive call continues to iterate over them
+            if remaining_parametric:
+                for remaining_name, remaining_values in remaining_parametric:
+                    call_kwargs[remaining_name] = remaining_values
+
+            sub_result = self.average_value(function, **call_kwargs)
+            result[val] = sub_result
+
+        return result
+
+    def _average_value_single(
+        self,
+        function: str | Callable,
+        species: str | None = None,
+        strain: str | None = None,
+        condition: str | None = None,
+        medium: str | None = None,
+        **kwargs,
+    ) -> float | None:
+        """
+        Compute a single derived value from averaged k parameters.
+
+        This is the core implementation called by average_value for non-parametric cases.
+        """
+        # Start with filtered data
+        if medium is not None:
+            # Override medium filter - start from _full_df and apply filters manually
+            df = self._full_df.copy()
+            df = self._filter_by_column(df, COL_MEDIUM, medium)
+            df = self._filter_by_column(df, COL_CATEGORY, self._category)
+            df = self._apply_wavelength_filter(df)
+        else:
+            # Use existing filters
+            df = self.full_df.copy()
+
+        # Apply species filter (smart partial match)
+        if species is not None:
+            mask = df[COL_SPECIES].apply(lambda x: self._species_matches(species, x))
+            df = df[mask]
+
+        # Apply partial match filters (case-insensitive contains)
+        if strain is not None:
+            strain_lower = strain.lower()
+            df = df[df[COL_STRAIN].fillna("").str.lower().str.contains(strain_lower)]
+
+        if condition is not None:
+            condition_lower = condition.lower()
+            df = df[
+                df[COL_CONDITION].fillna("").str.lower().str.contains(condition_lower)
+            ]
+
+        # Apply additional exact match filters from kwargs
+        for col, value in kwargs.items():
+            if col in df.columns:
+                df = df[df[col] == value]
+
+        if len(df) == 0:
+            warnings.warn("No rows match the specified filters", stacklevel=2)
+            return None
+
+        # Resolve function
+        if isinstance(function, str):
+            if function not in FUNCTION_MAP:
+                valid_funcs = list(FUNCTION_MAP.keys())
+                raise ValueError(
+                    f"Unknown function '{function}'; must be one of {valid_funcs}"
+                )
+            func = FUNCTION_MAP[function]
+            func_name = function.lower()
+        else:
+            func = function
+            func_name = None
+
+        # Handle multi-wavelength fluence
+        if isinstance(self._fluence, dict) and len(self._fluence) > 1:
+            return self._compute_average_multiwavelength(df, func, func_name)
+        else:
+            return self._compute_average_single(df, func, func_name)
+
     # =========================================================================
     # Public properties - data access
     # =========================================================================
@@ -300,6 +523,13 @@ class Data:
         if COL_SPECIES not in df.columns:
             return None
         return sorted(df[COL_SPECIES].unique())
+        
+    @property
+    def strains(self):
+        df = self.display_df
+        if COL_STRAIN not in df.columns:
+            return None
+        return sorted(df[COL_STRAIN].unique())
 
     @property
     def mediums(self):
@@ -307,6 +537,13 @@ class Data:
         if COL_MEDIUM not in df.columns:
             return None
         return sorted(df[COL_MEDIUM].unique())
+        
+    @property
+    def conditions(self):
+        df = self.display_df
+        if COL_CONDITION not in df.columns:
+            return None
+        return sorted(df[COL_CONDITION].unique())
 
     @property
     def wavelengths(self):
@@ -314,10 +551,26 @@ class Data:
         if COL_WAVELENGTH not in df.columns:
             return None
         return sorted(df[COL_WAVELENGTH].unique())
-
+        
     # =========================================================================
     # Private computation methods
     # =========================================================================
+
+    @staticmethod
+    def _species_matches(query: str, target: str) -> bool:
+        """Check if all words in query appear in target (case-insensitive)."""
+        query_words = re.findall(r"\w+", query.lower())
+        target_lower = target.lower()
+        return all(word in target_lower for word in query_words)
+
+    @staticmethod
+    def _parse_resistant(val) -> float:
+        """Parse '0.33%' -> 0.0033, NaN -> 0.0"""
+        if pd.isna(val):
+            return 0.0
+        if isinstance(val, str):
+            return float(val.rstrip("%")) / 100
+        return float(val)
 
     @staticmethod
     def _extract_kinetic_params(row):
@@ -377,6 +630,68 @@ class Data:
         df = df[df[COL_SPECIES].isin(valid_species)]
         df = df[df[COL_WAVELENGTH].isin(required_wavelengths)]
         return df, fluence_dict
+
+    def _compute_average_single(
+        self, df: pd.DataFrame, func: Callable, func_name: str | None
+    ) -> float:
+        """Compute average value for single wavelength fluence."""
+        # Get fluence value
+        if isinstance(self._fluence, dict):
+            fluence = list(self._fluence.values())[0]
+        else:
+            fluence = self._fluence
+
+        # Average k parameters
+        k1_mean = df[COL_K1].mean()
+        k2_mean = df[COL_K2].fillna(0).mean()
+        f_mean = df[COL_RESISTANT].apply(self._parse_resistant).mean()
+
+        # Call function with appropriate signature
+        if func_name in ("cadr_lps",):
+            if self._volume_m3 is None:
+                raise ValueError("volume_m3 must be set to compute CADR")
+            return func(self._volume_m3, fluence, k1_mean, k2_mean, f_mean)
+        elif func_name in ("cadr_cfm",):
+            if self._volume_m3 is None:
+                raise ValueError("volume_m3 must be set to compute CADR")
+            cubic_feet = self._volume_m3 * 35.3147
+            return func(cubic_feet, fluence, k1_mean, k2_mean, f_mean)
+        else:
+            return func(fluence, k1_mean, k2_mean, f_mean)
+
+    def _compute_average_multiwavelength(
+        self, df: pd.DataFrame, func: Callable, func_name: str | None
+    ) -> float:
+        """Compute average value for multi-wavelength fluence."""
+        wavelengths = list(self._fluence.keys())
+        irrad_list = [self._fluence[wv] for wv in wavelengths]
+
+        # Average k parameters per wavelength
+        k1_list = []
+        k2_list = []
+        f_list = []
+
+        for wv in wavelengths:
+            wv_df = df[df[COL_WAVELENGTH] == wv]
+            if len(wv_df) == 0:
+                raise ValueError(f"No data available for wavelength {wv} nm")
+
+            k1_list.append(wv_df[COL_K1].mean())
+            k2_list.append(wv_df[COL_K2].fillna(0).mean())
+            f_list.append(wv_df[COL_RESISTANT].apply(self._parse_resistant).mean())
+
+        # Call function with lists
+        if func_name in ("cadr_lps",):
+            if self._volume_m3 is None:
+                raise ValueError("volume_m3 must be set to compute CADR")
+            return func(self._volume_m3, irrad_list, k1_list, k2_list, f_list)
+        elif func_name in ("cadr_cfm",):
+            if self._volume_m3 is None:
+                raise ValueError("volume_m3 must be set to compute CADR")
+            cubic_feet = self._volume_m3 * 35.3147
+            return func(cubic_feet, irrad_list, k1_list, k2_list, f_list)
+        else:
+            return func(irrad_list, k1_list, k2_list, f_list)
 
     def _compute_all_columns(self) -> pd.DataFrame:
         """

@@ -82,6 +82,6 @@ TIME_UNIT_ALIASES = {
     "h": "hours",
 }
 
-# Compatible column groups (columns that can be co-plotted)
+# Colinear column groups (columns that are linearly related and can share axes)
 RATE_COLS = {COL_EACH, COL_CADR_LPS, COL_CADR_CFM}
-SUSCEPTIBILITY_COLS = {COL_K1, COL_K2}
+# Time columns at each log level are also colinear (handled in get_compatible_group)
