@@ -42,7 +42,7 @@ class PhotStandard(StrEnum):
     @property
     def eye_weights(self):
         weights = get_spectral_weightings()
-        if self is PhotStandard.ACGIH or PhotStandard.UL8802:
+        if self in (PhotStandard.ACGIH, PhotStandard.UL8802):
             key = "ANSI IES RP 27.1-22 (Eye)"
         elif self is PhotStandard.ICNIRP:
             key = "IEC 62471-6:2022 (Eye/Skin)"
@@ -51,7 +51,7 @@ class PhotStandard(StrEnum):
     @property
     def skin_weights(self):
         weights = get_spectral_weightings()
-        if self is PhotStandard.ACGIH or PhotStandard.UL8802:
+        if self in (PhotStandard.ACGIH, PhotStandard.UL8802):
             key = "ANSI IES RP 27.1-22 (Skin)"
         elif self is PhotStandard.ICNIRP:
             key = "IEC 62471-6:2022 (Eye/Skin)"
