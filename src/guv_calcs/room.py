@@ -539,9 +539,18 @@ class Room:
             medium = "Aerosol"        
         return data.subset(medium=medium, use_metric=use_metric, **kwargs)            
     
-    def disinfection_table(self, zone_id="WholeRoomFluence", **kwargs):
+    def disinfection_table(self, zone_id="WholeRoomFluence", which='default', **kwargs):
         """Return a table of expected disinfection rates"""
-        return self.get_efficacy_data(zone_id, **kwargs).display_df
+        data = self.get_efficacy_data(zone_id, **kwargs)
+        if which == 'default':
+            return data.display_df
+        elif which == 'full':
+            return data.full_df
+        elif which == 'combined':
+            return data.combined_df            
+        elif which == 'combined_full':
+            return data.combined_full_df
+        raise ValueError("Valid table arguments are default, full, combined, and combined_full")
     
     def disinfection_plot(self, zone_id="WholeRoomFluence", category=None, **kwargs):
         """a violin plot of expected disinfection rates for all available species"""                
