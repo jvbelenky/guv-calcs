@@ -37,7 +37,7 @@ class LampSurface:
         self._pose = pose
         self.position = self._calculate_surface_position()
 
-        self.source_density = 1
+        self.source_density = source_density
         # store original for future operations
         self.intensity_map_orig = self._load_intensity_map(intensity_map)
         # this is the working copy
