@@ -62,7 +62,7 @@ def _parse_loadfile(filedata):
     validate and parse a loadfile
     """
 
-    if isinstance(filedata, (str, bytes or bytearray)):
+    if isinstance(filedata, (str, bytes, bytearray)):
         try:
             dct = json.loads(filedata)
         except json.JSONDecodeError:
