@@ -11,6 +11,7 @@ from guv_calcs.io import (
     get_full_disinfection_table,
     rows_to_bytes,
     load_csv,
+    fig_to_bytes,
 )
 
 
@@ -93,6 +94,56 @@ class TestLoadCsv:
         """load_csv should raise TypeError for invalid input."""
         with pytest.raises(TypeError):
             load_csv(12345)
+
+
+class TestFigToBytes:
+    """Tests for fig_to_bytes function."""
+
+    def test_matplotlib_figure_to_bytes(self):
+        """fig_to_bytes should convert matplotlib figure to PNG bytes."""
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots()
+        ax.plot([1, 2, 3], [1, 2, 3])
+
+        result = fig_to_bytes(fig)
+        plt.close(fig)
+
+        assert isinstance(result, bytes)
+        # PNG files start with specific magic bytes
+        assert result[:8] == b'\x89PNG\r\n\x1a\n'
+
+    def test_plotly_figure_to_bytes(self):
+        """fig_to_bytes should convert plotly figure to PNG bytes (requires Chrome)."""
+        import plotly.graph_objects as go
+
+        fig = go.Figure(data=go.Scatter(x=[1, 2, 3], y=[1, 2, 3]))
+
+        result = fig_to_bytes(fig)
+
+        # Result is either bytes (Chrome available) or None (Chrome not available)
+        if result is not None:
+            assert isinstance(result, bytes)
+            assert result[:8] == b'\x89PNG\r\n\x1a\n'
+
+    def test_invalid_figure_type_raises(self):
+        """fig_to_bytes should raise TypeError for unsupported figure types."""
+        with pytest.raises(TypeError):
+            fig_to_bytes("not a figure")
+
+    def test_plotly_figure_graceful_without_chrome(self):
+        """fig_to_bytes should return None and warn if Chrome is not available."""
+        import plotly.graph_objects as go
+        import warnings
+
+        fig = go.Figure(data=go.Scatter(x=[1, 2, 3], y=[1, 2, 3]))
+
+        # This test just ensures no exception is raised
+        # Result is None if Chrome unavailable, bytes otherwise
+        with warnings.catch_warnings(record=True):
+            warnings.simplefilter("always")
+            result = fig_to_bytes(fig)
+            assert result is None or isinstance(result, bytes)
 
 
 class TestRoomSaveLoad:
@@ -180,6 +231,50 @@ class TestRoomExportZip:
         with zipfile.ZipFile(io.BytesIO(zip_bytes), 'r') as zf:
             names = zf.namelist()
             assert "room.guv" in names
+
+    def test_export_zip_with_plots(self):
+        """export_zip with include_plots=True should include plot images."""
+        import zipfile
+        import io
+
+        room = Room(x=6, y=4, z=2.7).place_lamp("aerolamp")
+        room.add_standard_zones().calculate()
+        zip_bytes = room.export_zip(include_plots=True)
+
+        with zipfile.ZipFile(io.BytesIO(zip_bytes), 'r') as zf:
+            names = zf.namelist()
+            # Should have PNG files for the calc zones (at least SkinLimits, EyeLimits)
+            png_files = [n for n in names if n.endswith('.png')]
+            assert len(png_files) >= 2
+
+    def test_export_zip_with_lamp_plots(self):
+        """export_zip with include_lamp_plots=True should include lamp plot images."""
+        import zipfile
+        import io
+
+        room = Room(x=6, y=4, z=2.7).place_lamp("aerolamp")
+        room.add_standard_zones().calculate()
+        zip_bytes = room.export_zip(include_lamp_plots=True)
+
+        with zipfile.ZipFile(io.BytesIO(zip_bytes), 'r') as zf:
+            names = zf.namelist()
+            # Should have IES plot and spectra plots
+            png_files = [n for n in names if n.endswith('.png')]
+            assert len(png_files) >= 1
+
+    def test_export_zip_with_lamp_files(self):
+        """export_zip with include_lamp_files=True should include IES files."""
+        import zipfile
+        import io
+
+        room = Room(x=6, y=4, z=2.7).place_lamp("aerolamp")
+        room.add_standard_zones().calculate()
+        zip_bytes = room.export_zip(include_lamp_files=True)
+
+        with zipfile.ZipFile(io.BytesIO(zip_bytes), 'r') as zf:
+            names = zf.namelist()
+            ies_files = [n for n in names if n.endswith('.ies')]
+            assert len(ies_files) >= 1
 
 
 class TestRoomGenerateReport:

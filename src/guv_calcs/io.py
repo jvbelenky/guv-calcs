@@ -155,10 +155,14 @@ def export_room_zip(
                     # Save the figure to a BytesIO object
                     title += f" ({zone.height} m)"
                     fig, ax = zone.plot_plane(title=title)
-                    data_dict[zone.name + ".png"] = fig_to_bytes(fig)
+                    img_bytes = fig_to_bytes(fig)
+                    if img_bytes is not None:
+                        data_dict[zone.name + ".png"] = img_bytes
                 elif zone.calctype == "Volume":
                     fig = zone.plot_volume()
-                    data_dict[zone.name + ".png"] = fig_to_bytes(fig)
+                    img_bytes = fig_to_bytes(fig)
+                    if img_bytes is not None:
+                        data_dict[zone.name + ".png"] = img_bytes
 
     # save lamp files if indicated to
     for lamp_id, lamp in room.scene.lamps.items():
@@ -167,7 +171,9 @@ def export_room_zip(
                 data_dict[lamp.name + ".ies"] = lamp.save_ies()
             if include_lamp_plots:
                 ies_fig, ax = lamp.plot_ies(title=lamp.name)
-                data_dict[lamp.name + "_ies.png"] = fig_to_bytes(ies_fig)
+                img_bytes = fig_to_bytes(ies_fig)
+                if img_bytes is not None:
+                    data_dict[lamp.name + "_ies.png"] = img_bytes
         if lamp.spectra is not None:
             if include_lamp_plots:
                 linfig, _ = lamp.spectra.plot(
@@ -178,8 +184,12 @@ def export_room_zip(
                 )
                 linkey = lamp.name + "_spectra_linear.png"
                 logkey = lamp.name + "_spectra_log.png"
-                data_dict[linkey] = fig_to_bytes(linfig)
-                data_dict[logkey] = fig_to_bytes(logfig)
+                lin_bytes = fig_to_bytes(linfig)
+                log_bytes = fig_to_bytes(logfig)
+                if lin_bytes is not None:
+                    data_dict[linkey] = lin_bytes
+                if log_bytes is not None:
+                    data_dict[logkey] = log_bytes
 
     zip_buffer = io.BytesIO()
     # Create a zip file within this BytesIO object
@@ -437,8 +447,19 @@ def get_spectral_weightings():
 
 # ------- Conversions to bytes ---------------
 
+# Track whether we've already warned about missing Chrome
+_chrome_warning_shown = False
+
 
 def fig_to_bytes(fig):
+    """
+    Convert a matplotlib or plotly figure to PNG bytes.
+
+    For plotly figures, this requires Chrome to be installed (used by kaleido).
+    If Chrome is not available, returns None and issues a warning.
+    """
+    global _chrome_warning_shown
+
     if isinstance(fig, mpl_fig):
         buf = io.BytesIO()
         fig.savefig(
@@ -447,7 +468,18 @@ def fig_to_bytes(fig):
         buf.seek(0)  # Rewind the buffer
         byt = buf.getvalue()
     elif isinstance(fig, plotly_fig):
-        byt = pio.to_image(fig, format="png", scale=1)
+        try:
+            byt = pio.to_image(fig, format="png", scale=1)
+        except Exception as e:
+            # kaleido v1 requires Chrome to be installed
+            if not _chrome_warning_shown:
+                warnings.warn(
+                    "Could not export plotly figure to image. "
+                    "This requires Chrome/Chromium to be installed for kaleido. "
+                    f"Error: {e}"
+                )
+                _chrome_warning_shown = True
+            return None
     else:
         raise TypeError("This figure type cannot be converted to bytes")
     return byt
