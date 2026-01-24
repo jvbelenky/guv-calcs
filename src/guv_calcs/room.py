@@ -554,6 +554,22 @@ class Room:
             "Valid table arguments are default, full, combined, and combined_full"
         )
 
+    def average_value(self, zone_id: str = "WholeRoomFluence", **kwargs):
+        """
+        Compute a derived efficacy value from averaged k parameters, 
+        using the indicates zone's fluence/irradiance values and the room's volume
+        
+        function: 
+            eACH -> number of equivalent air changes per hour 
+            CADR-LPS -> clean air delivery rate in liters per second
+            CADR-CFM -> clean air delivery rate in cubic feet per minute
+            log1/log2/log3/log4/log5 -> seconds to 90%/99%/99.9%/99.99%/99.999% inactivation
+        
+        other kwarg filters:
+        """
+        data = self.get_efficacy_data(zone_id)
+        return data.average_value(**kwargs)
+
     def disinfection_plot(self, zone_id="WholeRoomFluence", category=None, **kwargs):
         """a violin plot of expected disinfection rates for all available species"""
         data = self.get_efficacy_data(zone_id, category=category)
