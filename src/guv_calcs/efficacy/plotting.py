@@ -211,21 +211,27 @@ def plot_swarm(data, title=None, figsize=None, air_changes=None, mode="default",
             transform=ax1.get_yaxis_transform(),
         )
 
-    # Set title (wrap to figure width)
-    final_title = title or _generate_title(data, left_label, right_label, use_time_mode, effective_log)
-    final_title = _wrap_title(final_title, fig)
-    fig.suptitle(final_title)
-
     # Add category separators if category is not filtered
     if has_category:
         species_order = [t.get_text() for t in ax1.get_xticklabels()]
         _add_category_separators(ax1, fig, df, species_order)
 
-    # Position legend
+    # Position legend (may adjust axes via subplots_adjust)
     show_legend = (wv_col is not None) or (style is not None and hue_col != COL_CATEGORY)
     has_right_axis = right_label is not None
     _position_legend(ax1, fig, df, left_label, yscale, show_legend, has_right_axis,
                      wv_col, style, hue_col)
+
+    # Set title AFTER legend positioning so axes position is finalized
+    final_title = title or _generate_title(data, left_label, right_label, use_time_mode, effective_log)
+    final_title = _wrap_title(final_title, fig)
+    # Position title closer to plot if single line; leave room if wrapped
+    num_lines = final_title.count('\n') + 1
+    title_y = 0.93 if num_lines == 1 else 0.98
+    # Center title on plot area, not figure (which includes legend)
+    ax_pos = ax1.get_position()
+    title_x = ax_pos.x0 + ax_pos.width / 2
+    fig.suptitle(final_title, x=title_x, y=title_y, ha='center')
 
     return fig
 
