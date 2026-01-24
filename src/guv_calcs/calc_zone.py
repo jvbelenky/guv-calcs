@@ -1,6 +1,7 @@
 import inspect
 import json
 import numpy as np
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from .calc_manager import LightingCalculator
 from .rect_grid import VolGrid, PlaneGrid
@@ -54,17 +55,11 @@ class ZoneResult:
         return self.base_values + self.reflected_values
 
 
-class CalcZone(object):
+class CalcZone(ABC):
     """
-    Base class representing a calculation zone.
+    Abstract base class representing a calculation zone.
 
-    This class provides a template for setting up zones within which various
-    calculations related to lighting conditions are performed. Subclasses should
-    provide specific implementations of the coordinate setting method.
-
-    NOTE: I changed this from an abstract base class to an object superclass
-    to make it more convenient to work with the website, but this class doesn't really
-    work on its own--it should really be an abstract base class
+    Subclasses must implement calctype, to_view(), export(), and plot().
 
     Parameters:
     --------
@@ -141,8 +136,10 @@ class CalcZone(object):
         self._zone_id = value
 
     @property
-    def calctype(self):
-        return "Zone"
+    @abstractmethod
+    def calctype(self) -> str:
+        """Return zone type identifier ('Plane' or 'Volume')."""
+        ...
 
     @property
     def units(self):
@@ -190,7 +187,6 @@ class CalcZone(object):
         data["enabled"] = self.enabled
         data["show_values"] = self.show_values
         data["colormap"] = self.colormap
-        data["calctype"] = "Zone"
         if self.geometry is not None:
             data["geometry"] = self.geometry.to_dict()
 
@@ -206,11 +202,20 @@ class CalcZone(object):
         with open(filename, "w") as json_file:
             json_file.write(json.dumps(data))
 
-    def export(self, fname=None):
-        pass
+    @abstractmethod
+    def to_view(self) -> ZoneView:
+        """Return a snapshot of the zone's state for calculation."""
+        ...
 
-    def plot(self):
-        pass
+    @abstractmethod
+    def export(self, fname=None):
+        """Export zone values to file."""
+        ...
+
+    @abstractmethod
+    def plot(self, **kwargs):
+        """Plot the zone values."""
+        ...
 
     def copy(self, **kwargs):
         """
@@ -301,7 +306,7 @@ class CalcZone(object):
     def calculate_values(self, lamps, ref_manager=None, hard=False):
         """Calculate all the values for all the lamps"""
 
-        if self.calctype != "Zone" and self.enabled:
+        if self.enabled:
 
             self.result.base_values = self.calculator.compute(
                 lamps=lamps, zv=self.to_view(), hard=hard

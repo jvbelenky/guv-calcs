@@ -144,25 +144,24 @@ def export_room_zip(
 
     # save all results
     for zone_id, zone in room.scene.calc_zones.items():
-        if zone.calctype != "Zone":
-            data_dict[zone.name + ".csv"] = zone.export()
-            if include_plots:
-                if zone.dose:
-                    title = f"{zone.hours} Hour Dose"
-                else:
-                    title = "Irradiance"
-                if zone.calctype == "Plane":
-                    # Save the figure to a BytesIO object
-                    title += f" ({zone.height} m)"
-                    fig, ax = zone.plot_plane(title=title)
-                    img_bytes = fig_to_bytes(fig)
-                    if img_bytes is not None:
-                        data_dict[zone.name + ".png"] = img_bytes
-                elif zone.calctype == "Volume":
-                    fig = zone.plot_volume()
-                    img_bytes = fig_to_bytes(fig)
-                    if img_bytes is not None:
-                        data_dict[zone.name + ".png"] = img_bytes
+        data_dict[zone.name + ".csv"] = zone.export()
+        if include_plots:
+            if zone.dose:
+                title = f"{zone.hours} Hour Dose"
+            else:
+                title = "Irradiance"
+            if zone.calctype == "Plane":
+                # Save the figure to a BytesIO object
+                title += f" ({zone.height} m)"
+                fig, ax = zone.plot_plane(title=title)
+                img_bytes = fig_to_bytes(fig)
+                if img_bytes is not None:
+                    data_dict[zone.name + ".png"] = img_bytes
+            elif zone.calctype == "Volume":
+                fig = zone.plot_volume()
+                img_bytes = fig_to_bytes(fig)
+                if img_bytes is not None:
+                    data_dict[zone.name + ".png"] = img_bytes
 
     # save lamp files if indicated to
     for lamp_id, lamp in room.scene.lamps.items():

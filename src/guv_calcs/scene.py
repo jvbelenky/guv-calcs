@@ -347,12 +347,8 @@ class Scene:
         return self._check_position(lamp.position, lamp.name)
 
     def _check_zone_position(self, calc_zone):
-        if isinstance(calc_zone, (CalcPlane, CalcVol)):
-            x, y, z = calc_zone.coords.T
-            dimensions = x.max(), y.max(), z.max()
-        elif isinstance(calc_zone, CalcZone):
-            # this is a hack; a generic CalcZone is just a placeholder
-            dimensions = self.dim.dimensions
+        x, y, z = calc_zone.coords.T
+        dimensions = x.max(), y.max(), z.max()
         return self._check_position(dimensions, calc_zone.name)
 
     def _check_position(self, dimensions, obj_name):

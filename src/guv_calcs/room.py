@@ -215,7 +215,7 @@ class Room:
 
         zone_state = {}
         for key, zone in self.scene.calc_zones.items():
-            if zone.calctype != "Zone" and zone.enabled:
+            if zone.enabled:
                 zone_state[key] = zone.calc_state
 
         calc_state = {}
@@ -237,8 +237,7 @@ class Room:
 
         zone_state = {}
         for key, zone in self.scene.calc_zones.items():
-            if zone.calctype != "Zone":
-                zone_state[key] = zone.update_state
+            zone_state[key] = zone.update_state
 
         ref_state = (
             tuple(self.ref_manager.reflectances.values()),
@@ -565,7 +564,7 @@ class Room:
             CADR-CFM -> clean air delivery rate in cubic feet per minute
             log1/log2/log3/log4/log5 -> seconds to 90%/99%/99.9%/99.99%/99.999% inactivation
         
-        other kwarg filters:
+        other kwarg filters: species, strain, medium, condition
         """
         data = self.get_efficacy_data(zone_id)
         return data.average_value(**kwargs)

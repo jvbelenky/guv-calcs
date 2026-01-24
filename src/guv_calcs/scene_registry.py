@@ -4,7 +4,7 @@ from collections.abc import MutableMapping, Iterator
 from typing import Generic, TypeVar, Optional, Dict, Callable
 from .room_dims import RoomDimensions
 from .lamp import Lamp
-from .calc_zone import CalcZone, CalcPlane, CalcVol
+from .calc_zone import CalcZone
 from .reflectance import Surface
 import warnings
 
@@ -167,17 +167,15 @@ class ZoneRegistry(Registry["CalcZone"]):
     base_id = "CalcZone"
 
     def _validate(self, zone):
-        if not isinstance(zone, (CalcZone, CalcPlane, CalcVol)):
-            raise TypeError(f"Must be CalcZone, CalcPlane, or CalcVol not {type(zone)}")
+        if not isinstance(zone, CalcZone):
+            raise TypeError(f"Must be a CalcZone subclass, not {type(zone)}")
         self.check_position(zone)
         return zone
 
     def check_position(self, zone) -> str:
-        if isinstance(zone, (CalcPlane, CalcVol)):
-            x, y, z = zone.coords.T
-            dimensions = x.max(), y.max(), z.max()
-            return self._check_position(dimensions, zone)
-        return None
+        x, y, z = zone.coords.T
+        dimensions = x.max(), y.max(), z.max()
+        return self._check_position(dimensions, zone)
 
 
 @dataclass
