@@ -38,7 +38,7 @@ format:
 	black src/guv_calcs/*
 	
 lint: format
-	flake8 --ignore=E114,E116,E117,E231,E266,E303,E501,W293,W291,W503 src/guv_calcs/*
+	flake8 --ignore=E114,E116,E117,E203,E231,E266,E302,E303,E501,E722,W293,W291,W503 src/guv_calcs/*
 
 ## Remove compiled python files
 clean:
@@ -49,7 +49,13 @@ clean:
 	@find . -type f -name "*.kate-swp" -delete
 	@echo "Done"
 
-test: 
-	$(PYTHON_INTERPRETER) tests/test.py
+test:
+	$(PYTHON_INTERPRETER) -m pytest tests/ -v
+
+test-cov:
+	$(PYTHON_INTERPRETER) -m pytest tests/ --cov=src/guv_calcs --cov-report=term-missing
+
+test-fast:
+	$(PYTHON_INTERPRETER) -m pytest tests/ -v -x --ignore=tests/test_e2e.py
 	
 all: install lint test

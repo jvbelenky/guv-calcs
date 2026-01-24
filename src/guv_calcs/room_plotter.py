@@ -39,12 +39,18 @@ class RoomPlotter:
                 fig = self._plot_lamp(lamp=lamp, fig=fig, select_id=select_id)
         for zone_id, zone in self.room.calc_zones.items():
             if isinstance(zone, CalcPlane):
-                if zone.show_values and zone.values.sum() > 0:
+                if zone.show_values and zone.values is not None:
                     fig = self._plot_plane_values(zone=zone, fig=fig)
                 else:
                     fig = self._plot_plane(zone=zone, fig=fig, select_id=select_id)
             elif isinstance(zone, CalcVol):
                 fig = self._plot_vol(zone=zone, fig=fig, select_id=select_id)
+
+        # for filter_id, filt in self.room.filters.items():
+        # fig = self._plot_filter(filt=filt, fig=fig, select_id=select_id)
+
+        # for obs_id, obs in self.room.obstacles.items():
+        # fig = self._plot_obstacle(obs=obs, fig=fig)
 
         x, y, z = self.room.dim.x, self.room.dim.y, self.room.dim.z
 
@@ -122,7 +128,7 @@ class RoomPlotter:
 
         init_scale = convert_units(self.room.units, "meters", lamp.values.max())
         coords = lamp.transform_to_world(lamp.photometric_coords, scale=init_scale)
-        scale = lamp.get_total_power() / 120
+        scale = lamp.get_total_power() / 100
         coords = (coords.T - lamp.position) * scale + lamp.surface.position
         x, y, z = coords.T
 
@@ -240,19 +246,11 @@ class RoomPlotter:
         return fig
 
     def _plot_plane_values(self, zone, fig):
-        if zone.ref_surface == "xy":
-            X, Y = np.meshgrid(zone.xp, zone.yp, indexing="ij")
-            Z = np.full_like(X, zone.height)
-        elif zone.ref_surface == "xz":
-            X, Z = np.meshgrid(zone.xp, zone.yp, indexing="ij")
-            Y = np.full_like(X, zone.height)
-        elif zone.ref_surface == "yz":
-            Y, Z = np.meshgrid(zone.xp, zone.yp, indexing="ij")
-            X = np.full_like(Y, zone.height)
+        x, y, z = zone.coords.T.reshape(3, *zone.num_points)
         zone_value_trace = go.Surface(
-            x=X,
-            y=Y,
-            z=Z,
+            x=x,
+            y=y,
+            z=z,
             surfacecolor=zone.values,
             colorscale=self.room.scene.colormap,
             showscale=False,
@@ -270,16 +268,42 @@ class RoomPlotter:
             self._update_trace_by_id(
                 fig,
                 zone.zone_id,
-                x=X,
-                y=Y,
-                z=Z,
+                x=x,
+                y=y,
+                z=z,
                 surfacecolor=zone.values,
+            )
+        return fig
+
+    def _plot_obstacle(self, obs, fig):
+        x_coords, y_coords, z_coords = self._get_box_coords(obs.lo, obs.hi)
+        obs_trace = go.Scatter3d(
+            x=x_coords,
+            y=y_coords,
+            z=z_coords,
+            mode="lines",
+            line=dict(color="#000000", width=3),
+            name=obs.name,
+            customdata=["obstacle_" + obs.obs_id],
+        )
+        traces = [trace.name for trace in fig.data]
+        if obs_trace.name not in traces:
+            fig.add_trace(obs_trace)
+        else:
+            self._update_trace_by_id(
+                fig,
+                obs.obs_id,
+                x=x_coords,
+                y=y_coords,
+                z=z_coords,
             )
         return fig
 
     def _plot_vol(self, zone, fig, select_id=None):
 
-        x_coords, y_coords, z_coords = self._get_box_coords(*zone.dimensions)
+        x_coords, y_coords, z_coords = self._get_box_coords(
+            *np.array(zone.dimensions).T
+        )
         zonecolor = self._set_color(select_id, label=zone.zone_id, enabled=zone.enabled)
         # Create a single trace for all edges
         zonetrace = go.Scatter3d(
@@ -307,15 +331,13 @@ class RoomPlotter:
             )
         # fluence isosurface
         if zone.values is not None and zone.show_values:
-            X, Y, Z = np.meshgrid(*zone.points, indexing="ij")
-            x, y, z = X.flatten(), Y.flatten(), Z.flatten()
             values = zone.values.flatten()
             isomin = zone.values.mean() / 2
             if zone.name + " Values" not in traces:
                 zone_value_trace = go.Isosurface(
-                    x=x,
-                    y=y,
-                    z=z,
+                    x=zone.coords.T[0],
+                    y=zone.coords.T[1],
+                    z=zone.coords.T[2],
                     value=values,
                     isomin=isomin,
                     surface_count=3,
@@ -334,9 +356,9 @@ class RoomPlotter:
                 self._update_trace_by_id(
                     fig,
                     zone.zone_id,
-                    x=x,
-                    y=y,
-                    z=z,
+                    x=zone.coords.T[0],
+                    y=zone.coords.T[1],
+                    z=zone.coords.T[2],
                     values=values,
                     isomin=isomin,
                 )

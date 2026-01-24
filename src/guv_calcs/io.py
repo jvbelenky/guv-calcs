@@ -6,29 +6,55 @@ import json
 import zipfile
 import io
 import csv
+from functools import cache
+from packaging.version import Version
+import pandas as pd
+import numpy as np
 import plotly.io as pio
 from plotly.graph_objs._figure import Figure as plotly_fig
 from matplotlib.figure import Figure as mpl_fig
+from importlib import resources
+from .room_dims import RoomDimensions
 
 # -------------- Loading a room from file -------------------
 
 
-def load_room(filedata):
+def load_room_data(filedata):
     """
     TODO: wow this is hideous this should really just be a class method
     load a room object from json filedata
     """
-    from .room import Room
+    # from .room import Room
 
     load_data = _parse_loadfile(filedata)
     saved_version = load_data["guv-calcs_version"]
     current_version = get_version(Path(__file__).parent / "_version.py")
     if saved_version != current_version:
-        warnings.warn(
-            f"This file was saved with guv-calcs {saved_version}, while you have {current_version} installed."
-        )
+        msg = f"This file was saved with guv-calcs {saved_version}, while you have {current_version} installed."
+        warnings.warn(msg)
+
     room_dict = load_data["data"]
-    return Room.from_dict(room_dict)
+
+    if Version(saved_version) < Version("0.4.33"):
+        from .reflectance import init_room_surfaces
+
+        # reserialize reflective surfaces for older schema versions
+        dims = RoomDimensions(
+            x=room_dict.get("x"),
+            y=room_dict.get("y"),
+            z=room_dict.get("z"),
+        )
+        surfaces = init_room_surfaces(
+            dims=dims,
+            reflectances=room_dict.get("reflectances", None),
+            x_spacings=room_dict.get("x_spacings", None),
+            y_spacings=room_dict.get("y_spacings", None),
+        )
+        room_dict["surfaces"] = {}
+        for key, val in surfaces.items():
+            room_dict["surfaces"][key] = val.to_dict()
+
+    return room_dict
 
 
 def _parse_loadfile(filedata):
@@ -36,7 +62,7 @@ def _parse_loadfile(filedata):
     validate and parse a loadfile
     """
 
-    if isinstance(filedata, (str, bytes or bytearray)):
+    if isinstance(filedata, (str, bytes, bytearray)):
         try:
             dct = json.loads(filedata)
         except json.JSONDecodeError:
@@ -63,7 +89,7 @@ def _load_file(path):
     return dct
 
 
-def save_room(room, fname):
+def save_room_data(room, fname):
     """save all relevant parameters to a json file"""
     savedata = {}
     version = get_version(Path(__file__).parent / "_version.py")
@@ -182,7 +208,10 @@ def generate_report(self, fname=None):
     header group clearly.
     """
     precision = self.precision if self.precision > 3 else 3
-    fmt = lambda v: round(v, precision) if isinstance(v, (int, float)) else v
+
+    def fmt(v):
+        return round(v, precision) if isinstance(v, (int, float)) else v
+
     # ───  Room parameters  ───────────────────────────────
     rows = [["Room Parameters"]]
     rows += [["", "Dimensions", "x", "y", "z", "units"]]
@@ -195,7 +224,9 @@ def generate_report(self, fname=None):
     # ───  Reflectance  ──────────────────────────────────
     rows += [["", "Reflectance"]]
     rows += [["", "", "Floor", "Ceiling", "North", "South", "East", "West", "Enabled"]]
-    rows += [["", "", *self.ref_manager.reflectances.values(), self.enable_reflectance]]
+    rows += [
+        ["", "", *self.ref_manager.reflectances.values(), self.ref_manager.enabled]
+    ]
     rows += [[""]]
 
     # ───  Luminaires  ───────────────────────────────────
@@ -218,6 +249,7 @@ def generate_report(self, fname=None):
                 "Surface Length",
                 "Surface Width",
                 "Fixture Depth",
+                "Scaling factor",
             ]
         ]
         for lamp in self.scene.lamps.values():
@@ -237,12 +269,16 @@ def generate_report(self, fname=None):
                     fmt(lamp.surface.length),
                     fmt(lamp.surface.width),
                     fmt(lamp.surface.depth),
+                    fmt(lamp.scaling_factor),
                 ]
             ]
         rows += [[""]]
 
-    # ───  Calculation planes  ───────────────────────────
-    planes = [z for z in self.scene.calc_zones.values() if z.calctype == "Plane"]
+    # ----- Calc zones ------------------------
+    zones = [z for z in self.scene.calc_zones.values() if z.values is not None]
+
+    # ----- Calc planes -----------------------
+    planes = [z for z in zones if z.calctype == "Plane"]
     if planes:
         rows += [["Calculation Planes"]]
         rows += [
@@ -284,8 +320,8 @@ def generate_report(self, fname=None):
             ]
         rows += [[""]]
 
-    # ───  Calculation volumes  ──────────────────────────
-    vols = [z for z in self.scene.calc_zones.values() if z.calctype == "Volume"]
+    # ------ Calc volumes ----------------------
+    vols = [z for z in zones if z.calctype == "Volume"]
     if vols:
         rows += [["Calculation Volumes"]]
         rows += [
@@ -321,8 +357,7 @@ def generate_report(self, fname=None):
             ]
         rows += [[""]]
 
-    # ───  Statistics  ──────────────────────────
-    zones = [z for z in self.scene.calc_zones.values() if z.calctype != "Zone"]
+    # --------- Statistics -----------------
     if zones:
         rows += [["Statistics"]]
         rows += [
@@ -358,6 +393,46 @@ def generate_report(self, fname=None):
             csvfile.write(csv_bytes)
     else:
         return csv_bytes
+
+
+# ------- package data loading ---------------
+
+
+@cache
+def get_full_disinfection_table():
+    """fetch all inactivation constant data without any filtering"""
+    fname = "UVC Inactivation Constants.csv"
+    path = resources.files("guv_calcs.data").joinpath(fname)
+    df = pd.read_csv(path)
+    df = df.drop(columns=["Unnamed: 0", "Index"])
+    return df
+
+
+def get_spectral_weightings():
+    """
+    Return a dict of all the relevant spectral weightings by wavelength
+    """
+
+    fname = "UV Spectral Weighting Curves.csv"
+    path = resources.files("guv_calcs.data").joinpath(fname)
+    with path.open("rb") as file:
+        weights = file.read()
+
+    csv_data = load_csv(weights)
+    reader = csv.reader(csv_data, delimiter=",")
+    headers = next(reader, None)  # get headers
+
+    data = {}
+    for header in headers:
+        data[header] = []
+    for row in reader:
+        for header, value in zip(headers, row):
+            data[header].append(float(value))
+
+    spectral_weightings = {}
+    for i, (key, val) in enumerate(data.items()):
+        spectral_weightings[key] = np.array(val)
+    return spectral_weightings
 
 
 # ------- Conversions to bytes ---------------

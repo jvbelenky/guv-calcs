@@ -6,26 +6,38 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from scipy.interpolate import RegularGridInterpolator
-from .units import convert_units
+from .units import convert_units, LengthUnits
+from .lamp_orientation import LampOrientation
 
 
 class LampSurface:
     def __init__(
-        self, width, length, depth, units, source_density, intensity_map, pose
+        self,
+        pose: "LampOrientation",
+        width: float = 0.0,
+        length: float = 0.0,
+        depth: float = 0.0,
+        units: "LengthUnits" = LengthUnits.METERS,
+        source_density: int = 1,
+        intensity_map=None,  # messy..
     ):
         """
+        TODO: instead of the pose object itself maybe some kind of mappable view?
+        TODO: intensity_map loading is pretty messy
+
         Represents the emissive surface of a lamp; manages functions
         related to source discretization.
         """
-        self.units = units if units is not None else "meters"
-        self.width = width if width is not None else 0
-        self.length = length if length is not None else 0
-        self.depth = depth if depth is not None else 0
+
+        self.width = width
+        self.length = length
+        self.depth = depth
+        self.units = LengthUnits.from_any(units)
 
         self._pose = pose
         self.position = self._calculate_surface_position()
 
-        self.source_density = 1 if source_density is None else source_density
+        self.source_density = 1
         # store original for future operations
         self.intensity_map_orig = self._load_intensity_map(intensity_map)
         # this is the working copy
@@ -60,6 +72,7 @@ class LampSurface:
 
     def set_units(self, units):
         """set units and convert all values"""
+        units = LengthUnits.from_any(units)
         if units != self.units:
             self.width, self.length, self.depth = convert_units(
                 self.units, units, self.width, self.length, self.depth
@@ -76,7 +89,7 @@ class LampSurface:
         populate length/width units values from an IESFile object
         """
         if ies is not None:
-            units_dict = {1: "feet", 2: "meters"}
+            units_dict = {1: LengthUnits.FEET, 2: LengthUnits.METERS}
             self.units = units_dict[ies.units]
             self.width = ies.width
             self.length = ies.length

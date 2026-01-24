@@ -1,6 +1,11 @@
 import numpy as np
 import copy
+import inspect
+import hashlib
+from dataclasses import dataclass
 from .calc_zone import CalcPlane
+from .calc_manager import apply_plane_filters
+from .room_dims import RoomDimensions
 
 
 class ReflectanceManager:
@@ -8,19 +13,7 @@ class ReflectanceManager:
     Class for managing reflective surfaces and their interactions
 
     Attributes:
-    x,y,z: floats
-        cartesian dimensions--should be the same as the Room object
-    reflectances: dict { str: float}
-        dict with keys [`floor`, `ceiling`, `south`, `north`, `east`, `west`]
-        and float values between 0 and 1. All values default 0.0
-    x_spacings, y_spacings: dict { str: float}
-        dict with same keys as `reflectances` and float values greater than 0.
-        All values default None. Determines spacing in each reflective surface.
-        Used preferentially over num_x/num_y if not None.
-    num_x, num_y: dict { str: int}
-        dict with same keys as `reflectances` and int values 1 or greater.
-        All values default 10. Determines number of points in each reflective surface.
-        Ignored if x_spacing/y_spacing is set
+    surfaces: dict, default = {}
     max_num_passes: int, default=100
         When calculating interreflections, the maximum number of passes before
         the calculation concludes.
@@ -34,220 +27,81 @@ class ReflectanceManager:
 
     def __init__(
         self,
-        x,
-        y,
-        z,
-        reflectances=None,
-        x_spacings=None,
-        y_spacings=None,
-        num_x=None,
-        num_y=None,
-        max_num_passes=None,
-        threshold=None,
+        surfaces=None,
+        max_num_passes: int = 100,
+        threshold: float = 0.02,
+        enabled: bool = True,
     ):
 
-        self.x = x
-        self.y = y
-        self.z = z
-
-        self.keys = ["floor", "ceiling", "south", "north", "east", "west"]
-        default_reflectances = {surface: 0.0 for surface in self.keys}
-        default_spacings = {surface: None for surface in self.keys}
-        default_nums = {surface: 10 for surface in self.keys}
-
-        self.reflectances = {**default_reflectances, **(reflectances or {})}
-        self.x_spacings = {**default_spacings, **(x_spacings or {})}
-        self.y_spacings = {**default_spacings, **(y_spacings or {})}
-        self.num_x = {**default_nums, **(num_x or {})}
-        self.num_y = {**default_nums, **(num_y or {})}
-        self.max_num_passes = 100 if max_num_passes is None else int(max_num_passes)
-        self.threshold = 0.02 if threshold is None else threshold
-        if not isinstance(self.threshold, float):
-            raise TypeError("threshold must be a float between 0 and 1")
+        self.surfaces = {} if surfaces is None else surfaces
+        self.max_num_passes = int(max_num_passes)
+        self.threshold = float(threshold)
+        self.enabled = bool(enabled)
         if self.threshold < 0 or self.threshold > 1:
             raise ValueError("threshold must be a float between 0 and 1")
 
         self.zone_dict = {}  # will contain all values from all contributions
-        self.surfaces = {}
-        self.managers = {}
-        self._initialize_surfaces()
-
-    def _eq_dict(self):
-        """Normalized configuration-only dict for equality."""
-        return {
-            "x": self.x,
-            "y": self.y,
-            "z": self.z,
-            "reflectances": dict(self.reflectances),
-            "x_spacings": dict(self.x_spacings),
-            "y_spacings": dict(self.y_spacings),
-            "max_num_passes": self.max_num_passes,
-            "threshold": self.threshold,
-        }
 
     def __eq__(self, other):
         if not isinstance(other, ReflectanceManager):
             return NotImplemented
-        return self._eq_dict() == other._eq_dict()
+        return self.to_dict() == other.to_dict()
 
     def __repr__(self):
-
+        surface_rep = "(\n"
+        for key, surf in self.surfaces.items():
+            surface_rep += surf.__repr__() + "\n"
         return (
-            f"ReflectanceManager(dim=({self.x},{self.y},{self.z}), "
-            f"R={self.reflectances}, "
-            f"x_spacings={self.x_spacings}, "
-            f"y_spacings={self.y_spacings}, "
-            f"passes={self.max_num_passes}, "
-            f"threshold={self.threshold})"
+            f"ReflectanceManager("
+            f"max_num_passes={self.max_num_passes}, "
+            f"threshold={self.threshold}, "
+            f"surfaces={surface_rep})"
         )
 
-    def set_reflectance(self, R, wall_id=None):
-        """set reflectance by wall_id or, if wall_if is None, to all walls"""
-        if wall_id is None:
-            # set this value for all walls
-            for wall in self.keys:
-                # self.reflectances[wall] = R
-                self.surfaces[wall].R = R
-        else:
-            if wall_id not in self.keys:
-                raise KeyError(f"wall_id must be in {self.keys}")
-            else:
-                # self.reflectances[wall_id] = R
-                self.surfaces[wall_id].R = R
-        # update the dict
-        for key, val in self.surfaces.items():
-            self.reflectances[key] = val.R
+    @classmethod
+    def from_dict(cls, data):
+        keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
+        return cls(**{k: v for k, v in data.items() if k in keys})
 
-    def set_spacing(self, x_spacing=None, y_spacing=None, wall_id=None):
-        """set x and y spacing by wall_id or, if wall_if is None, to all walls"""
-        if wall_id is None:
-            # set this value for all walls
-            for wall in self.keys:
-                self.surfaces[wall].plane.set_spacing(
-                    x_spacing=x_spacing, y_spacing=y_spacing
-                )
-        else:
-            if wall_id not in self.keys:
-                raise KeyError(f"wall_id must be in {self.keys}")
-            else:
-                self.surfaces[wall_id].plane.set_spacing(
-                    x_spacing=x_spacing, y_spacing=y_spacing
-                )
-        self._update_points()
+    def to_dict(self):
+        """Normalized configuration-only dict for equality."""
+        return {
+            "max_num_passes": self.max_num_passes,
+            "threshold": self.threshold,
+            "enabled": self.enabled,
+        }
 
-    def set_num_points(self, num_x=None, num_y=None, wall_id=None):
-        """set number of x and y points by wall_id or, if wall_if is None, to all walls"""
-        if wall_id is None:
-            for wall in self.keys:
-                # set for all walls
-                self.surfaces[wall].plane.set_num_points(num_x=num_x, num_y=num_y)
-        else:
-            if wall_id not in self.keys:
-                raise KeyError(f"wall_id must be in {self.keys}")
-            else:
-                self.surfaces[wall_id].plane.set_num_points(num_x=num_x, num_y=num_y)
-        self._update_points()
+    @property
+    def calc_state(self):
+        tpl = tuple((key,) + val.calc_state for key, val in self.surfaces.items())
+        return (self.max_num_passes, self.threshold, self.enabled) + tpl
 
-    def _initialize_surfaces(self):
+    @property
+    def keys(self):
+        return self.surfaces.keys()
 
-        for wall, reflectance in self.reflectances.items():
-            (
-                x1,
-                x2,
-                y1,
-                y2,
-                height,
-                ref_surface,
-                direction,
-            ) = self._get_surface_dimensions(wall)
+    @property
+    def reflectances(self):
+        return {key: val.R for key, val in self.surfaces.items()}
 
-            plane = CalcPlane(
-                zone_id=wall,
-                x1=x1,
-                x2=x2,
-                y1=y1,
-                y2=y2,
-                height=height,
-                ref_surface=ref_surface,
-                direction=direction,
-                horiz=True,
-                x_spacing=self.x_spacings[wall],
-                y_spacing=self.y_spacings[wall],
-                num_x=self.num_x[wall],
-                num_y=self.num_y[wall],
-            )
-            self.surfaces[wall] = ReflectiveSurface(R=reflectance, plane=plane)
-        self._update_points()
-        # possibly this should go here? idk
-        self.managers = {}
-        for wall, surface in self.surfaces.items():
-            ref_manager = copy.deepcopy(self)
-            del ref_manager.surfaces[wall]
-            self.managers[wall] = ref_manager
+    @property
+    def x_spacings(self):
+        return {key: val.plane.x_spacing for key, val in self.surfaces.items()}
 
-    def _update_points(self):
-        for key, val in self.surfaces.items():
-            self.x_spacings[key] = val.plane.x_spacing
-            self.y_spacings[key] = val.plane.y_spacing
-            self.num_x[key] = val.plane.num_x
-            self.num_y[key] = val.plane.num_y
-
-    def _get_surface_dimensions(self, wall):
-        """retrieve the dimensions of a particular wall based on its id"""
-
-        if wall == "floor":
-            x1, x2, y1, y2 = 0, self.x, 0, self.y
-            height = 0
-            ref_surface = "xy"
-            direction = 1
-        elif wall == "ceiling":
-            x1, x2, y1, y2 = 0, self.x, 0, self.y
-            height = self.z
-            ref_surface = "xy"
-            direction = -1
-        elif wall == "south":
-            x1, x2, y1, y2 = 0, self.x, 0, self.z
-            height = 0
-            ref_surface = "xz"
-            direction = 1
-        elif wall == "north":
-            x1, x2, y1, y2 = 0, self.x, 0, self.z
-            height = self.y
-            ref_surface = "xz"
-            direction = -1
-        elif wall == "west":
-            x1, x2, y1, y2 = 0, self.y, 0, self.z
-            height = 0
-            ref_surface = "yz"
-            direction = 1
-        elif wall == "east":
-            x1, x2, y1, y2 = 0, self.y, 0, self.z
-            height = self.x
-            ref_surface = "yz"
-            direction = -1
-        return x1, x2, y1, y2, height, ref_surface, direction
-
-    def update_dimensions(self, x=None, y=None, z=None):
-        """update the wall dimensions based on changes to the Room parent class"""
-        self.x = self.x if x is None else x
-        self.y = self.y if y is None else y
-        self.z = self.z if z is None else z
-        for wall, surface in self.surfaces.items():
-            x1, x2, y1, y2, height, _, _ = self._get_surface_dimensions(wall)
-            surface.plane.height = height
-            surface.plane.set_dimensions(x1, x2, y1, y2, preserve_spacing=False)
-        self._update_points()
+    @property
+    def y_spacings(self):
+        return {key: val.plane.y_spacing for key, val in self.surfaces.items()}
 
     def calculate_incidence(self, lamps, hard=False):
         """
         calculate the incident irradiances on all reflective walls
         """
-
-        # first pass
-        for wall, surface in self.surfaces.items():
-            surface.calculate_incidence(lamps, hard=hard)
-        # subsequent passes
-        self._interreflectance(lamps, hard=hard)
+        if self.enabled:
+            # first pass
+            for wall, surface in self.surfaces.items():
+                surface.calculate_incidence(lamps, hard=hard)
+            # subsequent passes - runs once, and whenever reflectance changes
+            self._interreflectance(lamps, hard=hard)
 
     def _interreflectance(self, lamps, hard=False):
         """
@@ -256,25 +110,15 @@ class ReflectanceManager:
         # create dict of ref managers for each wall
         managers = self._create_managers()
 
-        # for storing the progressively increasing reflectance values
-        dct = {}
-        for wall, surface in self.surfaces.items():
-            dct[wall] = surface.plane.values
-
         i = 0  # increases to self.max_num_passes
         percent = 1  # falls to self.threshold
         while percent > self.threshold and i < self.max_num_passes:
             pc = []
             for wall, surface in self.surfaces.items():
-
                 init = surface.plane.values.mean()
-
                 surface.calculate_incidence(
                     lamps, ref_manager=managers[wall], hard=hard
                 )
-
-                dct[wall] += surface.plane.reflected_values
-
                 final = surface.plane.values.mean()
                 if final > 0:
                     pc.append((abs(final - init) / final))
@@ -283,28 +127,17 @@ class ReflectanceManager:
             percent = np.mean(pc)
             managers = self._update_managers(managers)
             i = i + 1
-        for wall, surface in self.surfaces.items():
-            surface.plane.values = dct[wall]
 
     def _update_managers(self, managers: dict) -> dict:
         """Update all interreflection managers with newly calculated surface incidences"""
         for wall, manager in managers.items():
-            subwalls = list(manager.surfaces.keys())  # Create a static copy of keys
+            subwalls = list(manager.surfaces.keys())
             for subwall in subwalls:
-                # Update the values without modifying the dictionary structure
-                np.copyto(
-                    manager.surfaces[subwall].plane.values,
-                    self.surfaces[subwall].plane.values,
-                )
-                # create new plane
-                new_plane = copy.deepcopy(self.surfaces[subwall].plane)
-                # replace the total values with only the reflected values
-                new_plane.values = new_plane.reflected_values
-                # Replace the object instead of deleting in-place
-                manager.surfaces[subwall] = ReflectiveSurface(
-                    R=self.surfaces[subwall].R, plane=new_plane
-                )
-
+                # update reflected values
+                old_values = manager.surfaces[subwall].plane.result.reflected_values
+                new_values = self.surfaces[subwall].plane.result.reflected_values
+                if old_values is not None:
+                    np.copyto(old_values, new_values)
         return managers  # Updated in place
 
     def _create_managers(self):
@@ -313,14 +146,7 @@ class ReflectanceManager:
         """
         managers = {}
         for wall, surface in self.surfaces.items():
-            ref_manager = ReflectanceManager(
-                x=self.x,
-                y=self.y,
-                z=self.z,
-                reflectances=self.reflectances,
-                x_spacings=self.x_spacings,
-                y_spacings=self.y_spacings,
-            )
+            ref_manager = copy.deepcopy(self)
             # assign planes
             for subwall, surface in ref_manager.surfaces.items():
                 new_plane = copy.deepcopy(self.surfaces[subwall].plane)
@@ -330,167 +156,206 @@ class ReflectanceManager:
             managers[wall] = ref_manager
         return managers
 
-    def calculate_reflectance(self, zone, hard=False):
+    def calculate_reflectance(self, zv, hard=False):
         """
         calculate the reflectance contribution to a calc zone from each surface
         """
+        if self.enabled:
+            threshold = 0  # zone.base_values.mean() * 0.01  # 1% of total value
 
-        threshold = zone.base_values.mean() * 0.01  # 1% of total value
+            total_values = {}
+            for wall, surface in self.surfaces.items():
+                # first make sure incident irradiance is calculated
+                if surface.plane.values is None:
+                    raise ValueError("Incidence must be calculated before reflectance")
+                if surface.R * surface.plane.values.mean() > threshold:
+                    surface.calculate_reflectance(zv, hard=hard)
+                    total_values[wall] = surface.zone_dict[zv.zone_id].values
+                else:
+                    total_values[wall] = np.zeros(zv.num_points)
+            self.zone_dict[zv.zone_id] = total_values
+            return self._get_total_reflectance(zv)
+        else:
+            return np.zeros(zv.num_points).astype("float32")
 
-        total_values = {}
-        for wall, surface in self.surfaces.items():
-            if surface.R * surface.plane.values.mean() > threshold:
-                surface.calculate_reflectance(zone, hard=hard)
-                values = surface.zone_dict[zone.zone_id]["values"]
-                total_values[wall] = values
-            else:
-                total_values[wall] = np.zeros(zone.num_points)
-        self.zone_dict[zone.zone_id] = total_values
-
-        return total_values
-
-    def get_total_reflectance(self, zone):
+    def _get_total_reflectance(self, zv):
         """sum over all surfaces to get the total reflected values for that calc zone"""
-        dct = self.zone_dict[zone.zone_id]
-        values = np.zeros(zone.num_points).astype("float32")
+        dct = self.zone_dict[zv.zone_id]
+        values = np.zeros(zv.num_points).astype("float32")
         for wall, surface_vals in dct.items():
             if surface_vals is not None:
                 values += surface_vals * self.reflectances[wall]
         return values
 
 
-class ReflectiveSurface:
+class Surface:
     """
-    Class that represents a single reflective surface defined by a calculation
-    zone and a float value R between 0 and 1.
+    Class that represents a single surface defined by a calculation plane
+    and optical properties R (reflectance) and T (transmittance).
+
+    Constraints:
+        - R and T must each be in [0, 1]
+        - R + T must be <= 1 (the remainder is absorbed)
     """
 
-    def __init__(self, R, plane):
+    def __init__(self, R: float, plane: CalcPlane, T: float = 0.0):
 
         if not isinstance(R, (float, int)):
             raise TypeError("R must be a float in range [0, 1]")
         if R > 1 or R < 0:
             raise ValueError("R must be a float in range [0, 1]")
 
+        if not isinstance(T, (float, int)):
+            raise TypeError("T must be a float in range [0, 1]")
+        if T > 1 or T < 0:
+            raise ValueError("T must be a float in range [0, 1]")
+
+        if R + T > 1:
+            raise ValueError("R + T must be <= 1 (cannot reflect and transmit more than 100%)")
+
         if not isinstance(plane, CalcPlane):
             raise TypeError("plane must be a CalcPlane object")
 
         self.R = R
+        self.T = T
         self.plane = plane
-        self.num_passes = 0  # init
-        self.zone_dict = {}
+        self.zone_dict: dict[str, SurfaceZoneCache] = {}
+
+    def __getattr__(self, name):
+        """passthrough to plane attributes"""
+        plane = self.__dict__.get("plane", None)
+        if plane is not None and hasattr(plane, name):
+            return getattr(plane, name)
+        raise AttributeError
 
     def __eq__(self, other):
-        if not isinstance(other, ReflectiveSurface):
+        if not isinstance(other, Surface):
             return NotImplemented
-        return self.R == other.R and self.plane.to_dict() == other.plane.to_dict()
+        return self.R == other.R and self.T == other.T and self.plane.to_dict() == other.plane.to_dict()
 
     def __repr__(self):
-        return f"ReflectiveSurface(R={self.R:.3g}, " f"surface={self.plane.__repr__()})"
+        return (
+            f"Surface(id={self.plane.zone_id}, "
+            f"R={self.R:.3g}, T={self.T:.3g}, "
+            f"geometry={self.plane.geometry.__repr__()})"
+        )
+
+    @property
+    def id(self) -> str:
+        return self.plane.zone_id
+
+    def _assign_id(self, value: str) -> None:
+        self.plane._assign_id(value)
+
+    def to_dict(self):
+        return {"R": self.R, "T": self.T, "plane": self.plane.to_dict()}
+
+    @classmethod
+    def from_dict(cls, data):
+        plane_data = data.get("plane", {})
+        plane = CalcPlane.from_dict(plane_data)
+        R = data.get("R", 0.0)
+        T = data.get("T", 0.0)
+        return cls(R=R, T=T, plane=plane)
+
+    @property
+    def calc_state(self):
+        """check if the surface needs to be recalculated"""
+        return self.plane.calc_state
+
+    @property
+    def update_state(self):
+        """check if surface needs updating"""
+        arr = self.plane.values
+        return self.plane.update_state + (hashlib.sha1(arr.tobytes()).digest(),)
+
+    def set_reflectance(self, R: float):
+        if not (0 <= R <= 1):
+            raise ValueError("R must be in [0, 1]")
+        if R + self.T > 1:
+            raise ValueError("R + T must be <= 1")
+        self.R = float(R)
+
+    def set_transmittance(self, T: float):
+        if not (0 <= T <= 1):
+            raise ValueError("T must be in [0, 1]")
+        if self.R + T > 1:
+            raise ValueError("R + T must be <= 1")
+        self.T = float(T)
+
+    def set_spacing(self, x_spacing=None, y_spacing=None):
+        self.plane.set_spacing(x_spacing=x_spacing, y_spacing=y_spacing)
+
+    def set_num_points(self, num_x=None, num_y=None):
+        self.plane.set_num_points(num_x=num_x, num_y=num_y)
 
     def calculate_incidence(self, lamps, ref_manager=None, hard=False):
         """calculate incoming radiation onto all surfaces"""
-        self.plane.calculate_values(lamps=lamps, ref_manager=ref_manager, hard=hard)
+        return self.plane.calculate_values(
+            lamps=lamps, ref_manager=ref_manager, hard=hard
+        )
 
-    def get_calc_state(self):
-        """check if the surface needs to be recalculated"""
-        return self.plane.get_calc_state()
-
-    def get_update_state(self):
-        """"""
-        return self.plane.get_update_state() + [self.plane.values.sum()]
-
-    def calculate_reflectance(self, zone, hard=False):
+    def calculate_reflectance(self, zv, hard=False):
         """
         calculate the reflective contribution of this reflective surface
         to a provided calculation zone
 
         Arguments:
-            zone: a calculation zone onto which reflectance is calculated
+            zone: a view of the calculation zone onto which reflectance is calculated
             lamp: optional. if provided, and incidence not yet calculated, uses this
             lamp to calculate incidence. mostly this is just for
         """
-        # first make sure incident irradiance is calculated
-        if self.plane.values is None:
-            raise ValueError("Incidence must be calculated before reflectance")
 
-        if self.zone_dict.get(zone.zone_id) is None:
-            self.zone_dict[zone.zone_id] = {}
+        if self.zone_dict.get(zv.zone_id) is None:
+            self.zone_dict[zv.zone_id] = SurfaceZoneCache()
 
-        calc_state = zone.get_calc_state()
-        update_state = zone.get_update_state()
-        surface_calc_state = self.get_calc_state()
-        surface_update_state = self.get_update_state()
-        NEW_ZONE = self.zone_dict[zone.zone_id].get("values") is None
-        ZONE_RECALC = calc_state != self.zone_dict[zone.zone_id].get("calc_state")
-        ZONE_UPDATE = update_state != self.zone_dict[zone.zone_id].get("update_state")
-        SURF_RECALC = surface_calc_state != self.zone_dict[zone.zone_id].get(
-            "surface_calc_state"
-        )
-        SURF_UPDATE = surface_update_state != self.zone_dict[zone.zone_id].get(
-            "surface_update_state"
-        )
+        cache = self.zone_dict[zv.zone_id]
 
-        RECALCULATE = NEW_ZONE or ZONE_RECALC or SURF_RECALC or hard
-        UPDATE = RECALCULATE or NEW_ZONE or ZONE_UPDATE or SURF_UPDATE or hard
+        RECALCULATE = cache.needs_recalc(zv.calc_state, self.calc_state) or hard
+        UPDATE = cache.needs_update(zv.update_state, self.update_state) or RECALCULATE
 
         if RECALCULATE:
-            form_factors, theta_zone = self._calculate_coordinates(zone)
+            form_factors, theta_zone = self._calculate_coordinates(zv)
         else:
-            form_factors = self.zone_dict[zone.zone_id]["form_factors"]
-            theta_zone = self.zone_dict[zone.zone_id]["theta_zone"]
+            form_factors = cache.form_factors
+            theta_zone = cache.theta_zone
         if UPDATE:
-            I_r = self.plane.values[:, :, np.newaxis, np.newaxis, np.newaxis]
-            element_size = self.plane.x_spacing * self.plane.y_spacing
-
-            values = (I_r * element_size * form_factors).astype("float32")
-
-            values = self._apply_filters(values, theta_zone, zone)
-
-            # Sum over all self.plane points to get total values at each volume point
-            values = np.sum(values, axis=(0, 1))  # Collapse the dimensions
-            values = values.reshape(*zone.num_points)
+            values = self._calculate_values(form_factors, theta_zone, zv)
         else:
-            values = self.zone_dict[zone.zone_id]["values"]
+            values = cache.values
 
         # update the state
-        self.zone_dict[zone.zone_id] = {
-            "form_factors": form_factors,
-            "theta_zone": theta_zone,
-            "values": values,
-            "calc_state": calc_state,
-            "update_state": update_state,
-            "surface_calc_state": surface_calc_state,
-            "surface_update_state": surface_update_state,
-        }
+        self.zone_dict[zv.zone_id] = SurfaceZoneCache(
+            zone_calc_state=zv.calc_state,
+            zone_update_state=zv.update_state,
+            surface_calc_state=self.calc_state,
+            surface_update_state=self.update_state,
+            form_factors=form_factors,
+            theta_zone=theta_zone,
+            values=values,
+        )
 
         return (values * self.R).astype("float32")
 
-    def _apply_filters(self, values, theta_zone, zone):
-        """apply field-of-view based calculations"""
+    def _calculate_values(self, form_factors, theta_zone, zv):
+
+        I_r = self.plane.values[:, :, np.newaxis, np.newaxis, np.newaxis]
+        element_size = self.plane.x_spacing * self.plane.y_spacing
+
+        values = (I_r * element_size * form_factors).astype("float32")
 
         # clean nans
-        if np.isnan(values).any():
+        if (~np.isfinite(values)).any():
             values = np.ma.masked_invalid(values)
 
-        if zone.calctype == "Plane":
+        if zv.is_plane():
+            values = apply_plane_filters(values, theta_zone, zv)
 
-            # apply normals
-            if zone.direction != 0:
-                values[theta_zone > np.pi / 2] = 0
+        # Sum over all self.plane points to get total values at each volume point
+        values = np.sum(values, axis=(0, 1))  # Collapse the dimensions
+        return values.reshape(*zv.num_points)
 
-            # apply vertical field of view
-            values[theta_zone < (np.pi / 2 - np.radians(zone.fov_vert / 2))] = 0
-            values[theta_zone > (np.pi / 2 + np.radians(zone.fov_vert / 2))] = 0
-
-            if zone.vert:
-                values *= np.sin(theta_zone)
-            if zone.horiz:
-                values *= abs(np.cos(theta_zone))
-
-        return values
-
-    def _calculate_coordinates(self, zone):
+    def _calculate_coordinates(self, zv):
         """
         return the angles and distances between the points of the reflective
         surface and the calculation zone
@@ -498,7 +363,7 @@ class ReflectiveSurface:
         this is the expensive step!
         """
         surface_points = self.plane.coords.reshape(*self.plane.num_points, 3)
-        zone_points = zone.coords.reshape(*zone.num_points, 3)
+        zone_points = zv.coords.reshape(*zv.num_points, 3)
 
         differences = (
             surface_points[:, :, np.newaxis, np.newaxis, np.newaxis, :] - zone_points
@@ -517,8 +382,8 @@ class ReflectiveSurface:
         form_factors = form_factors.astype("float32")
 
         #  angles relative to calculation zone. only relevant for planes
-        if zone.calctype == "Plane":
-            rel_zone = differences @ zone.basis
+        if zv.is_plane():
+            rel_zone = differences @ zv.basis
             cos_theta_zone = rel_zone[..., 2] / distances
             theta_zone = np.arccos(cos_theta_zone).astype("float32")
         else:
@@ -529,3 +394,84 @@ class ReflectiveSurface:
         # theta = np.arccos(cos_theta)
 
         return form_factors, theta_zone
+
+
+@dataclass
+class SurfaceZoneCache:
+    zone_calc_state: tuple | None = None  # (zone_calc_state, surface_calc_state)
+    zone_update_state: tuple | None = None  # (zone_update_state, surface_update_state)
+    surface_calc_state: tuple | None = None  # (zone_calc_state, surface_calc_state)
+    surface_update_state: tuple | None = (
+        None  # (zone_update_state, surface_update_state)
+    )
+    form_factors: np.ndarray | None = None
+    theta_zone: np.ndarray | None = None
+    values: np.ndarray | None = None
+
+    def needs_recalc(self, zone_calc_state, surface_calc_state):
+        if self.zone_calc_state != zone_calc_state:
+            return True
+        if self.surface_calc_state != surface_calc_state:
+            return True
+        if self.new_zone:
+            return True
+        return False
+
+    def needs_update(self, zone_update_state, surface_update_state):
+        if self.zone_update_state != zone_update_state:
+            return True
+        if self.surface_update_state != surface_update_state:
+            return True
+        return False
+
+    @property
+    def new_zone(self):
+        if self.values is None:
+            return True
+        return False
+
+
+def init_room_surfaces(
+    dims: RoomDimensions,
+    reflectances: dict = None,
+    x_spacings: dict = None,
+    y_spacings: dict = None,
+    num_x: dict = None,
+    num_y: dict = None,
+):
+
+    keys = dims.faces.keys()
+    # build defaults
+    default_reflectances = {surface: 0.0 for surface in keys}
+    default_spacings = {surface: None for surface in keys}
+    default_nums = {surface: 10 for surface in keys}
+    # build what gets used
+    reflectances = {**default_reflectances, **(reflectances or {})}
+    x_spacings = {**default_spacings, **(x_spacings or {})}
+    y_spacings = {**default_spacings, **(y_spacings or {})}
+    num_x = {**default_nums, **(num_x or {})}
+    num_y = {**default_nums, **(num_y or {})}
+
+    # check that the keys match
+    if reflectances.keys() != keys:
+        raise KeyError(f"Reflectance keys must be {keys}, not {reflectances.keys()}")
+    if x_spacings.keys() != keys:
+        raise KeyError(f"x_spacing keys must be {keys}, not {x_spacings.keys()}")
+    if y_spacings.keys() != keys:
+        raise KeyError(f"y_spacing keys must be {keys}, not {y_spacings.keys()}")
+    if num_x.keys() != keys:
+        raise KeyError(f"num_x keys must be {keys}, not {num_x.keys()}")
+    if num_y.keys() != keys:
+        raise KeyError(f"num_y keys must be {keys}, not {num_y.keys()}")
+    surfaces = {}
+    for wall, reflectance in reflectances.items():
+        plane = CalcPlane.from_face(
+            zone_id=wall,
+            wall=wall,
+            dims=dims,
+            spacing=(x_spacings[wall], y_spacings[wall]),
+            num_points=(num_x[wall], num_y[wall]),
+            horiz=True,
+        )
+        surfaces[wall] = Surface(R=reflectance, plane=plane)
+    return surfaces

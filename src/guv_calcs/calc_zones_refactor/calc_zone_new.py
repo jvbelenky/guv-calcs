@@ -110,9 +110,11 @@ class Volume(Zone):
 
     def plot(self):
         """"""
+        pass  # tmp
 
     def export(self, fname):
         """"""
+        pass  # tmp
 
 
 class CalcPlaneBase:
@@ -263,31 +265,27 @@ class CalcPlaneBase:
         rows += [[""] + list(line) for line in zvals]
         return rows
 
-        def plot_plane(self, fig=None, ax=None, vmin=None, vmax=None, title=None):
-            """Plot the image of the radiation pattern"""
-            if fig is None:
-                if ax is None:
-                    fig, ax = plt.subplots()
-                else:
-                    fig = plt.gcf()
+    def plot_plane(self, fig=None, ax=None, vmin=None, vmax=None, title=None):
+        """Plot the image of the radiation pattern"""
+        if fig is None:
+            if ax is None:
+                fig, ax = plt.subplots()
             else:
-                if ax is None:
-                    ax = fig.axes[0]
+                fig = plt.gcf()
+        else:
+            if ax is None:
+                ax = fig.axes[0]
 
-            title = "" if title is None else title
-            values = self.get_values()
-            xp, yp = [
-                np.unique(val) for val in self.coords.T if len(np.unique(val)) > 1
-            ]
-            if values is not None:
-                vmin = values.min() if vmin is None else vmin
-                vmax = values.max() if vmax is None else vmax
-                extent = [xp[0], xp[-1], yp[0], yp[-1]]
-                values = values.T[::-1]
-                img = ax.imshow(
-                    values, extent=extent, vmin=vmin, vmax=vmax, cmap="plasma"
-                )
-                cbar = fig.colorbar(img, pad=0.03)
-                ax.set_title(title)
-                cbar.set_label(self.units, loc="center")
-            return fig, ax
+        title = "" if title is None else title
+        values = self.get_values()
+        xp, yp = [np.unique(val) for val in self.coords.T if len(np.unique(val)) > 1]
+        if values is not None:
+            vmin = values.min() if vmin is None else vmin
+            vmax = values.max() if vmax is None else vmax
+            extent = [xp[0], xp[-1], yp[0], yp[-1]]
+            values = values.T[::-1]
+            img = ax.imshow(values, extent=extent, vmin=vmin, vmax=vmax, cmap="plasma")
+            cbar = fig.colorbar(img, pad=0.03)
+            ax.set_title(title)
+            cbar.set_label(self.units, loc="center")
+        return fig, ax

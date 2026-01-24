@@ -1,7 +1,9 @@
-from guv_calcs import Room
-room = Room()
-print(room.units)
+from guv_calcs import Room, Lamp
 
+room = Room().add_standard_zones().place_lamp("aerolamp")
+lamp=Lamp.from_keyword("aerolamp").load_spectra(None).set_wavelength(254)
+room.place_lamp(lamp).calculate()
+room.disinfection_plot()
 # from guv_calcs import Room, Lamp
 
 # room = Room()

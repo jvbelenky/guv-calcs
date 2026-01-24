@@ -1,42 +1,92 @@
-AVAILABLE_UNITS = ["meters", "feet"]
+from enum import StrEnum
+import numpy as np
 
 
-def meters_to_feet(arg):
-    return arg / 0.3048
+class UnitEnum(StrEnum):
+    # subclass contract: members are defined as (token, to_base, aliases) and have a default classmethod
+    def __new__(cls, token: str, to_base: float, aliases=()):
+        obj = str.__new__(cls, token)
+        obj._value_ = token
+        obj.to_base = float(to_base)
+        obj.aliases = tuple(a.lower() for a in aliases)
+        return obj
+
+    @classmethod
+    def labels(cls) -> list:
+        return [m.value for m in cls]
+
+    @classmethod
+    def from_token(cls, token):
+        t = str(token).strip().lower()
+        for u in cls:
+            if t == u.value or t in u.aliases:
+                return u
+        raise ValueError(f"Unknown unit {token!r}. Valid units are {cls.labels()}")
+
+    @classmethod
+    def from_any(cls, arg):
+        if arg is None:
+            return cls.default
+        if isinstance(arg, cls):
+            return arg
+        return cls.from_token(arg)
 
 
-def feet_to_meters(arg):
-    return arg * 0.3048
+class LengthUnits(UnitEnum):
+    METERS = ("meters", 1.0, ("m", "meter"))
+    FEET = ("feet", 0.3048, ("ft", "foot"))
+    INCHES = ("inches", 0.0254, ("in", "inch"))
+    CENTIMETERS = ("centimeters", 0.01, ("cm", "centimeter"))
+    YARDS = ("yards", 0.9144, ("yard",))
+
+    @classmethod
+    def default(cls):
+        return cls.METERS
 
 
-def convert(function, *args):
-    result = tuple(function(arg) if arg is not None else None for arg in args)
-    return result[0] if len(result) == 1 else result
+class TimeUnits(UnitEnum):
+    SECONDS = ("seconds", 1.0, ("s", "secs", "sec"))
+    MINUTES = ("minutes", 60.0, ("min", "mins"))
+    HOURS = ("hours", 3600.0, ("hour", "hr"))
+    DAYS = ("days", 86400.0, ("d", "days"))
+
+    @classmethod
+    def default(cls):
+        return cls.SECONDS
 
 
-def convert_units(src, dst, *args):
-    """general purpose function for converting between units"""
-    if not (isinstance(src, str) and isinstance(dst, str)):
-        raise ValueError("Unit labels must be strings")
+def convert(
+    enum,
+    src,
+    dst,
+    *args,
+    sigfigs=None,
+    default_src=None,
+    default_dst=None,
+):
+    s = enum.from_any(src)
+    d = enum.from_any(dst)
+    if s == d:
+        return args[0] if len(args) == 1 else args
 
-    src, dst = src.lower(), dst.lower()
+    factor = s.to_base / d.to_base
+    out = tuple(None if a is None else a * factor for a in args)
+    if sigfigs is not None:
+        out = tuple(None if a is None else np.round(a, sigfigs) for a in out)
+    return out[0] if len(out) == 1 else out
 
-    if src not in AVAILABLE_UNITS:
-        raise ValueError(f"{src} is not an available unit")
-    if dst not in AVAILABLE_UNITS:
-        raise ValueError(f"{dst} is not an available unit")
 
-    if src == dst:
-        result = args
-        if len(result) == 1:
-            result = result[0]
-    elif src == "meters":
-        if dst == "feet":
-            result = convert(meters_to_feet, *args)
-    elif src == "feet":
-        if dst == "meters":
-            result = convert(feet_to_meters, *args)
-    else:
-        raise ValueError("Something went wrong that really should not have gone wrong")
+def convert_length(src, dst, *args, sigfigs: int | None = 12):
+    return convert(LengthUnits, src, dst, *args, sigfigs=sigfigs)
 
-    return result
+
+def convert_time(src, dst, *args, sigfigs: int | None = None):
+    return convert(TimeUnits, src, dst, *args, sigfigs=sigfigs)
+
+
+def convert_units(src, dst, *args, sigfigs: int | None = 12, unit_type="length"):
+    if unit_type.lower() == "length":
+        return convert_length(src, dst, *args, sigfigs=sigfigs)
+    elif unit_type.lower() == "time":
+        return convert_time(src, dst, *args, sigfigs=sigfigs)
+    raise ValueError(f"{unit_type} is not a valid unit type")

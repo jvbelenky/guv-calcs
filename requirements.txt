@@ -7,3 +7,5 @@ scipy==1.13.1
 setuptools==68.2.2
 kaleido==0.2.1
 seaborn==0.13.2
+pytest>=7.0.0
+pytest-cov>=4.0.0
