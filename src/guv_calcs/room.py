@@ -528,32 +528,34 @@ class Room:
                 fluence_dict[v] = fluence_dict[v] + zone.lamp_cache[k].values.mean()
         if len(fluence_dict) == 0:
             warnings.warn("Fluence not available; returning base table.", stacklevel=2)
-            data = Data()     
+            data = Data()
         else:
             data = Data(fluence=fluence_dict, volume_m3=self.dim.cubic_meters)
         use_metric = self.dim.units in [LengthUnits.METERS, LengthUnits.CENTIMETERS]
-        
-        if zone.calctype=="Plane" and zone.horiz:
+
+        if zone.calctype == "Plane" and zone.horiz:
             medium = "Surface"
         else:
-            medium = "Aerosol"        
-        return data.subset(medium=medium, use_metric=use_metric, **kwargs)            
-    
-    def disinfection_table(self, zone_id="WholeRoomFluence", which='default', **kwargs):
+            medium = "Aerosol"
+        return data.subset(medium=medium, use_metric=use_metric, **kwargs)
+
+    def disinfection_table(self, zone_id="WholeRoomFluence", which="default", **kwargs):
         """Return a table of expected disinfection rates"""
         data = self.get_efficacy_data(zone_id, **kwargs)
-        if which == 'default':
+        if which == "default":
             return data.display_df
-        elif which == 'full':
+        elif which == "full":
             return data.full_df
-        elif which == 'combined':
-            return data.combined_df            
-        elif which == 'combined_full':
+        elif which == "combined":
+            return data.combined_df
+        elif which == "combined_full":
             return data.combined_full_df
-        raise ValueError("Valid table arguments are default, full, combined, and combined_full")
-    
+        raise ValueError(
+            "Valid table arguments are default, full, combined, and combined_full"
+        )
+
     def disinfection_plot(self, zone_id="WholeRoomFluence", category=None, **kwargs):
-        """a violin plot of expected disinfection rates for all available species"""                
+        """a violin plot of expected disinfection rates for all available species"""
         data = self.get_efficacy_data(zone_id, category=category)
         return data.plot(air_changes=self.air_changes, **kwargs)
 

@@ -88,7 +88,9 @@ class Data:
         self._use_metric_units = True  # For CADR display (lps vs cfm)
 
         # Track fluence dict wavelengths separately (always included in display)
-        self._fluence_wavelengths = list(fluence.keys()) if isinstance(fluence, dict) else None
+        self._fluence_wavelengths = (
+            list(fluence.keys()) if isinstance(fluence, dict) else None
+        )
 
         # Load base data (cached)
         self._base_df = self.get_full()
@@ -137,11 +139,15 @@ class Data:
         """
         # Validate and set medium filter
         if medium is not None:
-            self._medium = self._validate_filter(medium, self.get_valid_mediums(), "medium")
+            self._medium = self._validate_filter(
+                medium, self.get_valid_mediums(), "medium"
+            )
 
         # Validate and set category filter
         if category is not None:
-            self._category = self._validate_filter(category, self.get_valid_categories(), "category")
+            self._category = self._validate_filter(
+                category, self.get_valid_categories(), "category"
+            )
 
         # Validate and set wavelength filter
         # When fluence is a dict, user-specified wavelengths are ADDED to the fluence
@@ -150,11 +156,15 @@ class Data:
             valid_wavelengths = self.get_valid_wavelengths()
             if isinstance(wavelength, (int, float)):
                 if wavelength not in valid_wavelengths:
-                    raise KeyError(f"{wavelength} is not a valid wavelength; must be in {valid_wavelengths}")
+                    raise KeyError(
+                        f"{wavelength} is not a valid wavelength; must be in {valid_wavelengths}"
+                    )
             elif isinstance(wavelength, list):
                 invalid = [w for w in wavelength if w not in valid_wavelengths]
                 if invalid:
-                    raise KeyError(f"Invalid wavelength(s) {invalid}; must be in {valid_wavelengths}")
+                    raise KeyError(
+                        f"Invalid wavelength(s) {invalid}; must be in {valid_wavelengths}"
+                    )
                 # Normalize single-item lists
                 if len(wavelength) == 1:
                     wavelength = wavelength[0]
@@ -183,8 +193,8 @@ class Data:
     def plot_survival(self, **kwargs):
         """Plot survival fraction over time. See plotting.plot_survival for full documentation."""
         # Only use data's fluence if not explicitly provided
-        if 'fluence' not in kwargs and self.fluence is not None:
-            kwargs['fluence'] = self.fluence
+        if "fluence" not in kwargs and self.fluence is not None:
+            kwargs["fluence"] = self.fluence
         return plot_survival(self, **kwargs)
 
     def save(self, filepath: str, **kwargs) -> None:
@@ -228,7 +238,9 @@ class Data:
         if self._combined_full_df is None:
             # Compute combined df from full_df (all wavelengths, all rows)
             # Note: We don't filter here - filtering is applied when accessing combined_df
-            self._combined_full_df = self._combine_wavelengths(self._full_df, self._fluence)
+            self._combined_full_df = self._combine_wavelengths(
+                self._full_df, self._fluence
+            )
         return self._combined_full_df
 
     @property
@@ -280,7 +292,7 @@ class Data:
         if COL_CATEGORY not in df.columns:
             return None
         return sorted(df[COL_CATEGORY].unique())
-        
+
     @property
     def species(self):
         df = self.display_df
@@ -439,8 +451,7 @@ class Data:
             for wv in wavelengths:
                 wv_rows = group[group[COL_WAVELENGTH] == wv]
                 data_by_wv[wv] = [
-                    self._extract_kinetic_params(row)
-                    for _, row in wv_rows.iterrows()
+                    self._extract_kinetic_params(row) for _, row in wv_rows.iterrows()
                 ]
 
             # Skip if no data for any wavelength
@@ -460,11 +471,21 @@ class Data:
                     COL_CATEGORY: category,
                     COL_MEDIUM: med,
                     COL_EACH: round(eACH_UV(irrad_list, k1_list, k2_list, f_list), 1),
-                    f"Seconds to {LOG_LABELS[1]} inactivation": round(log1(irrad_list, k1_list, k2_list, f_list), 0),
-                    f"Seconds to {LOG_LABELS[2]} inactivation": round(log2(irrad_list, k1_list, k2_list, f_list), 0),
-                    f"Seconds to {LOG_LABELS[3]} inactivation": round(log3(irrad_list, k1_list, k2_list, f_list), 0),
-                    f"Seconds to {LOG_LABELS[4]} inactivation": round(log4(irrad_list, k1_list, k2_list, f_list), 0),
-                    f"Seconds to {LOG_LABELS[5]} inactivation": round(log5(irrad_list, k1_list, k2_list, f_list), 0),
+                    f"Seconds to {LOG_LABELS[1]} inactivation": round(
+                        log1(irrad_list, k1_list, k2_list, f_list), 0
+                    ),
+                    f"Seconds to {LOG_LABELS[2]} inactivation": round(
+                        log2(irrad_list, k1_list, k2_list, f_list), 0
+                    ),
+                    f"Seconds to {LOG_LABELS[3]} inactivation": round(
+                        log3(irrad_list, k1_list, k2_list, f_list), 0
+                    ),
+                    f"Seconds to {LOG_LABELS[4]} inactivation": round(
+                        log4(irrad_list, k1_list, k2_list, f_list), 0
+                    ),
+                    f"Seconds to {LOG_LABELS[5]} inactivation": round(
+                        log5(irrad_list, k1_list, k2_list, f_list), 0
+                    ),
                 }
                 summed_data.append(row_data)
 
@@ -570,11 +591,15 @@ class Data:
             return None
         if isinstance(value, (str, int, float)):
             if value not in valid_values:
-                raise KeyError(f"{value} is not a valid {name}; must be in {valid_values}")
+                raise KeyError(
+                    f"{value} is not a valid {name}; must be in {valid_values}"
+                )
         elif isinstance(value, list):
             invalid = [v for v in value if v not in valid_values]
             if invalid:
-                raise KeyError(f"Invalid {name}(s) {invalid}; must be in {valid_values}")
+                raise KeyError(
+                    f"Invalid {name}(s) {invalid}; must be in {valid_values}"
+                )
             if len(value) == 1:
                 value = value[0]
         return value
@@ -663,8 +688,14 @@ class Data:
             display_cols.append(COL_EACH)
 
         # Add time columns if fluence was provided (based on _log level)
-        if self._fluence is not None and self._time_cols and self._log in self._time_cols:
-            primary, secondary = auto_select_time_columns(df, self._time_cols, self._log)
+        if (
+            self._fluence is not None
+            and self._time_cols
+            and self._log in self._time_cols
+        ):
+            primary, secondary = auto_select_time_columns(
+                df, self._time_cols, self._log
+            )
             if primary and primary in df.columns:
                 display_cols.append(primary)
             if secondary and secondary in df.columns:
@@ -695,5 +726,3 @@ class Data:
                 result[col] = result[col].fillna(" ")
 
         return result
-
-

@@ -52,18 +52,34 @@ AXIS_ALIASES = {
 
 # Log level aliases (map to log number)
 LOG_ALIASES = {
-    "log1": 1, "90": 1, "0.9": 1,
-    "log2": 2, "99": 2, "0.99": 2,
-    "log3": 3, "99.9": 3, "0.999": 3,
-    "log4": 4, "99.99": 4, "0.9999": 4,
-    "log5": 5, "99.999": 5, "0.99999": 5,
+    "log1": 1,
+    "90": 1,
+    "0.9": 1,
+    "log2": 2,
+    "99": 2,
+    "0.99": 2,
+    "log3": 3,
+    "99.9": 3,
+    "0.999": 3,
+    "log4": 4,
+    "99.99": 4,
+    "0.9999": 4,
+    "log5": 5,
+    "99.999": 5,
+    "0.99999": 5,
 }
 
 # Time unit aliases
 TIME_UNIT_ALIASES = {
-    "seconds": "seconds", "sec": "seconds", "s": "seconds",
-    "minutes": "minutes", "min": "minutes", "m": "minutes",
-    "hours": "hours", "hr": "hours", "h": "hours",
+    "seconds": "seconds",
+    "sec": "seconds",
+    "s": "seconds",
+    "minutes": "minutes",
+    "min": "minutes",
+    "m": "minutes",
+    "hours": "hours",
+    "hr": "hours",
+    "h": "hours",
 }
 
 # Compatible column groups (columns that can be co-plotted)

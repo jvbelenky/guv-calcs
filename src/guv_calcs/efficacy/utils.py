@@ -1,11 +1,5 @@
-"""Shared utilities for the efficacy module."""
-
 from matplotlib.colors import LinearSegmentedColormap
-
 from .constants import (
-    COL_EACH,
-    COL_K1,
-    COL_K2,
     COL_CADR_LPS,
     COL_CADR_CFM,
     AXIS_ALIASES,
@@ -56,12 +50,12 @@ def wavelength_to_color(wv, wv_min=200, wv_max=310):
     Violet (200nm) -> Blue -> Teal -> Green -> Orange -> Red (310nm)
     """
     colors = [
-        (0.5, 0.0, 0.8),    # violet (200nm)
-        (0.2, 0.3, 0.9),    # blue (220nm)
-        (0.0, 0.6, 0.7),    # teal (240nm)
-        (0.1, 0.7, 0.3),    # green (260nm)
-        (0.9, 0.5, 0.0),    # orange (280nm)
-        (0.85, 0.1, 0.1),   # red (310nm)
+        (0.5, 0.0, 0.8),  # violet (200nm)
+        (0.2, 0.3, 0.9),  # blue (220nm)
+        (0.0, 0.6, 0.7),  # teal (240nm)
+        (0.1, 0.7, 0.3),  # green (260nm)
+        (0.9, 0.5, 0.0),  # orange (280nm)
+        (0.85, 0.1, 0.1),  # red (310nm)
     ]
     cmap = LinearSegmentedColormap.from_list("uv_rainbow", colors)
     norm = (wv - wv_min) / (wv_max - wv_min)
@@ -116,7 +110,7 @@ def parse_axis_input(value, time_cols, use_metric_units=True, log_level=None):
         return None, None
 
     # Handle string input
-    value_str = str(value).lower().strip().rstrip('%')
+    value_str = str(value).lower().strip().rstrip("%")
 
     # Direct column aliases (each, k1, k2)
     if value_str in AXIS_ALIASES:
@@ -163,10 +157,10 @@ def _survival_fraction_to_log(survival):
 
     # Map survival fractions to log levels using midpoint thresholds
     thresholds = [
-        (0.95, 1),       # < 0.95 -> log1 (90%)
-        (0.995, 2),      # < 0.995 -> log2 (99%)
-        (0.9995, 3),     # < 0.9995 -> log3 (99.9%)
-        (0.99995, 4),    # < 0.99995 -> log4 (99.99%)
+        (0.95, 1),  # < 0.95 -> log1 (90%)
+        (0.995, 2),  # < 0.995 -> log2 (99%)
+        (0.9995, 3),  # < 0.9995 -> log3 (99.9%)
+        (0.99995, 4),  # < 0.99995 -> log4 (99.99%)
     ]
 
     for threshold, log_level in thresholds:

@@ -8,9 +8,9 @@ def export_plane(zone, fname=None):
 
     values = zone.get_values()
     if values is None:
-        vals = [[-1] * num_y] * num_x
+        vals = [[-1] * num_y for _ in range(num_x)]
     elif values.shape != (num_x, num_y):
-        vals = [[-1] * num_y] * num_x
+        vals = [[-1] * num_y for _ in range(num_x)]
     else:
         vals = values
     zvals = zone.geometry.coords.T[2].reshape(num_x, num_y).T[::-1]
@@ -60,13 +60,13 @@ def export_volume(zone, fname=None):
     for i in range(zone.geometry.num_z):
         rows += [""]
         if values is None:
-            rows += [[""] * zone.geometry.num_x] * zone.geometry.num_y
+            rows += [[""] * zone.geometry.num_x for _ in range(zone.geometry.num_y)]
         elif values.shape != (
             zone.geometry.num_x,
             zone.geometry.num_y,
             zone.geometry.num_z,
         ):
-            rows += [[""] * zone.geometry.num_x] * zone.geometry.num_y
+            rows += [[""] * zone.geometry.num_x for _ in range(zone.geometry.num_y)]
         else:
             rows += values.T[i].tolist()
 

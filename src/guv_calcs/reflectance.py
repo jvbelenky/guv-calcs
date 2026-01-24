@@ -211,7 +211,9 @@ class Surface:
             raise ValueError("T must be a float in range [0, 1]")
 
         if R + T > 1:
-            raise ValueError("R + T must be <= 1 (cannot reflect and transmit more than 100%)")
+            raise ValueError(
+                "R + T must be <= 1 (cannot reflect and transmit more than 100%)"
+            )
 
         if not isinstance(plane, CalcPlane):
             raise TypeError("plane must be a CalcPlane object")
@@ -231,7 +233,11 @@ class Surface:
     def __eq__(self, other):
         if not isinstance(other, Surface):
             return NotImplemented
-        return self.R == other.R and self.T == other.T and self.plane.to_dict() == other.plane.to_dict()
+        return (
+            self.R == other.R
+            and self.T == other.T
+            and self.plane.to_dict() == other.plane.to_dict()
+        )
 
     def __repr__(self):
         return (

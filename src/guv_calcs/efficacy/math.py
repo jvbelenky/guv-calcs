@@ -1,12 +1,15 @@
 import math
 
+
 def CADR_CFM(cubic_feet, irrad, k1, k2=0, f=0):
     """Calculate clean air delivery rate in cubic feet per minute."""
     return eACH_UV(irrad=irrad, k1=k1, k2=k2, f=f) * cubic_feet / 60
 
+
 def CADR_LPS(cubic_meters, irrad, k1, k2=0, f=0):
     """Calculate clean air delivery rate in liters per second."""
     return eACH_UV(irrad=irrad, k1=k1, k2=k2, f=f) * cubic_meters * 1000 / 60 / 60
+
 
 def eACH_UV(irrad, k1, k2=0, f=0):
     """
@@ -48,7 +51,6 @@ def seconds_to_S(S, irrad, k1, k2=0, f=0, tol=1e-10, max_iter=100):
 
     def S_of_t(t):
         return (1 - f_eff) * math.exp(-k1_irrad * t) + f_eff * math.exp(-k2_irrad * t)
-        
 
     # Bracket the root
     t_low = 0.0

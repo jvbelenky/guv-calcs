@@ -19,7 +19,7 @@ def read_fluence(lines):
                 lst = line.split("\n")[0].split(",")
                 vals = np.array([float(val) for val in lst])
                 values.append(vals)
-            except:
+            except ValueError:
                 # these are just blank lines, skip and move on
                 continue
     xp, yp, zp = points
@@ -159,10 +159,10 @@ def file_to_zone(file_path):
             )
             zone.values = values
             zone.coords = coords
-        except ValueError as e:
+        except ValueError:
             if ref_surface == "yz":
                 msg = "Calculation planes derived from Acuity Visual with the `yz` reference plane are bugged and cannot be read."
                 raise ValueError(msg)
             else:
-                raise (e)
+                raise
     return zone
