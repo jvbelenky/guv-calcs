@@ -1057,16 +1057,19 @@ class TestLampScalingWorkflows:
         new_power = lamp.get_total_power()
         assert np.isclose(new_power, original_power * 3, rtol=0.01)
 
-    def test_multiple_scales_accumulate(self):
-        """Multiple scaling operations should accumulate."""
+    def test_scale_sets_absolute_value(self):
+        """scale() sets absolute scaling factor, not cumulative."""
         lamp = Lamp.from_keyword("aerolamp")
         original_max = lamp.max()
 
         lamp.scale(2.0)
-        lamp.scale(3.0)
+        assert np.isclose(lamp.scaling_factor, 2.0, rtol=0.01)
+        assert np.isclose(lamp.max(), original_max * 2, rtol=0.01)
 
-        # Total scaling should be 6x
-        assert np.isclose(lamp.max(), original_max * 6, rtol=0.01)
+        # Second scale() replaces, doesn't multiply
+        lamp.scale(3.0)
+        assert np.isclose(lamp.scaling_factor, 3.0, rtol=0.01)
+        assert np.isclose(lamp.max(), original_max * 3, rtol=0.01)
 
 
 class TestLampSaveLoadWithModifications:
@@ -1110,6 +1113,7 @@ class TestLampSaveLoadWithModifications:
         lamp = Lamp.from_keyword("aerolamp").move(3, 2, 2.7).aim(3, 2, 0)
         lamp.set_source_density(5)
         lamp.set_width(0.2)
+        lamp.set_length(0.3)
 
         room.add_lamp(lamp)
         room.add_standard_zones()
@@ -1118,8 +1122,10 @@ class TestLampSaveLoadWithModifications:
         loaded = Room.load(temp_file)
         loaded_lamp = list(loaded.lamps.values())[0]
 
+        # All surface parameters should be preserved
         assert loaded_lamp.surface.source_density == 5
         assert loaded_lamp.width == 0.2
+        assert loaded_lamp.length == 0.3
 
 
 class TestLampDisabledState:
@@ -1211,12 +1217,15 @@ class TestLampCloning:
         data = lamp1.to_dict()
         lamp2 = Lamp.from_dict(data)
 
-        # Modify lamp2
+        # Verify lamp2 has same initial scaling as lamp1
+        assert lamp2.scaling_factor == 2.0
+
+        # Modify lamp2 with a different absolute scale
         lamp2.scale(1.5)
 
-        # lamp1 should be unchanged
+        # lamp1 should be unchanged, lamp2 should have new absolute value
         assert lamp1.scaling_factor == 2.0
-        assert lamp2.scaling_factor == 3.0  # 2.0 * 1.5
+        assert lamp2.scaling_factor == 1.5  # scale() sets absolute value, not cumulative
 
     def test_multiple_lamps_from_same_keyword(self):
         """Multiple lamps from same keyword should be independent."""

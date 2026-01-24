@@ -243,3 +243,74 @@ class TestLampSurface:
     def test_source_density(self, basic_lamp):
         """Lamp should have source density property."""
         assert basic_lamp.surface.source_density >= 1
+
+    def test_user_width_preserved_after_ies_load(self):
+        """User-set width should not be overwritten by IES file."""
+        lamp = Lamp.from_keyword("aerolamp", width=0.5)
+        assert lamp.width == 0.5
+        # Verify tracking field is set
+        assert lamp.surface._user_width == 0.5
+
+    def test_user_length_preserved_after_ies_load(self):
+        """User-set length should not be overwritten by IES file."""
+        lamp = Lamp.from_keyword("aerolamp", length=0.8)
+        assert lamp.length == 0.8
+        # Verify tracking field is set
+        assert lamp.surface._user_length == 0.8
+
+    def test_ies_values_used_when_no_user_values(self):
+        """IES width/length should be used when user doesn't specify."""
+        lamp = Lamp.from_keyword("aerolamp")
+        # Should have IES values, not 0.0
+        assert lamp.width > 0 or lamp.length > 0  # At least one should be non-zero from IES
+        # Tracking fields should be None (user didn't specify)
+        assert lamp.surface._user_width is None
+        assert lamp.surface._user_length is None
+
+    def test_set_width_after_ies_load_updates_tracking(self, basic_lamp):
+        """set_width() after IES load should update tracking field."""
+        # Initially tracking is None
+        assert basic_lamp.surface._user_width is None
+        # Set width explicitly
+        basic_lamp.set_width(0.25)
+        assert basic_lamp.width == 0.25
+        assert basic_lamp.surface._user_width == 0.25
+
+    def test_negative_width_raises_error(self, basic_lamp):
+        """Negative width should raise ValueError."""
+        with pytest.raises(ValueError, match="width must be non-negative"):
+            basic_lamp.set_width(-0.1)
+
+    def test_negative_length_raises_error(self, basic_lamp):
+        """Negative length should raise ValueError."""
+        with pytest.raises(ValueError, match="length must be non-negative"):
+            basic_lamp.set_length(-0.1)
+
+    def test_lamp_surface_to_dict(self, basic_lamp):
+        """LampSurface.to_dict() should include all necessary fields."""
+        basic_lamp.set_width(0.15)
+        surface_dict = basic_lamp.surface.to_dict()
+
+        assert "width" in surface_dict
+        assert "length" in surface_dict
+        assert "depth" in surface_dict
+        assert "units" in surface_dict
+        assert "source_density" in surface_dict
+        assert "_user_width" in surface_dict
+        assert "_user_length" in surface_dict
+
+        assert surface_dict["width"] == 0.15
+        assert surface_dict["_user_width"] == 0.15
+
+    def test_lamp_surface_round_trip(self, basic_lamp):
+        """User-set width/length should survive to_dict/from_dict round trip."""
+        basic_lamp.set_width(0.2)
+        basic_lamp.set_length(0.3)
+
+        data = basic_lamp.to_dict()
+        loaded = Lamp.from_dict(data)
+
+        assert loaded.width == 0.2
+        assert loaded.length == 0.3
+        assert loaded.surface._user_width == 0.2
+        assert loaded.surface._user_length == 0.3

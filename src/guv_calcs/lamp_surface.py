@@ -14,8 +14,8 @@ class LampSurface:
     def __init__(
         self,
         pose: "LampOrientation",
-        width: float = 0.0,
-        length: float = 0.0,
+        width: float | None = None,
+        length: float | None = None,
         depth: float = 0.0,
         units: "LengthUnits" = LengthUnits.METERS,
         source_density: int = 1,
@@ -29,8 +29,13 @@ class LampSurface:
         related to source discretization.
         """
 
-        self.width = width
-        self.length = length
+        # Track user-provided values (None means user didn't specify)
+        self._user_width = width
+        self._user_length = length
+
+        # Working values (0.0 if user didn't specify and no IES loaded yet)
+        self.width = width if width is not None else 0.0
+        self.length = length if length is not None else 0.0
         self.depth = depth
         self.units = LengthUnits.from_any(units)
 
@@ -57,12 +62,18 @@ class LampSurface:
 
     def set_width(self, width):
         """change x-axis extent of lamp emissive surface"""
-        self.width = width
+        if width is not None and width < 0:
+            raise ValueError(f"width must be non-negative, got {width}")
+        self._user_width = width
+        self.width = width if width is not None else 0.0
         self._update()
 
     def set_length(self, length):
         """change y-axis extent of lamp emissive surface"""
-        self.length = length
+        if length is not None and length < 0:
+            raise ValueError(f"length must be non-negative, got {length}")
+        self._user_length = length
+        self.length = length if length is not None else 0.0
         self._update()
 
     def set_depth(self, depth):
@@ -86,13 +97,17 @@ class LampSurface:
 
     def set_ies(self, ies):
         """
-        populate length/width units values from an IESFile object
+        populate length/width units values from an IESFile object.
+        Only overwrites width/length if user didn't explicitly provide them.
         """
         if ies is not None:
             units_dict = {1: LengthUnits.FEET, 2: LengthUnits.METERS}
             self.units = units_dict[ies.units]
-            self.width = ies.width
-            self.length = ies.length
+            # Only use IES values if user didn't specify their own
+            if self._user_width is None:
+                self.width = ies.width
+            if self._user_length is None:
+                self.length = ies.length
             self._update()
 
     def load_intensity_map(self, intensity_map):
@@ -100,6 +115,19 @@ class LampSurface:
         self.intensity_map_orig = self._load_intensity_map(intensity_map)
         self.intensity_map = self._set_intensity_map()
         self._update()
+
+    def to_dict(self):
+        """Serialize surface state for persistence."""
+        return {
+            "width": self.width,
+            "length": self.length,
+            "depth": self.depth,
+            "units": self.units.value if hasattr(self.units, "value") else str(self.units),
+            "source_density": self.source_density,
+            "intensity_map": self.intensity_map_orig.tolist() if self.intensity_map_orig is not None else None,
+            "_user_width": self._user_width,
+            "_user_length": self._user_length,
+        }
 
     def plot_surface_points(self, fig=None, ax=None, title="", figsize=(6, 4)):
         """plot the discretization of the emissive surface"""

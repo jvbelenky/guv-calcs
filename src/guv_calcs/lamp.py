@@ -102,8 +102,8 @@ class Lamp:
         guv_type=None,
         wavelength=None,
         spectra_source=None,
-        width=0.0,
-        length=0.0,
+        width=None,
+        length=None,
         depth=0.0,
         units=LengthUnits.METERS,
         source_density: int = 1,
@@ -244,8 +244,11 @@ class Lamp:
         data["intensity_units"] = self.intensity_units.value
         data["guv_type"] = self.guv_type.value
         data["wavelength"] = self.wavelength
-        data["width"] = self.surface.width
-        data["length"] = self.surface.length
+
+        # Store user-provided values (None if not explicitly set)
+        # These will be used during from_dict to restore user intent
+        data["width"] = self.surface._user_width
+        data["length"] = self.surface._user_length
         data["depth"] = self.surface.depth
         data["units"] = self.surface.units
         data["source_density"] = self.surface.source_density
@@ -257,6 +260,9 @@ class Lamp:
             data["intensity_map"] = self.surface.intensity_map_orig.tolist()
 
         data["enabled"] = True
+
+        # Include surface dict for new format (also preserves backward compat via flat fields)
+        data["surface"] = self.surface.to_dict()
 
         data["filename"] = str(self.filename)
         filedata = self.save_ies(original=True)
@@ -282,6 +288,19 @@ class Lamp:
                 elif isinstance(v, list):
                     lst = v
                 data["spectra_source"][k] = np.array(lst)
+
+        # Handle different serialization formats for user intent tracking
+        if "surface" in data:
+            # New format - extract user values from surface dict
+            surface_data = data["surface"]
+            data["width"] = surface_data.get("_user_width")
+            data["length"] = surface_data.get("_user_length")
+        else:
+            # Legacy format (before user intent tracking) - don't pass width/length
+            # so that IES values will be used (treats old files as if user never set these)
+            data.pop("width", None)
+            data.pop("length", None)
+
         return cls(**{k: v for k, v in data.items() if k in keys})
 
     @property
