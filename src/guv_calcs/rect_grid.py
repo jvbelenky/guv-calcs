@@ -57,7 +57,7 @@ class RectGrid:
         data = {
             "origin": tuple(self.origin),
             "spans": tuple(self.spans),
-            "spacing": tuple(self.spacing),
+            "spacing_init": tuple(self.spacing),
         }
         data.update(self._extra_dict())
         return data
