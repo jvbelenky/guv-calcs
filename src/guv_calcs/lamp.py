@@ -607,9 +607,9 @@ class Lamp:
         if self.ies is None:
             raise AttributeError("Lamp has no photometry")
         if self.intensity_units == "mW/sr":
-            return self.ies.photometry.total_optical_power()
+            return self.ies.photometry.total_optical_power() / 10
         else:
-            return self.ies.photometry.total_optical_power() * 10
+            return self.ies.photometry.total_optical_power()
 
     def get_tlvs(self, standard=0):
         """
