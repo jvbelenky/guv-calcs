@@ -546,7 +546,7 @@ class Room:
     def disinfection_plot(self, zone_id="WholeRoomFluence", category=None, **kwargs):
         """a violin plot of expected disinfection rates for all available species"""                
         data = self.get_efficacy_data(zone_id, category=category)
-        return data.plot_swarm(air_changes=self.air_changes, **kwargs)
+        return data.plot(air_changes=self.air_changes, **kwargs)
 
     def survival_plot(self, zone_id="WholeRoomFluence", species=None, **kwargs):
         """
