@@ -444,15 +444,6 @@ class Room:
         self.scene.remove_calc_zone(zone_id)
         return self
 
-    def add_filter(self, filt, **kwargs):
-        """Add a measured correction filter to the room"""
-        self.scene.add_filter(filt=filt, **kwargs)
-        return self
-
-    def remove_filter(self, filt_id):
-        """remove a measured correction filter from the room"""
-        self.scene.remove_filter(filt_id)
-
     def add_surface(self, surface, **kwargs):
         self.scene.add_surface(surface, **kwargs)
         return self

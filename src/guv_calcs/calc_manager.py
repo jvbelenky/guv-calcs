@@ -1,7 +1,6 @@
 import numpy as np
 from dataclasses import dataclass, field
 import warnings
-from copy import deepcopy
 from .units import convert_units
 
 np.seterr(divide="ignore", invalid="ignore")
@@ -230,40 +229,6 @@ class LightingCalculator:
         value_sums = value_sums.squeeze(-1)  # Shape (N, M)
 
         return np.max(value_sums, axis=1)  # Shape (N,)
-
-    def apply_obstacles(self, lamp, filters, obstacles, values, zv):
-        """
-        under construction--currently unused. previously, sat before apply_filters
-        """
-        # apply measured correction filters
-        if filters is not None:
-            for filt in filters.values():
-                if (
-                    lamp.surface.source_density > 0
-                    and lamp.surface.photometric_distance
-                ):
-                    new_values = np.zeros(values.shape)
-                    for point in lamp.surface.surface_points:
-                        tmpvals = filt.apply(deepcopy(values), point, self.zone.coords)
-                        new_values += tmpvals / len(lamp.surface.surface_points)
-                    values = new_values
-                else:
-                    values = filt.apply(values, lamp.position, zv.coords)
-
-        if obstacles is not None:
-            for obs in obstacles.values():
-                if (
-                    lamp.surface.source_density > 0
-                    and lamp.surface.photometric_distance
-                ):
-                    new_values = np.zeros(values.shape)
-                    for point in lamp.surface.surface_points:
-                        tmpvals = obs.apply(deepcopy(values), point, zv.coords)
-                        new_values += tmpvals / len(lamp.surface.surface_points)
-                    values = new_values
-                else:
-                    values = obs.apply(values, lamp.position, zv.coords)
-        return values
 
 
 # reused in reflectance.py

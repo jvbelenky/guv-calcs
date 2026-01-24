@@ -4,8 +4,6 @@ from matplotlib import colormaps
 from .room_dims import RoomDimensions
 from .lamp import Lamp
 from .calc_zone import CalcZone, CalcPlane, CalcVol
-from .filters import FilterBase
-from .obstacles import BoxObstacle
 from .reflectance import Surface, init_room_surfaces
 from .lamp_helpers import new_lamp_position, new_lamp_position_perimeter
 from .safety import PhotStandard
@@ -39,9 +37,6 @@ class Scene:
             dims=lambda: self.dim,
             on_collision=on_collision,
         )
-        # to be dummied out
-        self.filters: dict[str, FilterBase] = {}
-        self.obstacles: dict[str, BoxObstacle] = {}
 
     # ------------------------ Global --------------------------
     def add(self, *args, on_collision=None):
@@ -60,10 +55,6 @@ class Scene:
                 self.add_lamp(obj, on_collision=on_collision)
             elif isinstance(obj, CalcZone):
                 self.add_calc_zone(obj, on_collision=on_collision)
-            elif isinstance(obj, FilterBase):
-                self.add_filter(obj, on_collision=on_collision)
-            elif isinstance(obj, BoxObstacle):
-                self.add_obstacle(obj, on_collision=on_collision)
             elif isinstance(obj, Surface):
                 self.add_surface(obj, on_collision=on_collision)
             elif isinstance(obj, dict):
@@ -349,43 +340,6 @@ class Scene:
                 raise KeyError(f"wall_id must be in {keys}")
             else:
                 self.surfaces.get(wall_id).set_num_points(num_x=num_x, num_y=num_y)
-
-    # --------------------- filters / obstacles TODO: dummy out --------
-
-    def add_filter(self, filt, base_id="Filter", on_collision=None):
-        """add a correction filter to the scene"""
-        filter_id = self._get_id(
-            mapping=self.filters,
-            obj_id=filt.filter_id,
-            base_id=base_id,
-            counter=self._filter_counter,
-            on_collision=on_collision,
-        )
-        filt.filter_id = filter_id
-        if filt.name is None:
-            filt.name = filter_id
-        self.filters[filter_id] = filt
-
-    def remove_filter(self, filter_id):
-        """remove a correction filter from the scene"""
-        self.filters.pop(filter_id, None)
-
-    def add_obstacle(self, obs, base_id="Obstacle", on_collision=None):
-        """add a 3d box obstacle to the scene"""
-        obs_id = self._get_id(
-            mapping=self.obstacles,
-            obj_id=obs.obs_id,
-            base_id=base_id,
-            counter=self._obstacle_counter,
-            on_collision=on_collision,
-        )
-        obs.obs_id = obs_id
-        if obs.name is None:
-            obs.name = obs_id
-        self.obstacles[obs_id] = obs
-
-    def remove_obstacle(self, obs_id):
-        self.obstacles.pop(obs_id, None)
 
     # --------------------------- internals ----------------------------
 

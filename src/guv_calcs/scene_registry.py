@@ -8,8 +8,6 @@ from .calc_zone import CalcZone, CalcPlane, CalcVol
 from .reflectance import Surface
 import warnings
 
-# from .filters import FilterBase
-# from .obstacles import BoxObstacle
 
 # todo - integrate this
 class OnCollision(str, Enum):

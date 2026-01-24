@@ -3,8 +3,6 @@ from .lamp import Lamp
 from .lamp_surface import LampSurface
 from .lamp_type import LampType, GUVType
 from .calc_zone import CalcVol, CalcPlane
-from .filters import MeasuredCorrection, MultFilter, ConstFilter
-from .obstacles import BoxObstacle
 from .spectrum import Spectrum, sum_spectrum
 from .trigonometry import to_polar, to_cartesian, attitude
 from .io import get_spectral_weightings
@@ -23,10 +21,6 @@ __all__ = [
     "GUVType",
     "CalcVol",
     "CalcPlane",
-    "MeasuredCorrection",
-    "MultFilter",
-    "ConstFilter",
-    "BoxObstacle",
     "Spectrum",
     "sum_spectrum",
     "to_polar",
