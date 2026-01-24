@@ -222,8 +222,9 @@ class Data:
 
     @property
     def full_df(self) -> pd.DataFrame:
-        """Return all computed columns (when fluence provided)."""
-        return self._full_df
+        """Return all computed columns (when fluence provided), filtered by medium/category."""
+        df = self._apply_row_filters(self._full_df.copy())
+        return self._apply_wavelength_filter(df)
 
     @property
     def combined_full_df(self) -> pd.DataFrame | None:
