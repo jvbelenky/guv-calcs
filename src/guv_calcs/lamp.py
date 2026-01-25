@@ -139,24 +139,11 @@ class Lamp:
         )
 
         # Photometric data
-        if filename is not None:
-            warnings.warn(
-                "`filename` is deprecated and will be removed in v1.4; "
-                "pass the bytes or Path in `filedata` instead.",
-                DeprecationWarning,  # maybe should be FutureWarning
-                stacklevel=2,
-            )
-            # honour old behaviour if the new arg wasn’t supplied
-            if filedata is None:
-                filedata = filename
-        self.filedata = filedata  # temp - property eventually to be removed
         self.ies = None
         self._base_ies = None
-        self._scaling_factor = scaling_factor
-        self._scale_mode = "factor"
+        self._scaling_factor = scaling_factor # used in load_ies
         self.load_ies(filedata)
-        self.filename = None  # VERY temp - just for illluminate compatibility
-
+        
         # Spectral data
         self.spectra_source = spectra_source
         self.lamp_type = LampType(
@@ -173,12 +160,6 @@ class Lamp:
 
     # ------------------------ Basics ------------------------------
 
-    def _eq_dict(self):
-        dct = self.to_dict()
-        dct.pop("filename")
-        dct.pop("filedata")
-        return dct
-
     def __eq__(self, other):
         if not isinstance(other, Lamp):
             return NotImplemented
@@ -189,7 +170,7 @@ class Lamp:
         if self.ies.photometry != other.ies.photometry:
             return False
 
-        return self._eq_dict() == other._eq_dict()
+        return self.to_dict() == other.to_dict()
 
     def __repr__(self):
         # compact photometry tag
@@ -264,7 +245,6 @@ class Lamp:
         # Include surface dict for new format (also preserves backward compat via flat fields)
         data["surface"] = self.surface.to_dict()
 
-        data["filename"] = str(self.filename)
         filedata = self.save_ies(original=True)
         data["filedata"] = filedata.decode() if filedata is not None else None
 
@@ -400,7 +380,6 @@ class Lamp:
     def load_ies(self, filedata, override=True):
         """load an ies file"""
 
-        self.filedata = filedata  # tmp
         if filedata is None:
             self._base_ies = None
         elif isinstance(filedata, IESFile):
@@ -715,7 +694,6 @@ class Lamp:
             else:
                 self.photometry.scale_to_center(center_val)
             self._update_scaling_factor()
-            # self._scale_mode = "center"
         return self
 
     def _update_scaling_factor(self):

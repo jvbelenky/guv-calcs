@@ -35,7 +35,7 @@ class RoomPlotter:
 
         # plot lamps
         for lamp_id, lamp in self.room.lamps.items():
-            if lamp.filedata is not None:
+            if lamp.ies is not None:
                 fig = self._plot_lamp(lamp=lamp, fig=fig, select_id=select_id)
         for zone_id, zone in self.room.calc_zones.items():
             if isinstance(zone, CalcPlane):

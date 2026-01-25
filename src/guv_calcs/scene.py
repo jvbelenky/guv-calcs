@@ -157,7 +157,7 @@ class Scene:
     def get_valid_lamps(self):
         """return all the lamps that can participate in a calculation"""
         return {
-            k: v for k, v in self.lamps.items() if v.enabled and v.filedata is not None
+            k: v for k, v in self.lamps.items() if v.enabled and v.ies is not None
         }
 
     # -------------- Zones ------------------

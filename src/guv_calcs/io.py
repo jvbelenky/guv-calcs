@@ -62,7 +62,9 @@ def _parse_loadfile(filedata):
     validate and parse a loadfile
     """
 
-    if isinstance(filedata, (str, bytes, bytearray)):
+    if isinstance(filedata, dict):
+        dct = filedata
+    elif isinstance(filedata, (str, bytes, bytearray)):
         try:
             dct = json.loads(filedata)
         except json.JSONDecodeError:
@@ -165,7 +167,7 @@ def export_room_zip(
 
     # save lamp files if indicated to
     for lamp_id, lamp in room.scene.lamps.items():
-        if lamp.filedata is not None:
+        if lamp.ies is not None:
             if include_lamp_files:
                 data_dict[lamp.name + ".ies"] = lamp.save_ies()
             if include_lamp_plots:

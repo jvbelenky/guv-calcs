@@ -86,16 +86,6 @@ class Room:
         self.calc_state = {}
         self.update_state = {}
 
-    def _eq_dict(self):
-        data = self.to_dict()
-
-        # Strip volatile / representation-only fields from lamps
-        for lamp_data in data["lamps"].values():
-            lamp_data.pop("filedata", None)
-            lamp_data.pop("filename", None)
-
-        return data
-
     def __eq__(self, other):
         if not isinstance(other, Room):
             return NotImplemented
@@ -108,7 +98,7 @@ class Room:
             if self.lamps[lamp_id] != other.lamps[lamp_id]:
                 return False
 
-        return self._eq_dict() == other._eq_dict()
+        return self.to_dict() == other.to_dict()
 
     def __repr__(self):
         return (
