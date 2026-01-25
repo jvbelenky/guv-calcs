@@ -61,7 +61,8 @@ class Axis1D:
 
     @property
     def points(self):
-        pts = np.array([i * self.spacing for i in range(self.num_points)])
+        # Ensure float dtype to allow in-place addition of float offset
+        pts = np.array([i * self.spacing for i in range(self.num_points)], dtype=float)
         if self.offset:
             pts += (self.span - abs(pts[-1] - pts[0])) / 2
         return pts
