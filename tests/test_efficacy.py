@@ -4,6 +4,20 @@ import pytest
 import numpy as np
 import pandas as pd
 from guv_calcs import Data
+from guv_calcs.efficacy._kinetics import (
+    species_matches,
+    parse_resistant,
+    extract_kinetic_params,
+    filter_wavelengths,
+    compute_row,
+)
+from guv_calcs.efficacy._filtering import (
+    filter_by_column,
+    validate_filter,
+    apply_row_filters,
+    get_effective_wavelengths,
+)
+from guv_calcs.efficacy._state import DataState
 
 
 class TestDataClassMethods:
@@ -160,6 +174,48 @@ class TestDataWithFluence:
         assert df is not None
 
 
+class TestAverageValueParametric:
+    """Tests for average_value with parametric inputs."""
+
+    def test_average_value_single_function(self):
+        """average_value with single function returns float."""
+        data = Data(fluence=0.5)
+        result = data.average_value("log2", species="coli")
+        assert isinstance(result, float)
+
+    def test_average_value_function_list(self):
+        """average_value with function list returns dict keyed by function."""
+        data = Data(fluence=0.5)
+        result = data.average_value(["log2", "log3"], species="coli")
+        assert isinstance(result, dict)
+        assert "log2" in result
+        assert "log3" in result
+        assert isinstance(result["log2"], float)
+        assert isinstance(result["log3"], float)
+        # log3 should require more time than log2
+        assert result["log3"] > result["log2"]
+
+    def test_average_value_function_list_with_species_list(self):
+        """average_value with both function and species lists returns nested dict."""
+        data = Data(fluence=0.5)
+        result = data.average_value(["log2", "each"], species=["coli", "staph"])
+        assert isinstance(result, dict)
+        assert "log2" in result
+        assert "each" in result
+        # Each function key should have a dict of species
+        assert isinstance(result["log2"], dict)
+        assert "coli" in result["log2"]
+        assert "staph" in result["log2"]
+
+    def test_average_value_function_list_order(self):
+        """Function list should be outermost dimension in nested dict."""
+        data = Data(fluence=0.5)
+        result = data.average_value(["log2", "log3"], species=["coli"])
+        # Function is outermost, so result["log2"]["coli"] should exist
+        assert "log2" in result
+        assert "coli" in result["log2"]
+
+
 class TestEfficacyMathFunctions:
     """Tests for efficacy math functions."""
 
@@ -200,3 +256,227 @@ class TestEfficacyMathFunctions:
         lps = CADR_LPS(cubic_meters=cubic_meters, irrad=irrad, k1=k1)
         assert cfm > 0
         assert lps > 0
+
+
+class TestKineticsFunctions:
+    """Tests for _kinetics module functions."""
+
+    def test_species_matches_exact(self):
+        """species_matches should match exact species names."""
+        assert species_matches("Escherichia coli", "Escherichia coli")
+
+    def test_species_matches_partial(self):
+        """species_matches should match partial names (all query words in target)."""
+        assert species_matches("e. coli", "Escherichia coli")
+        assert species_matches("coli", "Escherichia coli")
+
+    def test_species_matches_case_insensitive(self):
+        """species_matches should be case-insensitive."""
+        assert species_matches("E. COLI", "Escherichia coli")
+        assert species_matches("STAPH", "Staphylococcus aureus")
+
+    def test_species_matches_multiple_words(self):
+        """species_matches should match all query words."""
+        assert species_matches("staph aureus", "Staphylococcus aureus")
+        assert not species_matches("staph coli", "Staphylococcus aureus")
+
+    def test_species_matches_no_match(self):
+        """species_matches should return False for non-matching names."""
+        assert not species_matches("salmonella", "Escherichia coli")
+
+    def test_parse_resistant_percentage(self):
+        """parse_resistant should parse percentage strings."""
+        assert parse_resistant("0.33%") == pytest.approx(0.0033)
+        assert parse_resistant("1%") == pytest.approx(0.01)
+        assert parse_resistant("100%") == pytest.approx(1.0)
+
+    def test_parse_resistant_nan(self):
+        """parse_resistant should return 0.0 for NaN values."""
+        assert parse_resistant(pd.NA) == 0.0
+        assert parse_resistant(np.nan) == 0.0
+
+    def test_parse_resistant_numeric(self):
+        """parse_resistant should pass through numeric values."""
+        assert parse_resistant(0.01) == 0.01
+        assert parse_resistant(0.5) == 0.5
+
+    def test_extract_kinetic_params(self):
+        """extract_kinetic_params should extract k1, k2, f from row."""
+        row = pd.Series({
+            "k1 [cm2/mJ]": 0.1,
+            "k2 [cm2/mJ]": 0.01,
+            "% resistant": "1%"
+        })
+        params = extract_kinetic_params(row)
+        assert params["k1"] == 0.1
+        assert params["k2"] == 0.01
+        assert params["f"] == pytest.approx(0.01)
+
+    def test_extract_kinetic_params_nan(self):
+        """extract_kinetic_params should handle NaN values."""
+        row = pd.Series({
+            "k1 [cm2/mJ]": np.nan,
+            "k2 [cm2/mJ]": np.nan,
+            "% resistant": np.nan
+        })
+        params = extract_kinetic_params(row)
+        assert params["k1"] == 0.0
+        assert params["k2"] == 0.0
+        assert params["f"] == 0.0
+
+    def test_compute_row_scalar_fluence(self):
+        """compute_row should compute with scalar fluence."""
+        from guv_calcs.efficacy import eACH_UV
+        row = pd.Series({
+            "wavelength [nm]": 222,
+            "k1 [cm2/mJ]": 0.1,
+            "k2 [cm2/mJ]": 0.0,
+            "% resistant": None
+        })
+        result = compute_row(row, 10.0, eACH_UV)
+        assert result is not None
+        assert result > 0
+
+    def test_compute_row_dict_fluence(self):
+        """compute_row should use wavelength-specific fluence from dict."""
+        from guv_calcs.efficacy import eACH_UV
+        row = pd.Series({
+            "wavelength [nm]": 254,
+            "k1 [cm2/mJ]": 0.05,
+            "k2 [cm2/mJ]": 0.0,
+            "% resistant": None
+        })
+        fluence_dict = {222: 5.0, 254: 10.0}
+        result = compute_row(row, fluence_dict, eACH_UV)
+        assert result is not None
+        assert result > 0
+
+    def test_compute_row_missing_wavelength(self):
+        """compute_row should return None if wavelength not in dict."""
+        from guv_calcs.efficacy import eACH_UV
+        row = pd.Series({
+            "wavelength [nm]": 300,
+            "k1 [cm2/mJ]": 0.05,
+            "k2 [cm2/mJ]": 0.0,
+            "% resistant": None
+        })
+        fluence_dict = {222: 5.0, 254: 10.0}
+        result = compute_row(row, fluence_dict, eACH_UV)
+        assert result is None
+
+
+class TestDataState:
+    """Tests for DataState dataclass."""
+
+    def test_datastate_defaults(self):
+        """DataState should have sensible defaults."""
+        state = DataState()
+        assert state.fluence is None
+        assert state.volume_m3 is None
+        assert state.medium is None
+        assert state.category is None
+        assert state.wavelength is None
+        assert state.log == 2
+        assert state.use_metric_units is True
+        assert state.fluence_wavelengths is None
+        assert state.time_cols == {}
+
+    def test_datastate_with_values(self):
+        """DataState should store provided values."""
+        state = DataState(
+            fluence=0.5,
+            volume_m3=50.0,
+            medium="Aerosol",
+            category="Virus",
+            log=3
+        )
+        assert state.fluence == 0.5
+        assert state.volume_m3 == 50.0
+        assert state.medium == "Aerosol"
+        assert state.category == "Virus"
+        assert state.log == 3
+
+    def test_datastate_fluence_dict_initializes_wavelengths(self):
+        """DataState should auto-set fluence_wavelengths from fluence dict."""
+        state = DataState(fluence={222: 0.5, 254: 0.3})
+        assert state.fluence_wavelengths == [222, 254]
+
+    def test_datastate_fluence_scalar_no_wavelengths(self):
+        """DataState should not set fluence_wavelengths for scalar fluence."""
+        state = DataState(fluence=0.5)
+        assert state.fluence_wavelengths is None
+
+
+class TestFilteringFunctions:
+    """Tests for _filtering module functions."""
+
+    def test_filter_by_column_scalar(self):
+        """filter_by_column should filter by scalar value."""
+        df = pd.DataFrame({"A": [1, 2, 3], "B": ["x", "y", "z"]})
+        result = filter_by_column(df, "A", 2)
+        assert len(result) == 1
+        assert result["B"].iloc[0] == "y"
+
+    def test_filter_by_column_list(self):
+        """filter_by_column should filter by list of values."""
+        df = pd.DataFrame({"A": [1, 2, 3], "B": ["x", "y", "z"]})
+        result = filter_by_column(df, "A", [1, 3])
+        assert len(result) == 2
+        assert list(result["B"]) == ["x", "z"]
+
+    def test_filter_by_column_tuple_range(self):
+        """filter_by_column should filter by tuple range (min, max)."""
+        df = pd.DataFrame({"A": [1, 2, 3, 4, 5]})
+        result = filter_by_column(df, "A", (2, 4))
+        assert list(result["A"]) == [2, 3, 4]
+
+    def test_filter_by_column_none(self):
+        """filter_by_column should return df unchanged if value is None."""
+        df = pd.DataFrame({"A": [1, 2, 3]})
+        result = filter_by_column(df, "A", None)
+        assert len(result) == 3
+
+    def test_validate_filter_valid_scalar(self):
+        """validate_filter should pass valid scalar."""
+        result = validate_filter("Aerosol", ["Aerosol", "Surface"], "medium")
+        assert result == "Aerosol"
+
+    def test_validate_filter_invalid_scalar(self):
+        """validate_filter should raise KeyError for invalid scalar."""
+        with pytest.raises(KeyError):
+            validate_filter("Invalid", ["Aerosol", "Surface"], "medium")
+
+    def test_validate_filter_list_normalizes(self):
+        """validate_filter should normalize single-item list to scalar."""
+        result = validate_filter(["Aerosol"], ["Aerosol", "Surface"], "medium")
+        assert result == "Aerosol"
+
+    def test_validate_filter_list_invalid(self):
+        """validate_filter should raise KeyError for invalid list items."""
+        with pytest.raises(KeyError):
+            validate_filter(["Aerosol", "Bad"], ["Aerosol", "Surface"], "medium")
+
+    def test_get_effective_wavelengths_none(self):
+        """get_effective_wavelengths should return None if no filters."""
+        result = get_effective_wavelengths(None, None)
+        assert result is None
+
+    def test_get_effective_wavelengths_user_only(self):
+        """get_effective_wavelengths should return user wavelength."""
+        result = get_effective_wavelengths(222, None)
+        assert result == [222]
+
+    def test_get_effective_wavelengths_fluence_only(self):
+        """get_effective_wavelengths should return fluence wavelengths."""
+        result = get_effective_wavelengths(None, [222, 254])
+        assert result == [222, 254]
+
+    def test_get_effective_wavelengths_merged(self):
+        """get_effective_wavelengths should merge user and fluence wavelengths."""
+        result = get_effective_wavelengths(280, [222, 254])
+        assert result == [222, 254, 280]
+
+    def test_get_effective_wavelengths_tuple_passthrough(self):
+        """get_effective_wavelengths should pass through tuple range."""
+        result = get_effective_wavelengths((200, 300), [222])
+        assert result == (200, 300)
