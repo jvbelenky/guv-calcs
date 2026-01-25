@@ -314,3 +314,129 @@ class TestLampSurface:
         assert loaded.length == 0.3
         assert loaded.surface._user_width == 0.2
         assert loaded.surface._user_length == 0.3
+
+
+class TestIntensityMap:
+    """Tests for IntensityMap class."""
+
+    def test_none_source_returns_none_original(self):
+        """IntensityMap with None source should have None original."""
+        from guv_calcs.intensity_map import IntensityMap
+        im = IntensityMap(None)
+        assert im.original is None
+        assert im.normalized is None
+
+    def test_array_source(self):
+        """IntensityMap should accept numpy array."""
+        from guv_calcs.intensity_map import IntensityMap
+        data = np.array([[1, 2], [3, 4]])
+        im = IntensityMap(data)
+        assert im.original is not None
+        np.testing.assert_array_equal(im.original, data)
+
+    def test_list_source(self):
+        """IntensityMap should accept list."""
+        from guv_calcs.intensity_map import IntensityMap
+        data = [[1, 2], [3, 4]]
+        im = IntensityMap(data)
+        assert im.original is not None
+        np.testing.assert_array_equal(im.original, np.array(data))
+
+    def test_normalized_property(self):
+        """Normalized should divide by mean."""
+        from guv_calcs.intensity_map import IntensityMap
+        data = np.array([[1, 2], [3, 4]])  # mean = 2.5
+        im = IntensityMap(data)
+        expected = data / data.mean()
+        np.testing.assert_array_almost_equal(im.normalized, expected)
+
+    def test_resample_no_map_returns_ones(self):
+        """Resample with no map should return array of ones."""
+        from guv_calcs.intensity_map import IntensityMap
+        im = IntensityMap(None)
+
+        def points_gen(u, v):
+            return np.linspace(-1, 1, u), np.linspace(-1, 1, v)
+
+        result = im.resample(3, 4, points_gen)
+        assert result.shape == (3, 4)
+        np.testing.assert_array_equal(result, np.ones((3, 4)))
+
+    def test_resample_same_shape_returns_normalized(self):
+        """Resample with same shape should return normalized map."""
+        from guv_calcs.intensity_map import IntensityMap
+        data = np.array([[1, 2], [3, 4]])
+        im = IntensityMap(data)
+
+        def points_gen(u, v):
+            return np.linspace(-1, 1, u), np.linspace(-1, 1, v)
+
+        result = im.resample(2, 2, points_gen)
+        np.testing.assert_array_almost_equal(result, im.normalized)
+
+    def test_nan_values_rejected(self):
+        """IntensityMap should reject data with NaN values."""
+        from guv_calcs.intensity_map import IntensityMap
+        data = np.array([[1, np.nan], [3, 4]])
+        with pytest.warns(UserWarning, match="invalid values"):
+            im = IntensityMap(data)
+        assert im.original is None
+
+    def test_invalid_type_rejected(self):
+        """IntensityMap should reject invalid types."""
+        from guv_calcs.intensity_map import IntensityMap
+        with pytest.warns(UserWarning, match="invalid"):
+            im = IntensityMap(12345)
+        assert im.original is None
+
+
+class TestLazyCaching:
+    """Tests for lazy caching behavior in LampSurface."""
+
+    def test_grid_not_computed_until_accessed(self, basic_lamp):
+        """Grid should not be computed until properties are accessed."""
+        # After initialization, the grid should be marked dirty but not computed yet
+        # We can test this by checking that accessing surface_points triggers computation
+        surface = basic_lamp.surface
+        surface._grid_dirty = True
+        surface._surface_points_cache = None
+
+        # Access should trigger computation
+        _ = surface.surface_points
+        assert not surface._grid_dirty
+        assert surface._surface_points_cache is not None
+
+    def test_position_not_recomputed_if_clean(self, basic_lamp):
+        """Position should not be recomputed if cache is clean."""
+        surface = basic_lamp.surface
+        # Access to ensure computed
+        pos1 = surface.position
+
+        # Modify cache directly (would not happen in normal use)
+        surface._position_cache = np.array([999, 999, 999])
+
+        # Should return cached value since dirty flag is False
+        pos2 = surface.position
+        np.testing.assert_array_equal(pos2, np.array([999, 999, 999]))
+
+    def test_set_width_invalidates_grid(self, basic_lamp):
+        """Setting width should invalidate grid cache."""
+        surface = basic_lamp.surface
+        # Ensure grid is computed
+        _ = surface.surface_points
+        assert not surface._grid_dirty
+
+        # Set width should invalidate
+        basic_lamp.set_width(0.5)
+        assert surface._grid_dirty
+
+    def test_set_depth_invalidates_position(self, basic_lamp):
+        """Setting depth should invalidate position cache."""
+        surface = basic_lamp.surface
+        # Ensure position is computed
+        _ = surface.position
+        assert not surface._position_dirty
+
+        # Set depth should invalidate
+        surface.set_depth(0.1)
+        assert surface._position_dirty
