@@ -8,7 +8,7 @@ from .room_dims import RoomDimensions
 from .reflectance import ReflectanceManager, Surface
 from .scene import Scene
 from .io import load_room_data, save_room_data, export_room_zip, generate_report
-from .safety import PhotStandard
+from .safety import PhotStandard, check_lamps, SafetyCheckResult
 from .units import LengthUnits, convert_length
 from .efficacy import Data
 
@@ -584,3 +584,7 @@ class Room:
     def plot(self, fig=None, select_id=None, title=""):
         """return a plotly figure of all the room's components"""
         return self._plotter.plotly(fig=fig, select_id=select_id, title=title)
+
+    def check_lamps(self) -> "SafetyCheckResult":
+        """Check all lamps for safety compliance with skin and eye TLVs."""
+        return check_lamps(self)

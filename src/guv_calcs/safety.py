@@ -1,6 +1,9 @@
+from dataclasses import dataclass, field
 from enum import StrEnum
+import numpy as np
 from .spectrum import Spectrum, log_interp
 from .io import get_spectral_weightings
+from .lamp_type import GUVType
 
 
 class PhotStandard(StrEnum):
@@ -100,4 +103,293 @@ def _tlv(ref, weights: dict):
         return ref.get_tlv(weights)
     raise TypeError(
         f"Argument `ref` must be either float, int, or Spectrum object, not {type(ref)}"
+    )
+
+
+# --- Safety compliance checking ---
+
+
+class ComplianceStatus(StrEnum):
+    """Overall compliance status of an installation."""
+
+    COMPLIANT = "compliant"
+    NON_COMPLIANT = "non_compliant"
+    COMPLIANT_WITH_DIMMING = "compliant_with_dimming"
+    NON_COMPLIANT_EVEN_WITH_DIMMING = "non_compliant_even_with_dimming"
+
+
+class WarningLevel(StrEnum):
+    """Severity level for safety warnings."""
+
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+
+
+@dataclass(frozen=True)
+class LampComplianceResult:
+    """Compliance result for a single lamp."""
+
+    lamp_id: str
+    lamp_name: str
+    skin_dose_max: float
+    eye_dose_max: float
+    skin_tlv: float
+    eye_tlv: float
+    skin_dimming_required: float  # 1.0 = no dimming, 0.5 = dim to 50%
+    eye_dimming_required: float
+    is_skin_compliant: bool
+    is_eye_compliant: bool
+    missing_spectrum: bool
+
+
+@dataclass(frozen=True)
+class SafetyWarning:
+    """A warning or error message from safety checking."""
+
+    level: WarningLevel
+    message: str
+    lamp_id: str | None = None
+
+
+@dataclass(frozen=True)
+class SafetyCheckResult:
+    """Complete result from check_lamps() safety analysis."""
+
+    status: ComplianceStatus
+    lamp_results: dict[str, LampComplianceResult] = field(default_factory=dict)
+    warnings: list[SafetyWarning] = field(default_factory=list)
+    weighted_skin_dose: np.ndarray | None = None
+    weighted_eye_dose: np.ndarray | None = None
+    max_skin_dose: float = 0.0
+    max_eye_dose: float = 0.0
+    skin_dimming_for_compliance: float | None = None
+    eye_dimming_for_compliance: float | None = None
+
+
+def check_lamps(room) -> SafetyCheckResult:
+    """
+    Check all lamps for safety compliance with skin and eye TLVs.
+
+    Performs four checks:
+    1. Individual lamp compliance - checks if each lamp exceeds skin/eye TLVs
+    2. Combined dose compliance - checks if all lamps together exceed limits
+    3. Dimmed installation compliance - checks if applying dimming achieves compliance
+    4. Missing spectrum warnings - warns if non-LPHG lamps lack spectral data
+
+    Returns a SafetyCheckResult containing compliance status, per-lamp results,
+    and any warnings.
+    """
+    warnings_list: list[SafetyWarning] = []
+
+    # Check for required zones
+    if "SkinLimits" not in room.calc_zones:
+        return SafetyCheckResult(
+            status=ComplianceStatus.NON_COMPLIANT,
+            warnings=[
+                SafetyWarning(
+                    level=WarningLevel.ERROR,
+                    message="SkinLimits zone not found. Add standard zones with room.add_standard_zones().",
+                )
+            ],
+        )
+
+    if "EyeLimits" not in room.calc_zones:
+        return SafetyCheckResult(
+            status=ComplianceStatus.NON_COMPLIANT,
+            warnings=[
+                SafetyWarning(
+                    level=WarningLevel.ERROR,
+                    message="EyeLimits zone not found. Add standard zones with room.add_standard_zones().",
+                )
+            ],
+        )
+
+    skin = room.calc_zones["SkinLimits"]
+    eye = room.calc_zones["EyeLimits"]
+    skin_values = skin.get_values()
+    eye_values = eye.get_values()
+
+    # Check if zones have been calculated
+    if skin_values is None or eye_values is None:
+        return SafetyCheckResult(
+            status=ComplianceStatus.NON_COMPLIANT,
+            warnings=[
+                SafetyWarning(
+                    level=WarningLevel.ERROR,
+                    message="Zones have not been calculated. Call room.calculate() first.",
+                )
+            ],
+        )
+
+    skindims, eyedims = {}, {}
+    lamp_results: dict[str, LampComplianceResult] = {}
+    weighted_skin_dose = np.zeros(skin_values.shape)
+    weighted_eye_dose = np.zeros(eye_values.shape)
+
+    dimmed_weighted_skin_dose = np.zeros(skin_values.shape)
+    dimmed_weighted_eye_dose = np.zeros(eye_values.shape)
+
+    # Check if any individual lamp exceeds the limits
+    for lamp_id, lamp in room.lamps.items():
+        if lamp_id in eye.lamp_cache.keys() and lamp_id in skin.lamp_cache.keys():
+            # Fetch the TLVs for this specific lamp
+            tlvs = lamp.get_tlvs(room.standard)
+            if tlvs[0] is None or tlvs[1] is None:
+                warnings_list.append(
+                    SafetyWarning(
+                        level=WarningLevel.WARNING,
+                        message=f"{lamp.name} has no wavelength or spectrum defined. Cannot calculate TLVs.",
+                        lamp_id=lamp_id,
+                    )
+                )
+                continue
+
+            skinmax, eyemax = tlvs
+
+            # These are irradiance values, not dose
+            skinrad = skin.lamp_cache[lamp_id].values
+            eyerad = eye.lamp_cache[lamp_id].values
+
+            # Convert to dose (mJ/cm2)
+            skinvals = skinrad * 3.6 * skin.hours
+            eyevals = eyerad * 3.6 * eye.hours
+
+            # Weighting function for this specific lamp
+            skinweight, eyeweight = 3 / skinmax, 3 / eyemax
+
+            # Fraction dimming required to be compliant (>1 means already compliant)
+            skindim = skinmax / skinvals.max() if skinvals.max() > 0 else float("inf")
+            eyedim = eyemax / eyevals.max() if eyevals.max() > 0 else float("inf")
+
+            # Add to total weighted dose
+            weighted_skin_dose += skinvals * skinweight
+            weighted_eye_dose += eyevals * eyeweight
+
+            skindims[lamp_id] = skindim
+            eyedims[lamp_id] = eyedim
+            total_dim = min(skindim, eyedim, 1)
+            dimmed_weighted_eye_dose += eyevals * eyeweight * total_dim
+            dimmed_weighted_skin_dose += skinvals * skinweight * total_dim
+
+            # Check for missing spectrum on non-LPHG lamps
+            missing_spectrum = (
+                lamp.guv_type != GUVType.LPHG
+                and lamp.spectra is None
+                and lamp.ies is not None
+            )
+
+            # Record per-lamp result
+            lamp_results[lamp_id] = LampComplianceResult(
+                lamp_id=lamp_id,
+                lamp_name=lamp.name,
+                skin_dose_max=skinvals.max(),
+                eye_dose_max=eyevals.max(),
+                skin_tlv=skinmax,
+                eye_tlv=eyemax,
+                skin_dimming_required=min(skindim, 1.0),
+                eye_dimming_required=min(eyedim, 1.0),
+                is_skin_compliant=skindim >= 1,
+                is_eye_compliant=eyedim >= 1,
+                missing_spectrum=missing_spectrum,
+            )
+
+            # Individual lamp check - generate warnings
+            if min(skindim, eyedim, 1) < 1:
+                skindim_pct = round(skindim * 100, 1)
+                eyedim_pct = round(eyedim * 100, 1)
+                if skindim_pct < 100:
+                    msg = f"{lamp.name} must be dimmed to {skindim_pct}% its present power to comply with selected skin TLVs"
+                    if eyedim_pct < 100:
+                        msg += f" and to {eyedim_pct}% to comply with eye TLVs."
+                    warnings_list.append(
+                        SafetyWarning(
+                            level=WarningLevel.WARNING, message=msg, lamp_id=lamp_id
+                        )
+                    )
+                elif eyedim_pct < 100:
+                    msg = f"{lamp.name} must be dimmed to {eyedim_pct}% its present power to comply with selected eye TLVs"
+                    warnings_list.append(
+                        SafetyWarning(
+                            level=WarningLevel.WARNING, message=msg, lamp_id=lamp_id
+                        )
+                    )
+
+            if missing_spectrum:
+                msg = f"{lamp.name} is missing a spectrum. Photobiological safety calculations may be inaccurate."
+                warnings_list.append(
+                    SafetyWarning(
+                        level=WarningLevel.WARNING, message=msg, lamp_id=lamp_id
+                    )
+                )
+
+    # Check if seemingly-compliant installations actually aren't
+    dimvals = list(skindims.values()) + list(eyedims.values())
+    DIMMING_NOT_REQUIRED = all(dim >= 1 for dim in dimvals) if dimvals else True
+    LAMPS_COMPLIANT = (
+        max(weighted_skin_dose.max().round(2), weighted_eye_dose.max().round(2)) <= 3
+    )
+    DIMMED_LAMPS_COMPLIANT = (
+        max(
+            dimmed_weighted_skin_dose.max().round(2),
+            dimmed_weighted_eye_dose.max().round(2),
+        )
+        <= 3
+    )
+
+    # Calculate dimming needed for overall compliance
+    skin_dimming_for_compliance = None
+    eye_dimming_for_compliance = None
+
+    if weighted_skin_dose.max() > 3:
+        skin_dimming_for_compliance = 3 / weighted_skin_dose.max()
+    if weighted_eye_dose.max() > 3:
+        eye_dimming_for_compliance = 3 / weighted_eye_dose.max()
+
+    # Combined dose warning
+    if DIMMING_NOT_REQUIRED and not LAMPS_COMPLIANT:
+        msg = "Though all lamps are individually compliant, dose must be reduced to "
+        skindim_pct = round(3 / weighted_skin_dose.max() * 100, 1)
+        eyedim_pct = round(3 / weighted_eye_dose.max() * 100, 1)
+        if weighted_skin_dose.max() > 3:
+            msg += f"{skindim_pct}% its present value to comply with selected skin TLVs"
+            if weighted_eye_dose.max() > 3:
+                msg += f" and to {eyedim_pct}% to comply with selected eye TLVs."
+        elif weighted_eye_dose.max() > 3:
+            msg += f"{eyedim_pct}% its present value to comply with selected eye TLVs"
+        warnings_list.append(SafetyWarning(level=WarningLevel.WARNING, message=msg))
+
+    # Check if dimming will make the installation compliant
+    if not DIMMED_LAMPS_COMPLIANT:
+        msg = "Even after applying dimming, this installation may not be compliant. Dose must be reduced to "
+        skindim_pct = round(3 / weighted_skin_dose.max() * 100, 1)
+        eyedim_pct = round(3 / weighted_eye_dose.max() * 100, 1)
+        if dimmed_weighted_skin_dose.max() > 3:
+            msg += f"{skindim_pct}% its present value to comply with selected skin TLVs"
+            if dimmed_weighted_eye_dose.max() > 3:
+                msg += f" and to {eyedim_pct}% to comply with eye TLVs."
+        elif dimmed_weighted_eye_dose.max() > 3:
+            msg += f"{eyedim_pct}% its present value to comply with selected eye TLVs"
+        warnings_list.append(SafetyWarning(level=WarningLevel.ERROR, message=msg))
+
+    # Determine overall status
+    if LAMPS_COMPLIANT:
+        status = ComplianceStatus.COMPLIANT
+    elif DIMMED_LAMPS_COMPLIANT:
+        status = ComplianceStatus.COMPLIANT_WITH_DIMMING
+    elif not DIMMING_NOT_REQUIRED and DIMMED_LAMPS_COMPLIANT:
+        status = ComplianceStatus.COMPLIANT_WITH_DIMMING
+    else:
+        status = ComplianceStatus.NON_COMPLIANT_EVEN_WITH_DIMMING
+
+    return SafetyCheckResult(
+        status=status,
+        lamp_results=lamp_results,
+        warnings=warnings_list,
+        weighted_skin_dose=weighted_skin_dose,
+        weighted_eye_dose=weighted_eye_dose,
+        max_skin_dose=float(weighted_skin_dose.max()),
+        max_eye_dose=float(weighted_eye_dose.max()),
+        skin_dimming_for_compliance=skin_dimming_for_compliance,
+        eye_dimming_for_compliance=eye_dimming_for_compliance,
     )
