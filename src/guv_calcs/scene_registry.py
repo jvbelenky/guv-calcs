@@ -24,6 +24,8 @@ class Registry(Generic[T], MutableMapping[str, T]):
     """A thin wrapper around dict[str, T] with consistent ID/collision behavior."""
 
     base_id = "item"
+    expected_type: type | None = None
+    use_bounding_box: bool = False
     on_collision: str = "increment"  # "error" | "overwrite" | "increment"
     dims: Optional[Callable[[], "RoomDimensions"]] = None
     _items: Dict[str, T] = field(default_factory=dict)
@@ -117,9 +119,17 @@ class Registry(Generic[T], MutableMapping[str, T]):
                     warnings.warn(msg, stacklevel=2)
         return msg
 
-    def check_position(self, obj):
-        """implement in subclasses"""
+    def _extract_dimensions(self, obj: T) -> tuple:
+        """Override to extract position/dimensions from object."""
         raise NotImplementedError
+
+    def check_position(self, obj: T) -> str | None:
+        """Check object position against room dimensions."""
+        try:
+            dimensions = self._extract_dimensions(obj)
+            return self._check_position(dimensions, obj, use_bounding_box=self.use_bounding_box)
+        except NotImplementedError:
+            return None
 
     def get_position_warnings(self):
         dct = {}
@@ -127,7 +137,11 @@ class Registry(Generic[T], MutableMapping[str, T]):
             dct[obj_id] = self.check_position(obj)
         return dct
 
-    def _validate(self, obj):
+    def _validate(self, obj: T) -> T:
+        """Type check + position check. Override for additional validation."""
+        if self.expected_type and not isinstance(obj, self.expected_type):
+            raise TypeError(f"Must be {self.expected_type.__name__}, not {type(obj).__name__}")
+        self.check_position(obj)
         return obj
 
     def validate(self):
@@ -168,53 +182,40 @@ class Registry(Generic[T], MutableMapping[str, T]):
 @dataclass
 class LampRegistry(Registry["Lamp"]):
     base_id = "Lamp"
+    expected_type: type | None = Lamp
+    use_bounding_box: bool = False
+
+    def _extract_dimensions(self, lamp):
+        return lamp.position
 
     def _validate(self, lamp):
-        if not isinstance(lamp, Lamp):
-            raise TypeError(f"Must be type Lamp, not {type(lamp)}")
+        lamp = super()._validate(lamp)
         if lamp.surface.units != self.dims().units:
-            # automatically convert for now
             lamp.set_units(self.dims().units)
-        # check dimensions
-        self.check_position(lamp)
         return lamp
-
-    def check_position(self, lamp) -> str:
-        return self._check_position(lamp.position, lamp)
 
     @property
     def wavelengths(self) -> list:
         return {k: v.wavelength for k, v in self.items()}
-        # lst = [v.wavelength for k,v in self.items() if v.wavelength is not None]
-        # return sorted(set(lst))
 
 
 @dataclass
 class ZoneRegistry(Registry["CalcZone"]):
     base_id = "CalcZone"
+    expected_type: type | None = CalcZone
+    use_bounding_box: bool = True
 
-    def _validate(self, zone):
-        if not isinstance(zone, CalcZone):
-            raise TypeError(f"Must be a CalcZone subclass, not {type(zone)}")
-        self.check_position(zone)
-        return zone
-
-    def check_position(self, zone) -> str:
+    def _extract_dimensions(self, zone):
         x, y, z = zone.coords.T
-        dimensions = x.max(), y.max(), z.max()
-        return self._check_position(dimensions, zone, use_bounding_box=True)
+        return x.max(), y.max(), z.max()
 
 
 @dataclass
 class SurfaceRegistry(Registry["Surface"]):
     base_id = "Surface"
+    expected_type: type | None = Surface
+    use_bounding_box: bool = True
 
-    def _validate(self, surface):
-        if not isinstance(surface, Surface):
-            raise TypeError(f"Must be Surface, not {type(surface)}")
-        return surface
-
-    def check_position(self, surface) -> str:
+    def _extract_dimensions(self, surface):
         x, y, z = surface.plane.coords.T
-        dimensions = x.max(), y.max(), z.max()
-        return self._check_position(dimensions, surface, use_bounding_box=True)
+        return x.max(), y.max(), z.max()
