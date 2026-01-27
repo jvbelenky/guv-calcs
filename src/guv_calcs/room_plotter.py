@@ -56,18 +56,31 @@ class RoomPlotter:
         if self.room.is_polygon:
             fig = self._plot_polygon_room_outline(fig=fig)
 
-        x, y, z = self.room.dim.x, self.room.dim.y, self.room.dim.z
+        # Get axis ranges - for polygon rooms, use bounding box coordinates
+        if self.room.is_polygon:
+            x_min, y_min, x_max, y_max = self.room.polygon.bounding_box
+            x_range = [x_min, x_max]
+            y_range = [y_min, y_max]
+            x_span = x_max - x_min
+            y_span = y_max - y_min
+        else:
+            x_range = [0, self.room.dim.x]
+            y_range = [0, self.room.dim.y]
+            x_span = self.room.dim.x
+            y_span = self.room.dim.y
+
+        z = self.room.dim.z
 
         # set views
         fig.update_layout(
             title=title,
             scene=dict(
-                xaxis=dict(range=[0, x]),
-                yaxis=dict(range=[0, y]),
+                xaxis=dict(range=x_range),
+                yaxis=dict(range=y_range),
                 zaxis=dict(range=[0, z]),
                 aspectratio=dict(
-                    x=x / z,
-                    y=y / z,
+                    x=x_span / z,
+                    y=y_span / z,
                     z=1,
                 ),
             ),

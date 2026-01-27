@@ -78,16 +78,43 @@ class Registry(Generic[T], MutableMapping[str, T]):
         # Next free number
         return f"{base}-{max_suffix + 1}"
 
-    def _check_position(self, dims, obj):
+    def _check_position(self, dims, obj, use_bounding_box=False):
         """
-        check if an object's dimensions exceed the room's boundaries.
+        Check if an object's dimensions exceed the room's boundaries.
+
+        For polygon rooms:
+        - use_bounding_box=False: check if point is inside the polygon (for lamps)
+        - use_bounding_box=True: check against bounding box (for zones/surfaces)
         """
         msg = None
-        origin, roomdims = self.dims().origin, self.dims().dimensions
-        for coord, pt1, pt2 in zip(dims, origin, roomdims):
-            if coord > pt2 or coord < pt1:
-                msg = f"{obj.name} exceeds room boundaries!"
-                warnings.warn(msg, stacklevel=2)
+        room_dims = self.dims()
+
+        if room_dims.is_polygon:
+            x, y, z = dims
+            if use_bounding_box:
+                # Check against bounding box (for zones/surfaces that are rectangular grids)
+                x_min, y_min, x_max, y_max = room_dims.polygon.bounding_box
+                if x > x_max or x < x_min or y > y_max or y < y_min:
+                    msg = f"{obj.name} exceeds room boundaries!"
+                    warnings.warn(msg, stacklevel=2)
+                elif z < 0 or z > room_dims.z:
+                    msg = f"{obj.name} exceeds room boundaries!"
+                    warnings.warn(msg, stacklevel=2)
+            else:
+                # Check if point is inside the polygon (for lamps)
+                if not room_dims.polygon.contains_point(x, y):
+                    msg = f"{obj.name} exceeds room boundaries!"
+                    warnings.warn(msg, stacklevel=2)
+                elif z < 0 or z > room_dims.z:
+                    msg = f"{obj.name} exceeds room boundaries!"
+                    warnings.warn(msg, stacklevel=2)
+        else:
+            # Rectangular room - use bounding box check
+            origin, roomdims = room_dims.origin, room_dims.dimensions
+            for coord, pt1, pt2 in zip(dims, origin, roomdims):
+                if coord > pt2 or coord < pt1:
+                    msg = f"{obj.name} exceeds room boundaries!"
+                    warnings.warn(msg, stacklevel=2)
         return msg
 
     def check_position(self, obj):
@@ -175,7 +202,7 @@ class ZoneRegistry(Registry["CalcZone"]):
     def check_position(self, zone) -> str:
         x, y, z = zone.coords.T
         dimensions = x.max(), y.max(), z.max()
-        return self._check_position(dimensions, zone)
+        return self._check_position(dimensions, zone, use_bounding_box=True)
 
 
 @dataclass
@@ -190,4 +217,4 @@ class SurfaceRegistry(Registry["Surface"]):
     def check_position(self, surface) -> str:
         x, y, z = surface.plane.coords.T
         dimensions = x.max(), y.max(), z.max()
-        return self._check_position(dimensions, surface)
+        return self._check_position(dimensions, surface, use_bounding_box=True)
