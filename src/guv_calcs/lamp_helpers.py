@@ -168,46 +168,60 @@ def new_lamp_position_polygon(lamp_idx: int, polygon: "Polygon2D", num_divisions
 
 def _place_points_in_polygon(candidates: np.ndarray, polygon: "Polygon2D", num_points: int):
     """
-    Place points inside polygon using farthest-point sampling.
+    Place points inside polygon using rectangular decomposition + farthest-point sampling.
     Returns the index of the last placed point.
     """
-    # Start with centroid (or closest candidate to centroid)
-    cx, cy = polygon.centroid
-    dists_to_centroid = np.sqrt((candidates[:, 0] - cx) ** 2 + (candidates[:, 1] - cy) ** 2)
-    first_idx = np.argmin(dists_to_centroid)
+    # Get rectangle centroids (sorted by area, largest first)
+    rect_centroids = _get_rectangle_centroids(polygon)
 
-    chosen_indices = [first_idx]
-    chosen_set = {first_idx}
+    chosen_indices = []
+    chosen_set = set()
 
-    for _ in range(1, num_points):
-        best_idx = None
-        best_min_dist = -1.0
+    for lamp_num in range(num_points):
+        if lamp_num < len(rect_centroids):
+            # Use rectangle centroid for first N lamps (N = number of rectangles)
+            best_idx = _find_closest_candidate(candidates, rect_centroids[lamp_num])
+            # Avoid duplicates if centroids map to same candidate
+            while best_idx in chosen_set and lamp_num < len(rect_centroids):
+                lamp_num += 1
+                if lamp_num < len(rect_centroids):
+                    best_idx = _find_closest_candidate(candidates, rect_centroids[lamp_num])
+                else:
+                    best_idx = None
+                    break
 
-        for i, pt in enumerate(candidates):
-            if i in chosen_set:
-                continue
+        if lamp_num >= len(rect_centroids) or best_idx is None or best_idx in chosen_set:
+            # Fallback: farthest-point sampling
+            best_idx = None
+            best_min_dist = -1.0
 
-            # Distance to nearest chosen point
-            min_dist_to_chosen = min(
-                np.sqrt((pt[0] - candidates[j, 0]) ** 2 + (pt[1] - candidates[j, 1]) ** 2)
-                for j in chosen_indices
-            )
+            for i, pt in enumerate(candidates):
+                if i in chosen_set:
+                    continue
 
-            # Distance to nearest polygon edge
-            min_dist_to_edge = _distance_to_polygon_boundary(pt, polygon)
+                if not chosen_indices:
+                    # First lamp (no centroids available): maximize distance to edges
+                    min_dist = _distance_to_polygon_boundary(pt, polygon)
+                else:
+                    # Distance to nearest chosen point
+                    min_dist_to_chosen = min(
+                        np.sqrt((pt[0] - candidates[j, 0]) ** 2 + (pt[1] - candidates[j, 1]) ** 2)
+                        for j in chosen_indices
+                    )
+                    # Distance to nearest polygon edge
+                    min_dist_to_edge = _distance_to_polygon_boundary(pt, polygon)
+                    # Take minimum of both constraints
+                    min_dist = min(min_dist_to_chosen, min_dist_to_edge)
 
-            # Take minimum of both constraints
-            min_dist = min(min_dist_to_chosen, min_dist_to_edge)
-
-            if min_dist > best_min_dist:
-                best_min_dist = min_dist
-                best_idx = i
+                if min_dist > best_min_dist:
+                    best_min_dist = min_dist
+                    best_idx = i
 
         if best_idx is not None:
             chosen_indices.append(best_idx)
             chosen_set.add(best_idx)
 
-    return chosen_indices[-1]
+    return chosen_indices[-1] if chosen_indices else 0
 
 
 def _distance_to_polygon_boundary(point: np.ndarray, polygon: "Polygon2D") -> float:
@@ -221,6 +235,18 @@ def _distance_to_polygon_boundary(point: np.ndarray, polygon: "Polygon2D") -> fl
         min_dist = min(min_dist, dist)
 
     return min_dist
+
+
+def _median_distance_to_edges(point: np.ndarray, polygon: "Polygon2D") -> float:
+    """Calculate median distance from point to all polygon edges."""
+    px, py = point
+    dists = []
+
+    for (x1, y1), (x2, y2) in polygon.edges:
+        dist = _point_to_segment_distance(px, py, x1, y1, x2, y2)
+        dists.append(dist)
+
+    return float(np.median(dists))
 
 
 def _point_to_segment_distance(px, py, x1, y1, x2, y2) -> float:
@@ -238,6 +264,100 @@ def _point_to_segment_distance(px, py, x1, y1, x2, y2) -> float:
     proj_y = y1 + t * dy
 
     return np.sqrt((px - proj_x) ** 2 + (py - proj_y) ** 2)
+
+
+def _get_rectangle_centroids(polygon: "Polygon2D") -> list[tuple[float, float]]:
+    """
+    Decompose an axis-aligned rectilinear polygon into rectangles and return their centroids.
+    Returns centroids sorted by rectangle area (largest first).
+    """
+    # Find reflex (concave) vertices - where interior angle > 180°
+    reflex_vertices = _find_reflex_vertices(polygon)
+
+    if not reflex_vertices:
+        # Convex polygon (or simple rectangle) - just return centroid
+        return [polygon.centroid]
+
+    # For rectilinear polygons, decompose by extending cuts from reflex vertices
+    rectangles = _decompose_rectilinear(polygon, reflex_vertices)
+
+    if not rectangles:
+        return [polygon.centroid]
+
+    # Compute centroids and sort by area (largest first)
+    centroids_with_area = []
+    for x1, y1, x2, y2 in rectangles:
+        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+        area = abs((x2 - x1) * (y2 - y1))
+        centroids_with_area.append((area, (cx, cy)))
+
+    centroids_with_area.sort(reverse=True, key=lambda x: x[0])
+    return [c for _, c in centroids_with_area]
+
+
+def _find_reflex_vertices(polygon: "Polygon2D") -> list[tuple[float, float]]:
+    """Find vertices where the interior angle is > 180° (concave/reflex vertices)."""
+    reflex = []
+    n = len(polygon.vertices)
+
+    for i in range(n):
+        prev_v = polygon.vertices[(i - 1) % n]
+        curr_v = polygon.vertices[i]
+        next_v = polygon.vertices[(i + 1) % n]
+
+        # Cross product to determine turn direction (CCW polygon)
+        cross = (curr_v[0] - prev_v[0]) * (next_v[1] - curr_v[1]) - \
+                (curr_v[1] - prev_v[1]) * (next_v[0] - curr_v[0])
+
+        # For CCW polygon, negative cross product means reflex vertex
+        if cross < 0:
+            reflex.append(curr_v)
+
+    return reflex
+
+
+def _decompose_rectilinear(
+    polygon: "Polygon2D", reflex_vertices: list[tuple[float, float]]
+) -> list[tuple[float, float, float, float]]:
+    """
+    Decompose a rectilinear polygon into rectangles using cuts from reflex vertices.
+    Returns list of (x1, y1, x2, y2) tuples for each rectangle.
+    """
+    x_min, y_min, x_max, y_max = polygon.bounding_box
+
+    # Collect all x and y coordinates that define region boundaries
+    x_coords = {x_min, x_max}
+    y_coords = {y_min, y_max}
+
+    for vx, vy in polygon.vertices:
+        x_coords.add(vx)
+        y_coords.add(vy)
+
+    x_coords = sorted(x_coords)
+    y_coords = sorted(y_coords)
+
+    # Generate candidate rectangles from the grid
+    rectangles = []
+    for i in range(len(x_coords) - 1):
+        for j in range(len(y_coords) - 1):
+            x1, x2 = x_coords[i], x_coords[i + 1]
+            y1, y2 = y_coords[j], y_coords[j + 1]
+
+            # Check if rectangle center is inside polygon
+            cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+            if polygon.contains_point(cx, cy):
+                rectangles.append((x1, y1, x2, y2))
+
+    return rectangles
+
+
+def _find_closest_candidate(
+    candidates: np.ndarray, target: tuple[float, float]
+) -> int:
+    """Find the index of the candidate point closest to the target."""
+    tx, ty = target
+    dists = (candidates[:, 0] - tx) ** 2 + (candidates[:, 1] - ty) ** 2
+    return int(np.argmin(dists))
 
 
 def new_lamp_position_polygon_perimeter(
