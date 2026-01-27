@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import plotly.graph_objs as go
+import numpy as np
 import warnings
 
 
@@ -52,8 +53,8 @@ def plot_volume(zone, title=None):
 
 def plot_plane(zone, fig=None, ax=None, vmin=None, vmax=None, title=None):
     """
-    TODO: extent will not work correctly for non-axis-aligned planes
-    Plot the image of the radiation pattern
+    Plot the image of the radiation pattern.
+    Works for any plane orientation (axis-aligned or arbitrary).
     """
     if fig is None:
         if ax is None:
@@ -66,19 +67,67 @@ def plot_plane(zone, fig=None, ax=None, vmin=None, vmax=None, title=None):
 
     title = "" if title is None else title
     values = zone.get_values()
+
     if values is not None:
         vmin = values.min() if vmin is None else vmin
         vmax = values.max() if vmax is None else vmax
-        extent = [
-            zone.geometry.x1,
-            zone.geometry.x2,
-            zone.geometry.y1,
-            zone.geometry.y2,
-        ]
 
-        values = values.T[::-1]
-        img = ax.imshow(values, extent=extent, vmin=vmin, vmax=vmax, cmap=zone.colormap)
+        geom = zone.geometry
+
+        # Get basis vectors if available
+        u_hat = getattr(geom, 'u_hat', None)
+        v_hat = getattr(geom, 'v_hat', None)
+
+        # Determine axis labels and extent from geometry
+        if u_hat is not None and v_hat is not None:
+            # Derive axis labels from basis vectors
+            def get_axis_label(vec):
+                abs_vec = np.abs(vec)
+                idx = int(np.argmax(abs_vec))
+                if abs_vec[idx] > 0.9:
+                    return ['X', 'Y', 'Z'][idx]
+                return None
+
+            u_label = get_axis_label(u_hat) or 'U'
+            v_label = get_axis_label(v_hat) or 'V'
+
+            # Use mins/maxs for extent (they're already correct 2D bounds)
+            mins = geom.mins
+            maxs = geom.maxs
+            extent = [mins[0], maxs[0], mins[1], maxs[1]]
+
+            # Determine if v points in positive direction of its dominant axis
+            abs_v = np.abs(v_hat)
+            v_idx = int(np.argmax(abs_v))
+            v_positive = v_hat[v_idx] > 0
+        else:
+            # Fallback for geometries without basis vectors
+            u_label = 'X'
+            v_label = 'Y'
+            extent = [geom.x1, geom.x2, geom.y1, geom.y2]
+            v_positive = True
+
+        # Transpose so rows=v, cols=u
+        plot_values = values.T
+
+        # Flip if v points in negative direction (so positive is at top)
+        if not v_positive:
+            plot_values = plot_values[::-1]
+
+        img = ax.imshow(
+            plot_values,
+            extent=extent,
+            vmin=vmin,
+            vmax=vmax,
+            cmap=zone.colormap,
+            origin='lower',
+            aspect='equal'
+        )
+
         cbar = fig.colorbar(img, pad=0.03)
+        ax.set_xlabel(u_label)
+        ax.set_ylabel(v_label)
         ax.set_title(title)
         cbar.set_label(zone.units, loc="center")
+
     return fig, ax
