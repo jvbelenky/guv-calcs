@@ -2,7 +2,7 @@
 
 import pytest
 import numpy as np
-from guv_calcs import Room, Lamp, CalcPlane, CalcVol
+from guv_calcs import Room, Lamp, CalcPlane, CalcVol, Polygon2D
 
 
 class TestRoomInitialization:
@@ -210,3 +210,81 @@ class TestRoomReflectance:
         """Max number of reflectance passes can be set."""
         basic_room.set_max_num_passes(50)
         assert basic_room.ref_manager.max_num_passes == 50
+
+
+class TestPolygonRoom:
+    """Tests for polygon-based room shapes."""
+
+    def test_polygon_room_creation_from_list(self):
+        """Polygon room can be created from list of vertices."""
+        vertices = [(0, 0), (4, 0), (4, 2), (2, 2), (2, 4), (0, 4)]
+        room = Room(polygon=vertices, z=2.7)
+        assert room.is_polygon is True
+        assert room.polygon is not None
+        assert room.polygon.n_vertices == 6
+
+    def test_polygon_room_creation_from_polygon2d(self):
+        """Polygon room can be created from Polygon2D object."""
+        poly = Polygon2D(vertices=[(0, 0), (6, 0), (6, 4), (0, 4)])
+        room = Room(polygon=poly, z=2.7)
+        assert room.is_polygon is True
+        assert room.polygon.n_vertices == 4
+
+    def test_polygon_room_bounding_box_dimensions(self):
+        """Polygon room x/y properties return bounding box dimensions."""
+        vertices = [(0, 0), (4, 0), (4, 2), (2, 2), (2, 4), (0, 4)]
+        room = Room(polygon=vertices, z=2.7)
+        assert room.x == 4.0
+        assert room.y == 4.0
+        assert room.z == 2.7
+
+    def test_polygon_room_volume(self):
+        """Polygon room volume is based on polygon area times height."""
+        # L-shaped room with area = 4*2 + 2*2 = 12 sq units
+        vertices = [(0, 0), (4, 0), (4, 2), (2, 2), (2, 4), (0, 4)]
+        room = Room(polygon=vertices, z=2.7)
+        expected_volume = 12.0 * 2.7
+        assert np.isclose(room.volume, expected_volume)
+
+    def test_polygon_room_surfaces(self):
+        """Polygon room has numbered wall surfaces."""
+        vertices = [(0, 0), (4, 0), (4, 2), (2, 2), (2, 4), (0, 4)]
+        room = Room(polygon=vertices, z=2.7)
+        assert "floor" in room.surfaces
+        assert "ceiling" in room.surfaces
+        assert "wall_0" in room.surfaces
+        assert "wall_5" in room.surfaces
+        assert len(room.surfaces) == 8  # floor + ceiling + 6 walls
+
+    def test_polygon_room_set_wall_reflectance(self):
+        """Wall reflectance can be set by wall ID for polygon rooms."""
+        vertices = [(0, 0), (4, 0), (4, 2), (2, 2), (2, 4), (0, 4)]
+        room = Room(polygon=vertices, z=2.7)
+        room.set_reflectance(0.5, wall_id="wall_0")
+        assert room.surfaces["wall_0"].R == 0.5
+        assert room.surfaces["wall_1"].R == 0.0  # Other walls unchanged
+
+    def test_polygon_room_serialization(self):
+        """Polygon room survives to_dict/from_dict round trip."""
+        vertices = [(0, 0), (4, 0), (4, 2), (2, 2), (2, 4), (0, 4)]
+        room = Room(polygon=vertices, z=2.7, units="meters")
+        data = room.to_dict()
+        loaded_room = Room.from_dict(data)
+        assert loaded_room.is_polygon is True
+        assert loaded_room.polygon.n_vertices == 6
+        assert loaded_room.z == 2.7
+        assert np.isclose(loaded_room.volume, room.volume)
+
+    def test_rectangular_room_is_not_polygon(self):
+        """Rectangular room created with x/y/z is not polygon."""
+        room = Room(x=6, y=4, z=2.7)
+        assert room.is_polygon is False
+        assert room.polygon is None
+
+    def test_polygon_room_repr(self):
+        """Polygon room has informative repr."""
+        vertices = [(0, 0), (4, 0), (4, 2), (2, 2), (2, 4), (0, 4)]
+        room = Room(polygon=vertices, z=2.7)
+        repr_str = repr(room)
+        assert "polygon=" in repr_str
+        assert "6 vertices" in repr_str

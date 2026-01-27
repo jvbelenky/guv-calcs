@@ -1,11 +1,16 @@
 from collections.abc import Iterable
 import warnings
 from matplotlib import colormaps
-from .room_dims import RoomDimensions
+from .room_dims import RoomDimensions, PolygonRoomDimensions
 from .lamp import Lamp
 from .calc_zone import CalcZone, CalcPlane, CalcVol
-from .reflectance import Surface, init_room_surfaces
-from .lamp_helpers import new_lamp_position, new_lamp_position_perimeter
+from .reflectance import Surface, init_room_surfaces, init_polygon_room_surfaces
+from .lamp_helpers import (
+    new_lamp_position,
+    new_lamp_position_perimeter,
+    new_lamp_position_polygon,
+    new_lamp_position_polygon_perimeter,
+)
 from .safety import PhotStandard
 from .scene_registry import LampRegistry, ZoneRegistry, SurfaceRegistry
 from .units import LengthUnits, convert_length
@@ -66,9 +71,15 @@ class Scene:
                 msg = f"Cannot add object of type {type(obj).__name__} to Room."
                 warnings.warn(msg, stacklevel=3)
 
-    def update_dimensions(self, x=None, y=None, z=None):
+    def update_dimensions(self, x=None, y=None, z=None, polygon=None):
         """update the dimensions and any objects that depend on the dimensions"""
-        self.dim = self.dim.with_(x=x, y=y, z=z)
+        if polygon is not None and self.dim.is_polygon:
+            self.dim = self.dim.with_(z=z, polygon=polygon)
+        elif not self.dim.is_polygon:
+            self.dim = self.dim.with_(x=x, y=y, z=z)
+        else:
+            # Polygon room but only z changed
+            self.dim = self.dim.with_(z=z)
         self.update_standard_surfaces()
 
     def update_units(self, units):
@@ -105,7 +116,14 @@ class Scene:
 
     def place_lamp(self, *args, on_collision=None, mode="downlight"):
         """
-        Position a lamp as far from other lamps and the walls as possible
+        Position a lamp as far from other lamps and the walls as possible.
+
+        For rectangular rooms, uses bounding-box based placement.
+        For polygon rooms, places lamps inside the polygon boundary.
+
+        Args:
+            mode: "downlight" places lamps inside the room pointing down,
+                  "tilted" places lamps near walls/perimeter pointing inward.
         """
 
         offset = convert_length(LengthUnits.METERS, self.dim.units, 0.1, sigfigs=2)
@@ -113,18 +131,35 @@ class Scene:
         lamps = self._init_lamp(*args)
         for lamp in lamps:
             idx = len(self.lamps) + 1
-            if mode.lower() == "downlight":
-                x, y = new_lamp_position(idx, self.dim.x, self.dim.y)
-                lamp.move(x, y, self.dim.z - offset).aim(x, y, 0.0)
-            elif mode.lower() == "tilted":
-                x, y = new_lamp_position_perimeter(idx, self.dim.x, self.dim.y)
-                x = x + offset if x == 0.0 else x - offset
-                y = y + offset if y == 0.0 else y - offset
-                lamp.move(x, y, self.dim.z - offset).aim(
-                    self.dim.x - x, self.dim.y - y, 0.0
-                )
+
+            if self.dim.is_polygon:
+                # Polygon room placement
+                polygon = self.dim.polygon
+                if mode.lower() == "downlight":
+                    x, y = new_lamp_position_polygon(idx, polygon)
+                    lamp.move(x, y, self.dim.z - offset).aim(x, y, 0.0)
+                elif mode.lower() == "tilted":
+                    x, y = new_lamp_position_polygon_perimeter(idx, polygon)
+                    # Aim toward centroid
+                    cx, cy = polygon.centroid
+                    lamp.move(x, y, self.dim.z - offset).aim(cx, cy, 0.0)
+                else:
+                    raise ValueError(f"invalid lamp placement mode {mode}")
             else:
-                raise ValueError(f"invalid lamp placement mode {mode}")
+                # Rectangular room placement (original behavior)
+                if mode.lower() == "downlight":
+                    x, y = new_lamp_position(idx, self.dim.x, self.dim.y)
+                    lamp.move(x, y, self.dim.z - offset).aim(x, y, 0.0)
+                elif mode.lower() == "tilted":
+                    x, y = new_lamp_position_perimeter(idx, self.dim.x, self.dim.y)
+                    x = x + offset if x == 0.0 else x - offset
+                    y = y + offset if y == 0.0 else y - offset
+                    lamp.move(x, y, self.dim.z - offset).aim(
+                        self.dim.x - x, self.dim.y - y, 0.0
+                    )
+                else:
+                    raise ValueError(f"invalid lamp placement mode {mode}")
+
             self.add_lamp(lamp, on_collision=on_collision)
 
     def _init_lamp(self, *args):
@@ -272,29 +307,57 @@ class Scene:
         num_x=None,
         num_y=None,
     ):
-        """add surfaces to the scene corresponding to the 6 faces of a rectangular room"""
-        room_surfaces = init_room_surfaces(
-            dims=self.dim,
-            reflectances=reflectances,
-            x_spacings=x_spacings,
-            y_spacings=y_spacings,
-            num_x=num_x,
-            num_y=num_y,
-        )
+        """add surfaces to the scene corresponding to the faces of the room"""
+        if self.dim.is_polygon:
+            room_surfaces = init_polygon_room_surfaces(
+                dims=self.dim,
+                reflectances=reflectances,
+                x_spacings=x_spacings,
+                y_spacings=y_spacings,
+                num_x=num_x,
+                num_y=num_y,
+            )
+        else:
+            room_surfaces = init_room_surfaces(
+                dims=self.dim,
+                reflectances=reflectances,
+                x_spacings=x_spacings,
+                y_spacings=y_spacings,
+                num_x=num_x,
+                num_y=num_y,
+            )
         for key, val in room_surfaces.items():
             self.add_surface(val)
 
     def update_standard_surfaces(self):
-        """update the 6 faces of the room with the new dimensions"""
+        """update the faces of the room with the new dimensions"""
         keys = self.dim.faces.keys()
-        room_surfaces = init_room_surfaces(
-            dims=self.dim,
-            reflectances={key: self.surfaces[key].R for key in keys},
-            x_spacings={key: self.surfaces[key].plane.x_spacing for key in keys},
-            y_spacings={key: self.surfaces[key].plane.y_spacing for key in keys},
-            num_x={key: self.surfaces[key].plane.num_x for key in keys},
-            num_y={key: self.surfaces[key].plane.num_y for key in keys},
-        )
+        # Build dicts only for keys that exist in current surfaces
+        existing_keys = [k for k in keys if k in self.surfaces]
+        reflectances = {key: self.surfaces[key].R for key in existing_keys}
+        x_spacings = {key: self.surfaces[key].plane.x_spacing for key in existing_keys}
+        y_spacings = {key: self.surfaces[key].plane.y_spacing for key in existing_keys}
+        num_x = {key: self.surfaces[key].plane.num_x for key in existing_keys}
+        num_y = {key: self.surfaces[key].plane.num_y for key in existing_keys}
+
+        if self.dim.is_polygon:
+            room_surfaces = init_polygon_room_surfaces(
+                dims=self.dim,
+                reflectances=reflectances,
+                x_spacings=x_spacings,
+                y_spacings=y_spacings,
+                num_x=num_x,
+                num_y=num_y,
+            )
+        else:
+            room_surfaces = init_room_surfaces(
+                dims=self.dim,
+                reflectances=reflectances,
+                x_spacings=x_spacings,
+                y_spacings=y_spacings,
+                num_x=num_x,
+                num_y=num_y,
+            )
         for key, val in room_surfaces.items():
             self.add_surface(val, on_collision="overwrite")
 

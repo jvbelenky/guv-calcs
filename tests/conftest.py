@@ -3,7 +3,7 @@
 import pytest
 import tempfile
 import os
-from guv_calcs import Room, Lamp, CalcPlane, CalcVol
+from guv_calcs import Room, Lamp, CalcPlane, CalcVol, Polygon2D
 
 
 # ============== Room Fixtures ==============
@@ -124,3 +124,17 @@ def temp_dir():
 def temp_file(temp_dir):
     """Provide a temporary file path for save/load tests."""
     return os.path.join(temp_dir, "test_room.guv")
+
+
+# ============== Polygon Room Fixtures ==============
+
+@pytest.fixture
+def l_shaped_polygon():
+    """An L-shaped polygon floor plan."""
+    return Polygon2D(vertices=[(0, 0), (4, 0), (4, 2), (2, 2), (2, 4), (0, 4)])
+
+
+@pytest.fixture
+def polygon_room(l_shaped_polygon):
+    """A polygon-based room with L-shaped floor plan."""
+    return Room(polygon=l_shaped_polygon, z=2.7, units="meters")

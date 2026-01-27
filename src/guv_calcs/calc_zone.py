@@ -4,10 +4,11 @@ import numpy as np
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from .calc_manager import LightingCalculator
-from .rect_grid import VolGrid, PlaneGrid
+from .rect_grid import VolGrid, PlaneGrid, PolygonGrid, WallGrid
 from .calc_zone_io import export_plane, export_volume
 from .calc_zone_plot import plot_plane, plot_volume
-from .room_dims import RoomDimensions
+from .room_dims import RoomDimensions, PolygonRoomDimensions
+from .polygon import Polygon2D
 
 
 @dataclass(frozen=True)
@@ -421,12 +422,13 @@ class CalcVol(CalcZone):
     @classmethod
     def from_dims(
         cls,
-        dims: RoomDimensions,
+        dims: "RoomDimensions | PolygonRoomDimensions",
         spacing: float | None = None,
         num_points: int | None = None,
         offset: bool = True,
         **kwargs,
     ):
+        """Create a CalcVol from room dimensions (uses bounding box for polygon rooms)."""
         geometry = VolGrid.from_legacy(
             mins=(0, 0, 0),
             maxs=(dims.x, dims.y, dims.z),
@@ -470,7 +472,7 @@ class CalcPlane(CalcZone):
         self,
         zone_id: str | None = None,
         name: str | None = None,
-        geometry: PlaneGrid | None = None,
+        geometry: "PlaneGrid | PolygonGrid | WallGrid | None" = None,
         dose: bool = False,
         hours: int = 8,
         enabled: bool = True,
@@ -558,7 +560,15 @@ class CalcPlane(CalcZone):
     def from_dict(cls, data):
         keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
         if data.get("geometry") is not None:
-            geometry = PlaneGrid.from_dict(data.pop("geometry"))
+            geom_data = data.pop("geometry")
+            # Detect geometry type from data
+            if "polygon" in geom_data:
+                if "p1" in geom_data:
+                    geometry = WallGrid.from_dict(geom_data)
+                else:
+                    geometry = PolygonGrid.from_dict(geom_data)
+            else:
+                geometry = PlaneGrid.from_dict(geom_data)
             data["geometry"] = geometry
         return cls(**{k: v for k, v in data.items() if k in keys})
 
@@ -588,7 +598,7 @@ class CalcPlane(CalcZone):
     def from_face(
         cls,
         wall: str,
-        dims: RoomDimensions,
+        dims: "RoomDimensions | PolygonRoomDimensions",
         normal_offset: float = 0.0,
         spacing: float | None = None,
         num_points: int | None = None,
@@ -599,18 +609,78 @@ class CalcPlane(CalcZone):
             raise KeyError(
                 f"{wall} is not a valid wall ID, must be in {dims.faces.keys()}"
             )
-        x1, x2, y1, y2, base_height, ref_surface, direction = dims.faces[wall]
 
-        height = base_height + normal_offset * direction
+        face_data = dims.faces[wall]
 
-        geometry = PlaneGrid.from_legacy(
-            mins=(x1, y1),
-            maxs=(x2, y2),
+        # Handle polygon room dimensions
+        if dims.is_polygon:
+            if wall in ("floor", "ceiling"):
+                # face_data: (x_min, x_max, y_min, y_max, height, ref_surface, direction, polygon)
+                base_height = face_data[4]
+                direction = face_data[6]
+                polygon = face_data[7]
+                height = base_height + normal_offset * direction
+
+                geometry = PolygonGrid(
+                    polygon=polygon,
+                    height=height,
+                    spacing_init=spacing,
+                    num_points_init=num_points,
+                    offset=offset,
+                    direction=direction,
+                )
+            else:
+                # Wall: (x1, y1, x2, y2, edge_length, z_height, normal_2d)
+                x1, y1, x2, y2, edge_length, z_height, normal_2d = face_data
+
+                geometry = WallGrid(
+                    p1=(x1, y1),
+                    p2=(x2, y2),
+                    z_height=z_height,
+                    normal_2d=normal_2d,
+                    spacing_init=spacing,
+                    num_points_init=num_points,
+                    offset=offset,
+                )
+        else:
+            # Rectangular room - original behavior
+            x1, x2, y1, y2, base_height, ref_surface, direction = face_data
+            height = base_height + normal_offset * direction
+
+            geometry = PlaneGrid.from_legacy(
+                mins=(x1, y1),
+                maxs=(x2, y2),
+                height=height,
+                ref_surface=ref_surface,
+                spacing_init=spacing,
+                num_points_init=num_points,
+                offset=offset,
+            )
+
+        return cls(geometry=geometry, **kwargs)
+
+    @classmethod
+    def from_polygon(
+        cls,
+        polygon: "Polygon2D | list[tuple[float, float]]",
+        height: float = 0.0,
+        direction: int = 1,
+        spacing: float | None = None,
+        num_points: int | None = None,
+        offset: bool = True,
+        **kwargs,
+    ):
+        """Create a CalcPlane from a polygon at a specified height."""
+        if not isinstance(polygon, Polygon2D):
+            polygon = Polygon2D(vertices=tuple(tuple(v) for v in polygon))
+
+        geometry = PolygonGrid(
+            polygon=polygon,
             height=height,
-            ref_surface=ref_surface,
             spacing_init=spacing,
             num_points_init=num_points,
             offset=offset,
+            direction=direction,
         )
         return cls(geometry=geometry, **kwargs)
 

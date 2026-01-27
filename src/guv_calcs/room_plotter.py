@@ -52,6 +52,10 @@ class RoomPlotter:
         # for obs_id, obs in self.room.obstacles.items():
         # fig = self._plot_obstacle(obs=obs, fig=fig)
 
+        # Draw room outline for polygon rooms
+        if self.room.is_polygon:
+            fig = self._plot_polygon_room_outline(fig=fig)
+
         x, y, z = self.room.dim.x, self.room.dim.y, self.room.dim.z
 
         # set views
@@ -246,33 +250,82 @@ class RoomPlotter:
         return fig
 
     def _plot_plane_values(self, zone, fig):
-        x, y, z = zone.coords.T.reshape(3, *zone.num_points)
-        zone_value_trace = go.Surface(
-            x=x,
-            y=y,
-            z=z,
-            surfacecolor=zone.values,
-            colorscale=self.room.scene.colormap,
-            showscale=False,
-            # colorbar=None,
-            # legendgroup="planes",
-            # legendgrouptitle_text="Calculation Planes",
-            showlegend=True,
-            name=zone.name,
-            customdata=["zone_" + zone.zone_id],
-        )
-        traces = [trace.name for trace in fig.data]
-        if zone_value_trace.name not in traces:
-            fig.add_trace(zone_value_trace)
+        from .rect_grid import PolygonGrid, WallGrid
+
+        # Check if this is a polygon/wall grid (irregular points)
+        is_irregular = isinstance(zone.geometry, (PolygonGrid, WallGrid))
+
+        if is_irregular:
+            # Use Mesh3d with Delaunay triangulation for irregular grids
+            x, y, z = zone.coords.T
+            values = zone.values.flatten() if zone.values.ndim > 1 else zone.values
+
+            # Create 2D triangulation based on the plane orientation
+            if isinstance(zone.geometry, PolygonGrid):
+                # Floor/ceiling - triangulate in xy plane
+                tri = Delaunay(np.column_stack((x, y)))
+            else:
+                # Wall - triangulate in local uv space
+                # Project points onto the wall plane for triangulation
+                origin = np.array(zone.geometry.origin)
+                u_hat = zone.geometry.u_hat
+                v_hat = zone.geometry.v_hat
+                pts = zone.coords - origin
+                u_coords = pts @ u_hat
+                v_coords = pts @ v_hat
+                tri = Delaunay(np.column_stack((u_coords, v_coords)))
+
+            zone_value_trace = go.Mesh3d(
+                x=x,
+                y=y,
+                z=z,
+                i=tri.simplices[:, 0],
+                j=tri.simplices[:, 1],
+                k=tri.simplices[:, 2],
+                intensity=values,
+                colorscale=self.room.scene.colormap,
+                showscale=False,
+                showlegend=True,
+                name=zone.name,
+                customdata=["zone_" + zone.zone_id],
+            )
         else:
-            self._update_trace_by_id(
-                fig,
-                zone.zone_id,
+            # Regular grid - use Surface plot
+            x, y, z = zone.coords.T.reshape(3, *zone.num_points)
+            zone_value_trace = go.Surface(
                 x=x,
                 y=y,
                 z=z,
                 surfacecolor=zone.values,
+                colorscale=self.room.scene.colormap,
+                showscale=False,
+                showlegend=True,
+                name=zone.name,
+                customdata=["zone_" + zone.zone_id],
             )
+
+        traces = [trace.name for trace in fig.data]
+        if zone_value_trace.name not in traces:
+            fig.add_trace(zone_value_trace)
+        else:
+            if is_irregular:
+                self._update_trace_by_id(
+                    fig,
+                    zone.zone_id,
+                    x=x,
+                    y=y,
+                    z=z,
+                    intensity=values,
+                )
+            else:
+                self._update_trace_by_id(
+                    fig,
+                    zone.zone_id,
+                    x=x,
+                    y=y,
+                    z=z,
+                    surfacecolor=zone.values,
+                )
         return fig
 
     def _plot_obstacle(self, obs, fig):
@@ -407,3 +460,52 @@ class RoomPlotter:
             z_coords.extend([vertices[v1][2], vertices[v2][2], None])
 
         return x_coords, y_coords, z_coords
+
+    def _plot_polygon_room_outline(self, fig):
+        """Draw the outline of a polygon room (floor, ceiling, and vertical edges)."""
+        polygon = self.room.polygon
+        z = self.room.dim.z
+
+        # Get polygon vertices
+        verts = list(polygon.vertices)
+        verts.append(verts[0])  # Close the polygon
+
+        # Floor outline
+        x_floor = [v[0] for v in verts]
+        y_floor = [v[1] for v in verts]
+        z_floor = [0.0] * len(verts)
+
+        # Ceiling outline
+        x_ceil = [v[0] for v in verts]
+        y_ceil = [v[1] for v in verts]
+        z_ceil = [z] * len(verts)
+
+        # Vertical edges at each vertex
+        x_vert, y_vert, z_vert = [], [], []
+        for vx, vy in polygon.vertices:
+            x_vert.extend([vx, vx, None])
+            y_vert.extend([vy, vy, None])
+            z_vert.extend([0.0, z, None])
+
+        # Combine all lines
+        x_all = x_floor + [None] + x_ceil + [None] + x_vert
+        y_all = y_floor + [None] + y_ceil + [None] + y_vert
+        z_all = z_floor + [None] + z_ceil + [None] + z_vert
+
+        room_trace = go.Scatter3d(
+            x=x_all,
+            y=y_all,
+            z=z_all,
+            mode="lines",
+            line=dict(color="#888888", width=2),
+            name="Room",
+            customdata=["room_outline"],
+            showlegend=False,
+        )
+
+        # Only add if not already present
+        traces = [trace.customdata[0] if trace.customdata else None for trace in fig.data]
+        if "room_outline" not in traces:
+            fig.add_trace(room_trace)
+
+        return fig

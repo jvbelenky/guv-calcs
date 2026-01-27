@@ -4,7 +4,8 @@ import copy
 from .lamp import Lamp
 from .calc_zone import CalcPlane, CalcVol
 from .room_plotter import RoomPlotter
-from .room_dims import RoomDimensions
+from .room_dims import RoomDimensions, PolygonRoomDimensions
+from .polygon import Polygon2D
 from .reflectance import ReflectanceManager, Surface
 from .scene import Scene
 from .io import load_room_data, save_room_data, export_room_zip, generate_report
@@ -32,6 +33,7 @@ class Room:
         x: float = None,
         y: float = None,
         z: float = None,
+        polygon: "Polygon2D | list[tuple[float, float]]" = None,
         units: str = "meters",
         standard: str = "ANSI IES RP 27.1-22 (ACGIH Limits)",
         enable_reflectance: bool = True,
@@ -46,13 +48,26 @@ class Room:
 
         ### Dimensions
         units = LengthUnits.from_any(units)
-        dim = RoomDimensions(
-            x if x is not None else DEFAULT_DIMS[units][0],
-            y if y is not None else DEFAULT_DIMS[units][1],
-            z if z is not None else DEFAULT_DIMS[units][2],
-            origin=(0.0, 0.0, 0.0),
-            units=units,
-        )
+
+        if polygon is not None:
+            # Polygon-based room
+            if not isinstance(polygon, Polygon2D):
+                polygon = Polygon2D(vertices=tuple(tuple(v) for v in polygon))
+            dim = PolygonRoomDimensions(
+                polygon=polygon,
+                z=z if z is not None else DEFAULT_DIMS[units][2],
+                origin=(0.0, 0.0, 0.0),
+                units=units,
+            )
+        else:
+            # Rectangular room (original behavior)
+            dim = RoomDimensions(
+                x if x is not None else DEFAULT_DIMS[units][0],
+                y if y is not None else DEFAULT_DIMS[units][1],
+                z if z is not None else DEFAULT_DIMS[units][2],
+                origin=(0.0, 0.0, 0.0),
+                units=units,
+            )
 
         ### Scene - dimensions, lamps, zones, and reflective surfaces
         self.scene = Scene(
@@ -101,8 +116,12 @@ class Room:
         return self.to_dict() == other.to_dict()
 
     def __repr__(self):
+        if self.is_polygon:
+            dim_str = f"polygon={self.polygon.n_vertices} vertices, z={self.dim.z}"
+        else:
+            dim_str = f"x={self.dim.x}, y={self.dim.y}, z={self.dim.z}"
         return (
-            f"Room(x={self.dim.x}, y={self.dim.y}, z={self.dim.z}, "
+            f"Room({dim_str}, "
             f"units='{self.units}', lamps={[k for k,v in self.lamps.items()]}, "
             f"calc_zones={[k for k,v in self.calc_zones.items()]}), "
             f"enable_reflectance={self.ref_manager.enabled}, "
@@ -118,8 +137,11 @@ class Room:
 
     def to_dict(self):
         data = {}
-        data["x"] = self.dim.x
-        data["y"] = self.dim.y
+        if self.is_polygon:
+            data["polygon"] = self.polygon.to_dict()
+        else:
+            data["x"] = self.dim.x
+            data["y"] = self.dim.y
         data["z"] = self.dim.z
         data["units"] = self.units
 
@@ -153,7 +175,12 @@ class Room:
 
         room_kwargs = list(inspect.signature(cls.__init__).parameters.keys())[1:]
 
-        room = cls(**{k: v for k, v in data.items() if k in room_kwargs})
+        # Handle polygon deserialization
+        init_data = dict(data)
+        if "polygon" in init_data and init_data["polygon"] is not None:
+            init_data["polygon"] = Polygon2D.from_dict(init_data["polygon"])
+
+        room = cls(**{k: v for k, v in init_data.items() if k in room_kwargs})
 
         for surface_id, surface in data.get("surfaces", {}).items():
             surf = Surface.from_dict(surface)
@@ -342,8 +369,20 @@ class Room:
         return self
 
     @property
-    def dim(self) -> RoomDimensions:
+    def dim(self) -> "RoomDimensions | PolygonRoomDimensions":
         return self.scene.dim
+
+    @property
+    def is_polygon(self) -> bool:
+        """True if this is a polygon-based room."""
+        return self.scene.dim.is_polygon
+
+    @property
+    def polygon(self) -> "Polygon2D | None":
+        """The floor polygon if this is a polygon room, else None."""
+        if self.is_polygon:
+            return self.scene.dim.polygon
+        return None
 
     @property
     def units(self) -> str:
