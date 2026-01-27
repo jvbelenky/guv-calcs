@@ -811,21 +811,54 @@ class PolygonVolGrid:
         points_2d = np.column_stack([xx_2d.ravel(), yy_2d.ravel()])
         mask_2d = self.polygon.contains_points(points_2d)
 
-        # Build 3D coordinates by stacking filtered 2D points at each z level
+        # Get inside points
         x_inside = points_2d[mask_2d, 0]
         y_inside = points_2d[mask_2d, 1]
         n_xy = len(x_inside)
 
-        # Stack at each z level
-        coords_list = []
-        for z in zp:
-            z_col = np.full(n_xy, z)
-            layer = np.column_stack([x_inside, y_inside, z_col])
-            coords_list.append(layer)
+        # Build 3D coords with z varying fastest (matches VolGrid/Plotly ordering)
+        # For each (x,y) inside point, repeat for all z values
+        x_rep = np.repeat(x_inside, len(zp))
+        y_rep = np.repeat(y_inside, len(zp))
+        z_tiled = np.tile(zp, n_xy)
+        coords = np.column_stack([x_rep, y_rep, z_tiled])
 
-        coords = np.vstack(coords_list)
         self._cache["coords"] = coords
         return coords
+
+    @property
+    def coords_full(self) -> np.ndarray:
+        """Full bounding box coordinates (including points outside polygon)."""
+        if self._cache.get("coords_full") is not None:
+            return self._cache["coords_full"]
+
+        xp, yp, zp = self._grid_points
+        # Use meshgrid with z varying fastest (matches VolGrid/Plotly ordering)
+        mesh = np.meshgrid(xp, yp, zp, indexing="ij")
+        coords_full = np.column_stack([m.ravel() for m in mesh])
+        self._cache["coords_full"] = coords_full
+        return coords_full
+
+    @property
+    def _mask_full(self) -> np.ndarray:
+        """Boolean mask for full 3D grid (True = inside polygon)."""
+        if self._cache.get("_mask_full") is not None:
+            return self._cache["_mask_full"]
+
+        xp, yp, zp = self._grid_points
+        xx, yy = np.meshgrid(xp, yp, indexing="ij")
+        points_2d = np.column_stack([xx.ravel(), yy.ravel()])
+        mask_2d = self.polygon.contains_points(points_2d)
+        # Repeat each mask value for all z levels (z varies fastest)
+        mask_full = np.repeat(mask_2d, len(zp))
+        self._cache["_mask_full"] = mask_full
+        return mask_full
+
+    def values_to_full_grid(self, values: np.ndarray) -> np.ndarray:
+        """Map filtered values back to full grid, with -inf outside polygon."""
+        full_values = np.full(len(self.coords_full), -np.inf)
+        full_values[self._mask_full] = values.flatten()
+        return full_values
 
     @property
     def num_points(self) -> tuple[int, ...]:

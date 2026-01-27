@@ -403,36 +403,72 @@ class RoomPlotter:
         # fluence isosurface
         if zone.values is not None and zone.show_values:
             values = zone.values.flatten()
-            isomin = zone.values.mean() / 2
-            if zone.name + " Values" not in traces:
-                zone_value_trace = go.Isosurface(
-                    x=zone.coords.T[0],
-                    y=zone.coords.T[1],
-                    z=zone.coords.T[2],
-                    value=values,
-                    isomin=isomin,
-                    surface_count=3,
-                    opacity=0.25,
-                    showscale=False,
-                    colorbar=None,
-                    colorscale=self.room.scene.colormap,
-                    name=zone.name + " Values",
-                    customdata=["zone_" + zone.zone_id + "_values"],
-                    # legendgroup="volumes",
-                    # legendgrouptitle_text="Calculation Volumes",
-                    showlegend=True,
-                )
-                fig.add_trace(zone_value_trace)
+
+            # For polygon volumes, use full grid with -inf masking for proper isosurface
+            if isinstance(zone.geometry, PolygonVolGrid):
+                coords_full = zone.geometry.coords_full
+                values_full = zone.geometry.values_to_full_grid(values)
+                # Filter out -inf values for mean calculation
+                valid_mask = np.isfinite(values_full)
+                isomin = values_full[valid_mask].mean() / 2
+
+                if zone.name + " Values" not in traces:
+                    zone_value_trace = go.Isosurface(
+                        x=coords_full.T[0],
+                        y=coords_full.T[1],
+                        z=coords_full.T[2],
+                        value=values_full,
+                        isomin=isomin,
+                        surface_count=3,
+                        opacity=0.25,
+                        showscale=False,
+                        colorbar=None,
+                        colorscale=self.room.scene.colormap,
+                        caps=dict(x_show=False, y_show=False, z_show=False),
+                        name=zone.name + " Values",
+                        customdata=["zone_" + zone.zone_id + "_values"],
+                        showlegend=True,
+                    )
+                    fig.add_trace(zone_value_trace)
+                else:
+                    self._update_trace_by_id(
+                        fig,
+                        zone.zone_id + "_values",
+                        x=coords_full.T[0],
+                        y=coords_full.T[1],
+                        z=coords_full.T[2],
+                        value=values_full,
+                        isomin=isomin,
+                    )
             else:
-                self._update_trace_by_id(
-                    fig,
-                    zone.zone_id,
-                    x=zone.coords.T[0],
-                    y=zone.coords.T[1],
-                    z=zone.coords.T[2],
-                    values=values,
-                    isomin=isomin,
-                )
+                isomin = zone.values.mean() / 2
+                if zone.name + " Values" not in traces:
+                    zone_value_trace = go.Isosurface(
+                        x=zone.coords.T[0],
+                        y=zone.coords.T[1],
+                        z=zone.coords.T[2],
+                        value=values,
+                        isomin=isomin,
+                        surface_count=3,
+                        opacity=0.25,
+                        showscale=False,
+                        colorbar=None,
+                        colorscale=self.room.scene.colormap,
+                        name=zone.name + " Values",
+                        customdata=["zone_" + zone.zone_id + "_values"],
+                        showlegend=True,
+                    )
+                    fig.add_trace(zone_value_trace)
+                else:
+                    self._update_trace_by_id(
+                        fig,
+                        zone.zone_id,
+                        x=zone.coords.T[0],
+                        y=zone.coords.T[1],
+                        z=zone.coords.T[2],
+                        values=values,
+                        isomin=isomin,
+                    )
 
         return fig
 
