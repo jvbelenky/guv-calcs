@@ -278,6 +278,12 @@ class RoomPlotter:
             if isinstance(zone.geometry, PolygonGrid):
                 # Floor/ceiling - triangulate in xy plane
                 tri = Delaunay(np.column_stack((x, y)))
+                simplices = tri.simplices
+
+                # Filter out triangles outside the polygon (handles concave shapes)
+                centroids = np.column_stack((x, y))[simplices].mean(axis=1)
+                inside = zone.geometry.polygon.contains_points(centroids)
+                simplices = simplices[inside]
             else:
                 # Wall - triangulate in local uv space
                 # Project points onto the wall plane for triangulation
@@ -288,14 +294,15 @@ class RoomPlotter:
                 u_coords = pts @ u_hat
                 v_coords = pts @ v_hat
                 tri = Delaunay(np.column_stack((u_coords, v_coords)))
+                simplices = tri.simplices
 
             zone_value_trace = go.Mesh3d(
                 x=x,
                 y=y,
                 z=z,
-                i=tri.simplices[:, 0],
-                j=tri.simplices[:, 1],
-                k=tri.simplices[:, 2],
+                i=simplices[:, 0],
+                j=simplices[:, 1],
+                k=simplices[:, 2],
                 intensity=values,
                 colorscale=self.room.scene.colormap,
                 showscale=False,
