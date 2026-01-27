@@ -4,7 +4,7 @@ import numpy as np
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from .calc_manager import LightingCalculator
-from .rect_grid import VolGrid, PlaneGrid, PolygonGrid, WallGrid
+from .rect_grid import VolGrid, PlaneGrid, PolygonGrid, PolygonVolGrid, WallGrid
 from .calc_zone_io import export_plane, export_volume
 from .calc_zone_plot import plot_plane, plot_volume
 from .room_dims import RoomDimensions, PolygonRoomDimensions
@@ -415,7 +415,12 @@ class CalcVol(CalcZone):
     def from_dict(cls, data):
         keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
         if data.get("geometry") is not None:
-            geometry = VolGrid.from_dict(data.pop("geometry"))
+            geom_data = data.pop("geometry")
+            # Detect geometry type from data
+            if "polygon" in geom_data:
+                geometry = PolygonVolGrid.from_dict(geom_data)
+            else:
+                geometry = VolGrid.from_dict(geom_data)
             data["geometry"] = geometry
         return cls(**{k: v for k, v in data.items() if k in keys})
 
@@ -428,14 +433,23 @@ class CalcVol(CalcZone):
         offset: bool = True,
         **kwargs,
     ):
-        """Create a CalcVol from room dimensions (uses bounding box for polygon rooms)."""
-        geometry = VolGrid.from_legacy(
-            mins=(0, 0, 0),
-            maxs=(dims.x, dims.y, dims.z),
-            spacing_init=spacing,
-            num_points_init=num_points,
-            offset=offset,
-        )
+        """Create a CalcVol from room dimensions."""
+        if dims.is_polygon:
+            geometry = PolygonVolGrid(
+                polygon=dims.polygon,
+                z_height=dims.z,
+                spacing_init=spacing,
+                num_points_init=num_points,
+                offset=offset,
+            )
+        else:
+            geometry = VolGrid.from_legacy(
+                mins=(0, 0, 0),
+                maxs=(dims.x, dims.y, dims.z),
+                spacing_init=spacing,
+                num_points_init=num_points,
+                offset=offset,
+            )
         return cls(geometry=geometry, **kwargs)
 
     def to_view(self):

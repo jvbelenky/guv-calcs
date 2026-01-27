@@ -3,6 +3,7 @@ import numpy as np
 from scipy.spatial import Delaunay
 from .trigonometry import to_polar
 from .calc_zone import CalcPlane, CalcVol
+from .rect_grid import PolygonVolGrid
 from .units import convert_units
 
 
@@ -367,9 +368,13 @@ class RoomPlotter:
 
     def _plot_vol(self, zone, fig, select_id=None):
 
-        x_coords, y_coords, z_coords = self._get_box_coords(
-            *np.array(zone.dimensions).T
-        )
+        # Check if this is a polygon volume
+        if isinstance(zone.geometry, PolygonVolGrid):
+            x_coords, y_coords, z_coords = self._get_polygon_vol_coords(zone.geometry)
+        else:
+            x_coords, y_coords, z_coords = self._get_box_coords(
+                *np.array(zone.dimensions).T
+            )
         zonecolor = self._set_color(select_id, label=zone.zone_id, enabled=zone.enabled)
         # Create a single trace for all edges
         zonetrace = go.Scatter3d(
@@ -471,6 +476,39 @@ class RoomPlotter:
             x_coords.extend([vertices[v1][0], vertices[v2][0], None])
             y_coords.extend([vertices[v1][1], vertices[v2][1], None])
             z_coords.extend([vertices[v1][2], vertices[v2][2], None])
+
+        return x_coords, y_coords, z_coords
+
+    def _get_polygon_vol_coords(self, geometry):
+        """Get coordinates for drawing a polygon volume outline."""
+        polygon = geometry.polygon
+        z_height = geometry.z_height
+
+        # Get polygon vertices and close the polygon
+        verts = list(polygon.vertices)
+        verts.append(verts[0])
+
+        # Floor outline (z=0)
+        x_floor = [v[0] for v in verts]
+        y_floor = [v[1] for v in verts]
+        z_floor = [0.0] * len(verts)
+
+        # Ceiling outline (z=z_height)
+        x_ceil = [v[0] for v in verts]
+        y_ceil = [v[1] for v in verts]
+        z_ceil = [z_height] * len(verts)
+
+        # Vertical edges at each vertex
+        x_vert, y_vert, z_vert = [], [], []
+        for vx, vy in polygon.vertices:
+            x_vert.extend([vx, vx, None])
+            y_vert.extend([vy, vy, None])
+            z_vert.extend([0.0, z_height, None])
+
+        # Combine all lines
+        x_coords = x_floor + [None] + x_ceil + [None] + x_vert
+        y_coords = y_floor + [None] + y_ceil + [None] + y_vert
+        z_coords = z_floor + [None] + z_ceil + [None] + z_vert
 
         return x_coords, y_coords, z_coords
 

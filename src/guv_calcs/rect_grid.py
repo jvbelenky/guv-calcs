@@ -713,6 +713,223 @@ class PolygonGrid:
 
 
 @dataclass(frozen=True, eq=False)
+class PolygonVolGrid:
+    """
+    A 3D grid of points constrained to lie within a polygon boundary in x-y.
+
+    Used for volumetric calculations in polygon-based rooms.
+    Creates a bounding box grid and filters to points where (x,y) is inside the polygon.
+    """
+
+    polygon: Polygon2D
+    z_height: float  # Room height (z goes from 0 to z_height)
+    spacing_init: tuple[float, float, float] | None = None
+    num_points_init: tuple[int, int, int] | None = None
+    offset: bool = True
+    _cache: dict = field(default_factory=dict, repr=False, compare=False)
+
+    def __post_init__(self):
+        if not isinstance(self.polygon, Polygon2D):
+            poly = Polygon2D(vertices=tuple(tuple(v) for v in self.polygon))
+            object.__setattr__(self, "polygon", poly)
+
+    def __eq__(self, other):
+        if not isinstance(other, PolygonVolGrid):
+            return NotImplemented
+        return self.to_dict() == other.to_dict()
+
+    def __repr__(self):
+        return (
+            f"PolygonVolGrid(polygon={self.polygon.n_vertices} vertices, "
+            f"z_height={self.z_height}, "
+            f"spacing={self.spacing}, "
+            f"num_points={self.num_points}, "
+            f"offset={self.offset})"
+        )
+
+    @property
+    def axes(self):
+        if self._cache.get("axes") is not None:
+            return self._cache["axes"]
+
+        x_min, y_min, x_max, y_max = self.polygon.bounding_box
+        spans = (x_max - x_min, y_max - y_min, self.z_height)
+        spacing = self.spacing_init or (None, None, None)
+        num_points = self.num_points_init or (None, None, None)
+
+        axes = []
+        for span, sp, n_pts in zip(spans, spacing, num_points):
+            axis = Axis1D(
+                span=abs(span),
+                spacing_init=sp,
+                num_points_init=n_pts,
+                offset=self.offset,
+            )
+            axes.append(axis)
+        self._cache["axes"] = axes
+        return axes
+
+    @property
+    def spacing(self) -> tuple[float, float, float]:
+        return tuple(float(axis.spacing) for axis in self.axes)
+
+    @property
+    def x_spacing(self) -> float:
+        return self.spacing[0]
+
+    @property
+    def y_spacing(self) -> float:
+        return self.spacing[1]
+
+    @property
+    def z_spacing(self) -> float:
+        return self.spacing[2]
+
+    @property
+    def _grid_points(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Raw grid points before polygon filtering."""
+        if self._cache.get("_grid_points") is not None:
+            return self._cache["_grid_points"]
+
+        x_min, y_min, _, _ = self.polygon.bounding_box
+        xp = self.axes[0].points + x_min
+        yp = self.axes[1].points + y_min
+        zp = self.axes[2].points  # z starts at 0
+        self._cache["_grid_points"] = (xp, yp, zp)
+        return xp, yp, zp
+
+    @property
+    def coords(self) -> np.ndarray:
+        """3D coordinates of points inside the polygon boundary."""
+        if self._cache.get("coords") is not None:
+            return self._cache["coords"]
+
+        xp, yp, zp = self._grid_points
+
+        # Create 2D mask for x-y plane
+        xx_2d, yy_2d = np.meshgrid(xp, yp, indexing="ij")
+        points_2d = np.column_stack([xx_2d.ravel(), yy_2d.ravel()])
+        mask_2d = self.polygon.contains_points(points_2d)
+
+        # Build 3D coordinates by stacking filtered 2D points at each z level
+        x_inside = points_2d[mask_2d, 0]
+        y_inside = points_2d[mask_2d, 1]
+        n_xy = len(x_inside)
+
+        # Stack at each z level
+        coords_list = []
+        for z in zp:
+            z_col = np.full(n_xy, z)
+            layer = np.column_stack([x_inside, y_inside, z_col])
+            coords_list.append(layer)
+
+        coords = np.vstack(coords_list)
+        self._cache["coords"] = coords
+        return coords
+
+    @property
+    def num_points(self) -> tuple[int, ...]:
+        """Total number of points (irregular due to polygon filtering)."""
+        return (len(self.coords),)
+
+    @property
+    def num_x(self) -> int:
+        return len(self.axes[0].points)
+
+    @property
+    def num_y(self) -> int:
+        return len(self.axes[1].points)
+
+    @property
+    def num_z(self) -> int:
+        return len(self.axes[2].points)
+
+    @property
+    def origin(self) -> tuple[float, float, float]:
+        x_min, y_min, _, _ = self.polygon.bounding_box
+        return (x_min, y_min, 0.0)
+
+    @property
+    def mins(self) -> tuple[float, float, float]:
+        x_min, y_min, _, _ = self.polygon.bounding_box
+        return (x_min, y_min, 0.0)
+
+    @property
+    def maxs(self) -> tuple[float, float, float]:
+        _, _, x_max, y_max = self.polygon.bounding_box
+        return (x_max, y_max, self.z_height)
+
+    @property
+    def x1(self) -> float:
+        return self.mins[0]
+
+    @property
+    def x2(self) -> float:
+        return self.maxs[0]
+
+    @property
+    def y1(self) -> float:
+        return self.mins[1]
+
+    @property
+    def y2(self) -> float:
+        return self.maxs[1]
+
+    @property
+    def z1(self) -> float:
+        return 0.0
+
+    @property
+    def z2(self) -> float:
+        return self.z_height
+
+    @property
+    def calc_state(self) -> tuple:
+        return (
+            self.polygon.vertices,
+            self.z_height,
+            self.spacing,
+            self.offset,
+        )
+
+    @property
+    def update_state(self) -> tuple:
+        return ()
+
+    def update(self, **changes):
+        new = replace(self, **changes)
+        object.__setattr__(new, "_cache", {})
+        return new
+
+    def update_dimensions(self, mins=None, maxs=None, preserve_spacing=True):
+        """Update with new z_height (polygon shape preserved)."""
+        new_z = maxs[2] if maxs is not None else self.z_height
+        if preserve_spacing:
+            return self.update(z_height=new_z, spacing_init=self.spacing)
+        else:
+            return self.update(z_height=new_z, num_points_init=self.num_points_init)
+
+    def to_dict(self) -> dict:
+        return {
+            "polygon": self.polygon.to_dict(),
+            "z_height": self.z_height,
+            "spacing_init": self.spacing,
+            "offset": self.offset,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "PolygonVolGrid":
+        polygon = Polygon2D.from_dict(data["polygon"])
+        return cls(
+            polygon=polygon,
+            z_height=data.get("z_height", 2.7),
+            spacing_init=data.get("spacing_init"),
+            num_points_init=data.get("num_points_init"),
+            offset=data.get("offset", True),
+        )
+
+
+@dataclass(frozen=True, eq=False)
 class WallGrid:
     """
     A 2D grid for a wall segment defined by two 2D vertices and a height.
