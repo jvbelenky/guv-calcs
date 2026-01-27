@@ -312,3 +312,139 @@ def _place_points_on_polygon_perimeter(candidates: list, num_points: int) -> int
             chosen_set.add(best_idx)
 
     return chosen_indices[-1]
+
+
+# ============== Visibility and Aim Point Helpers ==============
+
+
+def _line_intersects_polygon_edge(
+    p1: tuple[float, float],
+    p2: tuple[float, float],
+    polygon: "Polygon2D",
+    origin_edge_idx: int = -1,
+) -> bool:
+    """
+    Check if line segment p1-p2 intersects any polygon edge.
+
+    Args:
+        p1: Start point of line segment
+        p2: End point of line segment
+        polygon: The polygon to check against
+        origin_edge_idx: Index of edge to skip (the edge the origin sits on)
+
+    Returns:
+        True if the line intersects any edge (excluding origin_edge_idx)
+    """
+    for i, ((x1, y1), (x2, y2)) in enumerate(polygon.edges):
+        if i == origin_edge_idx:
+            continue
+
+        # Standard line segment intersection test
+        # Check if segments (p1, p2) and ((x1, y1), (x2, y2)) intersect
+        if _segments_cross(p1, p2, (x1, y1), (x2, y2)):
+            return True
+
+    return False
+
+
+def _segments_cross(
+    a1: tuple[float, float],
+    a2: tuple[float, float],
+    b1: tuple[float, float],
+    b2: tuple[float, float],
+) -> bool:
+    """
+    Check if line segment a1-a2 properly crosses segment b1-b2.
+    Returns True only for proper crossing (not endpoint touching).
+    """
+
+    def cross_product(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    d1 = cross_product(b1, b2, a1)
+    d2 = cross_product(b1, b2, a2)
+    d3 = cross_product(a1, a2, b1)
+    d4 = cross_product(a1, a2, b2)
+
+    # Check if segments straddle each other (proper intersection)
+    # Use small epsilon for numerical stability
+    eps = 1e-10
+    if d1 * d2 < -eps and d3 * d4 < -eps:
+        return True
+
+    return False
+
+
+def _find_origin_edge(
+    origin: tuple[float, float], polygon: "Polygon2D", tolerance: float = 1e-6
+) -> int:
+    """Find which edge the origin point lies on (or near), returns -1 if none."""
+    ox, oy = origin
+    for i, ((x1, y1), (x2, y2)) in enumerate(polygon.edges):
+        dist = _point_to_segment_distance(ox, oy, x1, y1, x2, y2)
+        if dist < tolerance:
+            return i
+    return -1
+
+
+def farthest_visible_point(
+    origin: tuple[float, float], polygon: "Polygon2D", num_divisions: int = 50
+) -> tuple[float, float]:
+    """
+    Find the farthest point inside the polygon visible from origin.
+
+    The returned point has a clear line-of-sight from origin (doesn't cross any
+    polygon edges). Used for aiming tilted lamps toward the farthest reachable point.
+
+    Args:
+        origin: The (x, y) position of the lamp
+        polygon: The polygon boundary
+        num_divisions: Resolution for internal grid sampling
+
+    Returns:
+        The (x, y) coordinates of the farthest visible point
+    """
+    # Find which edge the origin sits on (to exclude from intersection tests)
+    origin_edge_idx = _find_origin_edge(origin, polygon)
+
+    # Generate candidate points
+    candidates = []
+
+    # 1. Polygon vertices
+    for v in polygon.vertices:
+        candidates.append(v)
+
+    # 2. Edge midpoints
+    for (x1, y1), (x2, y2) in polygon.edges:
+        candidates.append(((x1 + x2) / 2, (y1 + y2) / 2))
+
+    # 3. Grid points inside polygon
+    x_min, y_min, x_max, y_max = polygon.bounding_box
+    xp = np.linspace(x_min, x_max, num_divisions + 1)
+    yp = np.linspace(y_min, y_max, num_divisions + 1)
+    for x in xp:
+        for y in yp:
+            if polygon.contains_point(x, y):
+                candidates.append((x, y))
+
+    # 4. Centroid as fallback candidate
+    candidates.append(polygon.centroid)
+
+    # Find farthest visible point
+    ox, oy = origin
+    best_point = polygon.centroid
+    best_dist = -1.0
+
+    for cx, cy in candidates:
+        # Skip points too close to origin
+        dist = np.sqrt((cx - ox) ** 2 + (cy - oy) ** 2)
+        if dist < 1e-6:
+            continue
+
+        # Check visibility (line doesn't cross any edge)
+        if not _line_intersects_polygon_edge(origin, (cx, cy), polygon, origin_edge_idx):
+            if dist > best_dist:
+                best_dist = dist
+                best_point = (cx, cy)
+
+    return best_point

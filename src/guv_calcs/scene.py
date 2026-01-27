@@ -10,6 +10,7 @@ from .lamp_helpers import (
     new_lamp_position_perimeter,
     new_lamp_position_polygon,
     new_lamp_position_polygon_perimeter,
+    farthest_visible_point,
 )
 from .safety import PhotStandard
 from .scene_registry import LampRegistry, ZoneRegistry, SurfaceRegistry
@@ -140,9 +141,9 @@ class Scene:
                     lamp.move(x, y, self.dim.z - offset).aim(x, y, 0.0)
                 elif mode.lower() == "tilted":
                     x, y = new_lamp_position_polygon_perimeter(idx, polygon)
-                    # Aim toward centroid
-                    cx, cy = polygon.centroid
-                    lamp.move(x, y, self.dim.z - offset).aim(cx, cy, 0.0)
+                    # Find farthest visible point instead of centroid
+                    aim_x, aim_y = farthest_visible_point((x, y), polygon)
+                    lamp.move(x, y, self.dim.z - offset).aim(aim_x, aim_y, 0.0)
                 else:
                     raise ValueError(f"invalid lamp placement mode {mode}")
             else:
