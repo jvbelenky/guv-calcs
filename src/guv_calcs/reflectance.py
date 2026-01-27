@@ -5,7 +5,7 @@ import hashlib
 from dataclasses import dataclass
 from .calc_zone import CalcPlane
 from .calc_manager import apply_plane_filters
-from .room_dims import RoomDimensions, PolygonRoomDimensions
+from .room_dims import RoomDimensions
 from .rect_grid import PlaneGrid
 from .poly_grid import PolygonGrid
 
@@ -440,61 +440,14 @@ class SurfaceZoneCache:
 
 
 def init_room_surfaces(
-    dims: RoomDimensions,
+    dims: "RoomDimensions | PolygonRoomDimensions",
     reflectances: dict = None,
     x_spacings: dict = None,
     y_spacings: dict = None,
     num_x: dict = None,
     num_y: dict = None,
 ):
-
-    keys = dims.faces.keys()
-    # build defaults
-    default_reflectances = {surface: 0.0 for surface in keys}
-    default_spacings = {surface: None for surface in keys}
-    default_nums = {surface: 10 for surface in keys}
-    # build what gets used
-    reflectances = {**default_reflectances, **(reflectances or {})}
-    x_spacings = {**default_spacings, **(x_spacings or {})}
-    y_spacings = {**default_spacings, **(y_spacings or {})}
-    num_x = {**default_nums, **(num_x or {})}
-    num_y = {**default_nums, **(num_y or {})}
-
-    # check that the keys match
-    if reflectances.keys() != keys:
-        raise KeyError(f"Reflectance keys must be {keys}, not {reflectances.keys()}")
-    if x_spacings.keys() != keys:
-        raise KeyError(f"x_spacing keys must be {keys}, not {x_spacings.keys()}")
-    if y_spacings.keys() != keys:
-        raise KeyError(f"y_spacing keys must be {keys}, not {y_spacings.keys()}")
-    if num_x.keys() != keys:
-        raise KeyError(f"num_x keys must be {keys}, not {num_x.keys()}")
-    if num_y.keys() != keys:
-        raise KeyError(f"num_y keys must be {keys}, not {num_y.keys()}")
-    surfaces = {}
-    for wall, reflectance in reflectances.items():
-        plane = CalcPlane.from_face(
-            zone_id=wall,
-            wall=wall,
-            dims=dims,
-            spacing=(x_spacings[wall], y_spacings[wall]),
-            num_points=(num_x[wall], num_y[wall]),
-            horiz=True,
-        )
-        surfaces[wall] = Surface(R=reflectance, plane=plane)
-    return surfaces
-
-
-def init_polygon_room_surfaces(
-    dims: PolygonRoomDimensions,
-    reflectances: dict = None,
-    x_spacings: dict = None,
-    y_spacings: dict = None,
-    num_x: dict = None,
-    num_y: dict = None,
-):
-    """Create surfaces for a polygon-based room (floor, ceiling, and numbered walls)."""
-
+    """Initialize room surfaces for reflectance calculations."""
     keys = dims.faces.keys()
     # build defaults
     default_reflectances = {surface: 0.0 for surface in keys}
@@ -509,39 +462,49 @@ def init_polygon_room_surfaces(
 
     surfaces = {}
 
-    # Floor and ceiling use PolygonGrid
-    for face_id in ["floor", "ceiling"]:
-        face_data = dims.faces[face_id]
-        # face_data: (x_min, x_max, y_min, y_max, height, ref_surface, direction, polygon)
-        height = face_data[4]
-        direction = face_data[6]
-        polygon = face_data[7]
+    if dims.is_polygon:
+        # Polygon room: floor/ceiling use PolygonGrid, walls use PlaneGrid.from_wall()
+        for face_id in ["floor", "ceiling"]:
+            face_data = dims.faces[face_id]
+            height = face_data[4]
+            direction = face_data[6]
+            polygon = face_data[7]
 
-        geometry = PolygonGrid(
-            polygon=polygon,
-            height=height,
-            spacing_init=(x_spacings[face_id], y_spacings[face_id]),
-            num_points_init=(num_x[face_id], num_y[face_id]),
-            direction=direction,
-        )
-        plane = CalcPlane(zone_id=face_id, geometry=geometry, horiz=True)
-        surfaces[face_id] = Surface(R=reflectances[face_id], plane=plane)
+            geometry = PolygonGrid(
+                polygon=polygon,
+                height=height,
+                spacing_init=(x_spacings[face_id], y_spacings[face_id]),
+                num_points_init=(num_x[face_id], num_y[face_id]),
+                direction=direction,
+            )
+            plane = CalcPlane(zone_id=face_id, geometry=geometry, horiz=True)
+            surfaces[face_id] = Surface(R=reflectances[face_id], plane=plane)
 
-    # Walls use PlaneGrid.from_wall()
-    for wall_id in dims.wall_ids:
-        wall_data = dims.faces[wall_id]
-        # wall_data: (x1, y1, x2, y2, edge_length, z_height, normal_2d)
-        x1, y1, x2, y2, edge_length, z_height, normal_2d = wall_data
+        for wall_id in dims.wall_ids:
+            wall_data = dims.faces[wall_id]
+            x1, y1, x2, y2, edge_length, z_height, normal_2d = wall_data
 
-        geometry = PlaneGrid.from_wall(
-            p1=(x1, y1),
-            p2=(x2, y2),
-            z_height=z_height,
-            normal_2d=normal_2d,
-            spacing_init=(x_spacings[wall_id], y_spacings[wall_id]),
-            num_points_init=(num_x[wall_id], num_y[wall_id]),
-        )
-        plane = CalcPlane(zone_id=wall_id, geometry=geometry, horiz=True)
-        surfaces[wall_id] = Surface(R=reflectances[wall_id], plane=plane)
+            geometry = PlaneGrid.from_wall(
+                p1=(x1, y1),
+                p2=(x2, y2),
+                z_height=z_height,
+                normal_2d=normal_2d,
+                spacing_init=(x_spacings[wall_id], y_spacings[wall_id]),
+                num_points_init=(num_x[wall_id], num_y[wall_id]),
+            )
+            plane = CalcPlane(zone_id=wall_id, geometry=geometry, horiz=True)
+            surfaces[wall_id] = Surface(R=reflectances[wall_id], plane=plane)
+    else:
+        # Rectangular room: all faces use CalcPlane.from_face()
+        for wall, reflectance in reflectances.items():
+            plane = CalcPlane.from_face(
+                zone_id=wall,
+                wall=wall,
+                dims=dims,
+                spacing=(x_spacings[wall], y_spacings[wall]),
+                num_points=(num_x[wall], num_y[wall]),
+                horiz=True,
+            )
+            surfaces[wall] = Surface(R=reflectance, plane=plane)
 
     return surfaces

@@ -4,7 +4,7 @@ from matplotlib import colormaps
 from .room_dims import RoomDimensions, PolygonRoomDimensions
 from .lamp import Lamp
 from .calc_zone import CalcZone, CalcPlane, CalcVol
-from .reflectance import Surface, init_room_surfaces, init_polygon_room_surfaces
+from .reflectance import Surface, init_room_surfaces
 from .lamp_helpers import (
     new_lamp_position,
     new_lamp_position_perimeter,
@@ -309,24 +309,14 @@ class Scene:
         num_y=None,
     ):
         """add surfaces to the scene corresponding to the faces of the room"""
-        if self.dim.is_polygon:
-            room_surfaces = init_polygon_room_surfaces(
-                dims=self.dim,
-                reflectances=reflectances,
-                x_spacings=x_spacings,
-                y_spacings=y_spacings,
-                num_x=num_x,
-                num_y=num_y,
-            )
-        else:
-            room_surfaces = init_room_surfaces(
-                dims=self.dim,
-                reflectances=reflectances,
-                x_spacings=x_spacings,
-                y_spacings=y_spacings,
-                num_x=num_x,
-                num_y=num_y,
-            )
+        room_surfaces = init_room_surfaces(
+            dims=self.dim,
+            reflectances=reflectances,
+            x_spacings=x_spacings,
+            y_spacings=y_spacings,
+            num_x=num_x,
+            num_y=num_y,
+        )
         for key, val in room_surfaces.items():
             self.add_surface(val)
 
@@ -341,24 +331,14 @@ class Scene:
         num_x = {key: self.surfaces[key].plane.num_x for key in existing_keys}
         num_y = {key: self.surfaces[key].plane.num_y for key in existing_keys}
 
-        if self.dim.is_polygon:
-            room_surfaces = init_polygon_room_surfaces(
-                dims=self.dim,
-                reflectances=reflectances,
-                x_spacings=x_spacings,
-                y_spacings=y_spacings,
-                num_x=num_x,
-                num_y=num_y,
-            )
-        else:
-            room_surfaces = init_room_surfaces(
-                dims=self.dim,
-                reflectances=reflectances,
-                x_spacings=x_spacings,
-                y_spacings=y_spacings,
-                num_x=num_x,
-                num_y=num_y,
-            )
+        room_surfaces = init_room_surfaces(
+            dims=self.dim,
+            reflectances=reflectances,
+            x_spacings=x_spacings,
+            y_spacings=y_spacings,
+            num_x=num_x,
+            num_y=num_y,
+        )
         for key, val in room_surfaces.items():
             self.add_surface(val, on_collision="overwrite")
 
