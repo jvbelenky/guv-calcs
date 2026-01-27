@@ -3,7 +3,7 @@ import numpy as np
 from scipy.spatial import Delaunay
 from .trigonometry import to_polar
 from .calc_zone import CalcPlane, CalcVol
-from .rect_grid import PolygonVolGrid
+from .poly_grid import PolygonGrid, PolygonVolGrid
 from .units import convert_units
 
 
@@ -264,10 +264,8 @@ class RoomPlotter:
         return fig
 
     def _plot_plane_values(self, zone, fig):
-        from .rect_grid import PolygonGrid, WallGrid
-
-        # Check if this is a polygon/wall grid (irregular points)
-        is_irregular = isinstance(zone.geometry, (PolygonGrid, WallGrid))
+        # Check if this is a polygon grid (irregular points)
+        is_irregular = isinstance(zone.geometry, PolygonGrid)
 
         if is_irregular:
             # Use Mesh3d with Delaunay triangulation for irregular grids

@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from .calc_zone import CalcPlane
 from .calc_manager import apply_plane_filters
 from .room_dims import RoomDimensions, PolygonRoomDimensions
-from .rect_grid import PolygonGrid, WallGrid
+from .rect_grid import PlaneGrid
+from .poly_grid import PolygonGrid
 
 
 class ReflectanceManager:
@@ -526,13 +527,13 @@ def init_polygon_room_surfaces(
         plane = CalcPlane(zone_id=face_id, geometry=geometry, horiz=True)
         surfaces[face_id] = Surface(R=reflectances[face_id], plane=plane)
 
-    # Walls use WallGrid
+    # Walls use PlaneGrid.from_wall()
     for wall_id in dims.wall_ids:
         wall_data = dims.faces[wall_id]
         # wall_data: (x1, y1, x2, y2, edge_length, z_height, normal_2d)
         x1, y1, x2, y2, edge_length, z_height, normal_2d = wall_data
 
-        geometry = WallGrid(
+        geometry = PlaneGrid.from_wall(
             p1=(x1, y1),
             p2=(x2, y2),
             z_height=z_height,

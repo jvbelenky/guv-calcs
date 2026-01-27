@@ -4,7 +4,8 @@ import numpy as np
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from .calc_manager import LightingCalculator
-from .rect_grid import VolGrid, PlaneGrid, PolygonGrid, PolygonVolGrid, WallGrid
+from .rect_grid import VolGrid, PlaneGrid
+from .poly_grid import PolygonGrid, PolygonVolGrid
 from .calc_zone_io import export_plane, export_volume
 from .calc_zone_plot import plot_plane, plot_volume
 from .room_dims import RoomDimensions, PolygonRoomDimensions
@@ -416,11 +417,7 @@ class CalcVol(CalcZone):
         keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
         if data.get("geometry") is not None:
             geom_data = data.pop("geometry")
-            # Detect geometry type from data
-            if "polygon" in geom_data:
-                geometry = PolygonVolGrid.from_dict(geom_data)
-            else:
-                geometry = VolGrid.from_dict(geom_data)
+            geometry = PolygonVolGrid.from_dict(geom_data) if "polygon" in geom_data else VolGrid.from_dict(geom_data)
             data["geometry"] = geometry
         return cls(**{k: v for k, v in data.items() if k in keys})
 
@@ -486,7 +483,7 @@ class CalcPlane(CalcZone):
         self,
         zone_id: str | None = None,
         name: str | None = None,
-        geometry: "PlaneGrid | PolygonGrid | WallGrid | None" = None,
+        geometry: "PlaneGrid | PolygonGrid | None" = None,
         dose: bool = False,
         hours: int = 8,
         enabled: bool = True,
@@ -575,17 +572,7 @@ class CalcPlane(CalcZone):
         keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
         if data.get("geometry") is not None:
             geom_data = data.pop("geometry")
-            # Detect geometry type from data
-            if "polygon" in geom_data:
-                if "p1" in geom_data:
-                    geometry = WallGrid.from_dict(geom_data)
-                else:
-                    geometry = PolygonGrid.from_dict(geom_data)
-            elif "z_height" in geom_data:
-                # WallGrid without polygon (polygon room walls)
-                geometry = WallGrid.from_dict(geom_data)
-            else:
-                geometry = PlaneGrid.from_dict(geom_data)
+            geometry = PolygonGrid.from_dict(geom_data) if "polygon" in geom_data else PlaneGrid.from_dict(geom_data)
             data["geometry"] = geometry
         return cls(**{k: v for k, v in data.items() if k in keys})
 
@@ -650,7 +637,7 @@ class CalcPlane(CalcZone):
                 # Wall: (x1, y1, x2, y2, edge_length, z_height, normal_2d)
                 x1, y1, x2, y2, edge_length, z_height, normal_2d = face_data
 
-                geometry = WallGrid(
+                geometry = PlaneGrid.from_wall(
                     p1=(x1, y1),
                     p2=(x2, y2),
                     z_height=z_height,
