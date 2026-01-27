@@ -567,6 +567,9 @@ class CalcPlane(CalcZone):
                     geometry = WallGrid.from_dict(geom_data)
                 else:
                     geometry = PolygonGrid.from_dict(geom_data)
+            elif "z_height" in geom_data:
+                # WallGrid without polygon (polygon room walls)
+                geometry = WallGrid.from_dict(geom_data)
             else:
                 geometry = PlaneGrid.from_dict(geom_data)
             data["geometry"] = geometry
