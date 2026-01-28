@@ -3,7 +3,7 @@
 import pytest
 import numpy as np
 from guv_calcs.polygon import Polygon2D
-from guv_calcs.lamp_helpers import (
+from guv_calcs.lamp_placement import (
     # Geometry utilities
     _point_to_segment_distance,
     _ray_polygon_intersection,
@@ -430,6 +430,81 @@ class TestIntegration:
 
 def _is_near_boundary(point, polygon, tolerance=0.1):
     """Check if point is near polygon boundary."""
-    from guv_calcs.lamp_helpers import _distance_to_polygon_boundary
+    from guv_calcs.lamp_placement import _distance_to_polygon_boundary
     dist = _distance_to_polygon_boundary(np.array(point), polygon)
     return dist < tolerance
+
+
+class TestLampPlacerAPI:
+    """Tests for the new LampPlacer factory methods and place_lamp functionality."""
+
+    def test_for_room_with_xy(self):
+        """for_room creates placer from x/y dimensions."""
+        from guv_calcs.lamp_placement import LampPlacer
+        placer = LampPlacer.for_room(x=4, y=3, z=2.5)
+        assert placer.polygon is not None
+        assert placer.z == 2.5
+        assert placer.polygon.x == 4
+        assert placer.polygon.y == 3
+
+    def test_for_room_with_polygon(self):
+        """for_room creates placer from polygon."""
+        from guv_calcs.lamp_placement import LampPlacer
+        poly = Polygon2D.rectangle(5, 4)
+        placer = LampPlacer.for_room(polygon=poly, z=3.0)
+        assert placer.polygon is poly
+        assert placer.z == 3.0
+
+    def test_for_room_requires_dimensions(self):
+        """for_room raises error without x/y or polygon."""
+        from guv_calcs.lamp_placement import LampPlacer
+        with pytest.raises(ValueError, match="Must provide either"):
+            LampPlacer.for_room(z=3.0)
+
+    def test_for_dims_rectangular(self):
+        """for_dims works with rectangular RoomDimensions."""
+        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.room_dims import RoomDimensions
+        dims = RoomDimensions(x=6, y=4, z=2.7)
+        placer = LampPlacer.for_dims(dims)
+        assert placer.polygon.x == 6
+        assert placer.polygon.y == 4
+        assert placer.z == 2.7
+
+    def test_for_dims_polygon(self):
+        """for_dims works with PolygonRoomDimensions."""
+        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.room_dims import PolygonRoomDimensions
+        poly = Polygon2D.rectangle(5, 5)
+        dims = PolygonRoomDimensions(polygon=poly, z=3.0)
+        placer = LampPlacer.for_dims(dims)
+        assert placer.polygon is poly
+        assert placer.z == 3.0
+
+    def test_for_dims_with_existing(self):
+        """for_dims tracks existing positions."""
+        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.room_dims import RoomDimensions
+        dims = RoomDimensions(x=6, y=4, z=2.7)
+        existing = [(1.0, 1.0), (5.0, 3.0)]
+        placer = LampPlacer.for_dims(dims, existing=existing)
+        assert len(placer._existing) == 2
+
+    def test_place_returns_result(self):
+        """place returns PlacementResult with position and aim."""
+        from guv_calcs.lamp_placement import LampPlacer
+        placer = LampPlacer.for_room(x=4, y=4, z=3)
+        result = placer.place("corner", lamp_idx=1)
+        assert hasattr(result, "position")
+        assert hasattr(result, "aim")
+        assert len(result.position) == 2
+        assert len(result.aim) == 2
+
+    def test_place_different_modes(self):
+        """place works with all modes."""
+        from guv_calcs.lamp_placement import LampPlacer
+        placer = LampPlacer.for_room(x=4, y=4, z=3)
+        for mode in ["downlight", "corner", "edge", "horizontal"]:
+            result = placer.place(mode, lamp_idx=1)
+            assert result.position is not None
+            assert result.aim is not None

@@ -106,7 +106,7 @@ class TestRoomLampManagement:
 
 
 class TestLampPlacementModes:
-    """Tests for lamp placement modes (downlight, tilted, corner, edge)."""
+    """Tests for lamp placement modes (downlight, corner, edge, horizontal)."""
 
     def test_place_lamp_downlight_mode(self, basic_room):
         """Downlight mode places lamp in center pointing down."""
@@ -118,19 +118,6 @@ class TestLampPlacementModes:
         # Aiming straight down (aim x,y equals position x,y)
         assert lamp.aimx == pytest.approx(lamp.position[0], abs=0.01)
         assert lamp.aimy == pytest.approx(lamp.position[1], abs=0.01)
-
-    def test_place_lamp_tilted_mode_deprecated(self, basic_room):
-        """Tilted mode is deprecated but still works."""
-        with pytest.warns(DeprecationWarning, match="mode='tilted' is deprecated"):
-            basic_room.place_lamp("aerolamp", mode="tilted")
-        lamp = list(basic_room.lamps.values())[0]
-        # Should be near edge/corner
-        x, y = lamp.position[:2]
-        near_edge = (x < 0.5 or x > 5.5 or y < 0.5 or y > 3.5)
-        assert near_edge
-        # Aiming inward (different from position)
-        assert lamp.aimx != pytest.approx(lamp.position[0], abs=0.1) or \
-               lamp.aimy != pytest.approx(lamp.position[1], abs=0.1)
 
     def test_place_lamp_corner_mode(self, basic_room):
         """Corner mode places lamp at corners."""
@@ -175,7 +162,7 @@ class TestLampPlacementModes:
         basic_room.place_lamp("aerolamp", mode="corner", tilt=30.0)
         lamp = list(basic_room.lamps.values())[0]
         # Calculate actual tilt
-        from guv_calcs.lamp_helpers import calculate_tilt
+        from guv_calcs.lamp_placement import calculate_tilt
         actual_tilt = calculate_tilt(
             lamp.position[2],
             (lamp.position[0], lamp.position[1]),
@@ -187,7 +174,7 @@ class TestLampPlacementModes:
         """Max_tilt parameter limits tilt angle."""
         basic_room.place_lamp("aerolamp", mode="corner", max_tilt=20.0)
         lamp = list(basic_room.lamps.values())[0]
-        from guv_calcs.lamp_helpers import calculate_tilt
+        from guv_calcs.lamp_placement import calculate_tilt
         actual_tilt = calculate_tilt(
             lamp.position[2],
             (lamp.position[0], lamp.position[1]),
@@ -245,7 +232,7 @@ class TestPolygonRoomPlacement:
             x, y = lamp.position[:2]
             inside = l_shape.contains_point(x, y)
             # Or very close to boundary (offset)
-            from guv_calcs.lamp_helpers import _distance_to_polygon_boundary
+            from guv_calcs.lamp_placement import _distance_to_polygon_boundary
             import numpy as np
             near_boundary = _distance_to_polygon_boundary(np.array([x, y]), l_shape) < 0.2
             assert inside or near_boundary

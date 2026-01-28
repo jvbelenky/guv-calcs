@@ -1,12 +1,209 @@
 """Lamp placement algorithms for various room geometries and placement modes."""
 
+from dataclasses import dataclass
 from math import atan, degrees, hypot
 import numpy as np
 from .polygon import Polygon2D
 
 
 # =============================================================================
-# SECTION 1: Geometry Utilities
+# SECTION 1: Shared Utilities
+# =============================================================================
+
+
+def _normalize(dx: float, dy: float) -> tuple[float, float]:
+    """Normalize a 2D vector, returning (0, 0) for zero-length."""
+    length = hypot(dx, dy)
+    return (dx / length, dy / length) if length > 1e-10 else (0.0, 0.0)
+
+
+def _offset_inward(
+    point: tuple[float, float], inward_dir: tuple[float, float], offset: float = 0.05
+) -> tuple[float, float]:
+    """Move a point inward by offset distance."""
+    return (point[0] + offset * inward_dir[0], point[1] + offset * inward_dir[1])
+
+
+# =============================================================================
+# SECTION 2: LampPlacer Class
+# =============================================================================
+
+
+@dataclass
+class PlacementResult:
+    """Result of lamp placement calculation."""
+
+    position: tuple[float, float]
+    aim: tuple[float, float]
+
+
+class LampPlacer:
+    """
+    Coordinates lamp placement within a room polygon.
+
+    Encapsulates polygon geometry and tracks existing lamp positions
+    to calculate optimal placements for different modes.
+
+    Example usage:
+        # Simple usage - just get positions
+        placer = LampPlacer.for_room(x=4, y=4, z=3)
+        pos, aim = placer.place("corner", lamp_idx=1)
+
+        # Full usage with lamp objects
+        placer = LampPlacer.for_room(x=4, y=4, z=3)
+        placer.place_lamp(lamp, mode="corner", tilt=45)
+    """
+
+    def __init__(
+        self,
+        polygon: Polygon2D,
+        z: float = None,
+        existing_positions: list[tuple[float, float]] = None,
+    ):
+        self.polygon = polygon
+        self.z = z
+        self._existing = list(existing_positions) if existing_positions else []
+
+    @classmethod
+    def for_room(
+        cls,
+        x: float = None,
+        y: float = None,
+        z: float = None,
+        polygon: Polygon2D = None,
+        existing: list[tuple[float, float]] = None,
+    ) -> "LampPlacer":
+        """Create placer from room dimensions or polygon."""
+        if polygon is None:
+            if x is None or y is None:
+                raise ValueError("Must provide either polygon or both x and y")
+            polygon = Polygon2D.rectangle(x, y)
+        return cls(polygon, z=z, existing_positions=existing)
+
+    @classmethod
+    def for_dims(cls, dims, existing: list[tuple[float, float]] = None) -> "LampPlacer":
+        """Create placer from a RoomDimensions or PolygonRoomDimensions object."""
+        if dims.is_polygon:
+            polygon = dims.polygon
+        else:
+            polygon = Polygon2D.rectangle(dims.x, dims.y)
+        return cls(polygon, z=dims.z, existing_positions=existing)
+
+    def place(self, mode: str, lamp_idx: int, **kwargs) -> PlacementResult:
+        """
+        Calculate position and aim for a lamp.
+
+        Args:
+            mode: "downlight", "corner", "edge", or "horizontal"
+            lamp_idx: Index of lamp being placed (1-based)
+            **kwargs: Mode-specific options (e.g., beam_angle for corner mode)
+        """
+        handlers = {
+            "downlight": self._place_downlight,
+            "corner": self._place_corner,
+            "edge": self._place_edge,
+            "horizontal": self._place_horizontal,
+        }
+        if mode not in handlers:
+            raise ValueError(f"invalid lamp placement mode {mode}")
+        return handlers[mode](lamp_idx, **kwargs)
+
+    def record(self, x: float, y: float):
+        """Record a placed lamp position for future spacing calculations."""
+        self._existing.append((x, y))
+
+    def _place_downlight(self, idx: int, **kwargs) -> PlacementResult:
+        x, y = new_lamp_position_polygon(idx, self.polygon)
+        return PlacementResult(position=(x, y), aim=(x, y))
+
+    def _place_corner(self, idx: int, **kwargs) -> PlacementResult:
+        beam_angle = kwargs.get("beam_angle", 30.0)
+        (x, y), (aim_x, aim_y) = new_lamp_position_corner(
+            idx, self.polygon, self._existing, beam_angle=beam_angle
+        )
+        return PlacementResult(position=(x, y), aim=(aim_x, aim_y))
+
+    def _place_edge(self, idx: int, **kwargs) -> PlacementResult:
+        (x, y), (aim_x, aim_y) = new_lamp_position_edge(idx, self.polygon, self._existing)
+        return PlacementResult(position=(x, y), aim=(aim_x, aim_y))
+
+    def _place_horizontal(self, idx: int, **kwargs) -> PlacementResult:
+        # Same as edge but caller handles aim z-coordinate
+        return self._place_edge(idx, **kwargs)
+
+    def place_lamp(
+        self,
+        lamp,
+        mode: str = "downlight",
+        tilt: float = None,
+        max_tilt: float = None,
+        offset: float = 0.1,
+    ):
+        """
+        Position and aim a lamp, returning it for chaining.
+
+        Args:
+            lamp: Lamp object to position
+            mode: Placement mode ("downlight", "corner", "edge", "horizontal")
+            tilt: Force exact tilt angle in degrees (0=down, 90=horizontal)
+            max_tilt: Maximum allowed tilt angle in degrees
+            offset: Distance below ceiling to place lamp (default 0.1)
+
+        Returns:
+            The lamp object for method chaining
+        """
+        if self.z is None:
+            raise ValueError("z must be set to use place_lamp (use for_room or for_dims)")
+
+        idx = len(self._existing) + 1
+        beam_angle = self._get_beam_angle(lamp)
+        mode_lower = mode.lower()
+
+        result = self.place(mode_lower, idx, beam_angle=beam_angle)
+
+        lamp_z = self.z - offset
+        lamp.move(result.position[0], result.position[1], lamp_z)
+
+        if mode_lower == "horizontal":
+            aim_z = lamp_z
+        else:
+            aim_z = 0.0
+
+        if mode_lower in ("corner", "edge"):
+            aim_xy = self._apply_tilt(lamp.position, result.aim, tilt, max_tilt)
+        else:
+            aim_xy = result.aim
+
+        lamp.aim(aim_xy[0], aim_xy[1], aim_z)
+        self.record(*result.position)
+        return lamp
+
+    def _get_beam_angle(self, lamp, default: float = 30.0) -> float:
+        """Extract beam angle from lamp photometry."""
+        try:
+            if lamp.ies and lamp.ies.photometry:
+                return lamp.ies.photometry.beam_angle
+        except (AttributeError, TypeError):
+            pass
+        return default
+
+    def _apply_tilt(
+        self,
+        lamp_pos: tuple[float, float, float],
+        aim_point: tuple[float, float],
+        tilt: float,
+        max_tilt: float,
+    ) -> tuple[float, float]:
+        """Apply tilt constraints to aim point."""
+        if tilt is not None:
+            return apply_tilt(lamp_pos, aim_point, self.polygon, tilt)
+        elif max_tilt is not None:
+            return clamp_aim_to_max_tilt(lamp_pos, aim_point, max_tilt, self.polygon)
+        return aim_point
+
+
+# =============================================================================
+# SECTION 3: Low-level Geometry Helpers
 # =============================================================================
 
 
@@ -126,11 +323,9 @@ def _ray_polygon_intersection(
         Intersection point, or None if no intersection found
     """
     ox, oy = origin
-    dx, dy = direction
-    length = hypot(dx, dy)
-    if length < 1e-10:
+    dx, dy = _normalize(*direction)
+    if dx == 0.0 and dy == 0.0:
         return None
-    dx, dy = dx / length, dy / length
 
     best_t = float("inf")
     best_point = None
@@ -160,7 +355,7 @@ def _ray_polygon_intersection(
 
 
 # =============================================================================
-# SECTION 2: Corner Placement
+# SECTION 4: Corner Placement Algorithms
 # =============================================================================
 
 
@@ -246,17 +441,9 @@ def _get_corner_edge_directions(
     prev_v = vertices[(idx - 1) % n]
     next_v = vertices[(idx + 1) % n]
 
-    # Directions along edges (away from corner)
-    d1 = (prev_v[0] - corner[0], prev_v[1] - corner[1])
-    d2 = (next_v[0] - corner[0], next_v[1] - corner[1])
-
-    # Normalize
-    len1 = hypot(d1[0], d1[1])
-    len2 = hypot(d2[0], d2[1])
-    if len1 > 0:
-        d1 = (d1[0] / len1, d1[1] / len1)
-    if len2 > 0:
-        d2 = (d2[0] / len2, d2[1] / len2)
+    # Directions along edges (away from corner), normalized
+    d1 = _normalize(prev_v[0] - corner[0], prev_v[1] - corner[1])
+    d2 = _normalize(next_v[0] - corner[0], next_v[1] - corner[1])
 
     return (d1, d2)
 
@@ -361,32 +548,19 @@ def _get_corner_inward_direction(
     except ValueError:
         # Corner not in vertices, fall back to centroid direction
         cx, cy = polygon.centroid
-        dx, dy = cx - corner[0], cy - corner[1]
-        length = hypot(dx, dy)
-        return (dx / length, dy / length) if length > 0 else (0, 0)
+        return _normalize(cx - corner[0], cy - corner[1])
 
     n = len(vertices)
     prev_v = vertices[(idx - 1) % n]
     next_v = vertices[(idx + 1) % n]
 
-    # Vectors along edges from corner
-    v1 = (prev_v[0] - corner[0], prev_v[1] - corner[1])
-    v2 = (next_v[0] - corner[0], next_v[1] - corner[1])
+    # Vectors along edges from corner, normalized
+    v1 = _normalize(prev_v[0] - corner[0], prev_v[1] - corner[1])
+    v2 = _normalize(next_v[0] - corner[0], next_v[1] - corner[1])
 
-    # Normalize
-    len1 = hypot(v1[0], v1[1])
-    len2 = hypot(v2[0], v2[1])
-    if len1 > 0:
-        v1 = (v1[0] / len1, v1[1] / len1)
-    if len2 > 0:
-        v2 = (v2[0] / len2, v2[1] / len2)
-
-    # Bisector is sum of unit vectors
-    bx, by = v1[0] + v2[0], v1[1] + v2[1]
-    length = hypot(bx, by)
-    if length > 0:
-        bx, by = bx / length, by / length
-    else:
+    # Bisector is sum of unit vectors, normalized
+    bx, by = _normalize(v1[0] + v2[0], v1[1] + v2[1])
+    if bx == 0.0 and by == 0.0:
         # Edges are parallel, use perpendicular
         bx, by = -v1[1], v1[0]
 
@@ -443,13 +617,11 @@ def new_lamp_position_corner(
 
         # Get inward direction using corner bisector
         inward = _get_corner_inward_direction(corner, polygon)
-        offset = 0.05
-        position = (corner[0] + offset * inward[0], corner[1] + offset * inward[1])
+        position = _offset_inward(corner, inward, offset=0.05)
 
         # Verify position is inside polygon; if not, reduce offset
         if not polygon.contains_point(*position):
-            offset = 0.01
-            position = (corner[0] + offset * inward[0], corner[1] + offset * inward[1])
+            position = _offset_inward(corner, inward, offset=0.01)
 
         # Final check - if still outside, use corner directly
         if not polygon.contains_point(*position):
@@ -463,7 +635,7 @@ def new_lamp_position_corner(
 
 
 # =============================================================================
-# SECTION 3: Edge Placement
+# SECTION 5: Edge Placement Algorithms
 # =============================================================================
 
 
@@ -565,8 +737,7 @@ def new_lamp_position_edge(
 
         # Offset slightly inward from edge
         inward = (-polygon.edge_normals[edge_idx][0], -polygon.edge_normals[edge_idx][1])
-        offset = 0.05
-        position = (mx + offset * inward[0], my + offset * inward[1])
+        position = _offset_inward((mx, my), inward, offset=0.05)
 
         aim = _calculate_edge_perpendicular_aim(position, edge_idx, polygon)
         return position, aim
@@ -604,15 +775,14 @@ def _farthest_perimeter_position(
 
     # Offset slightly inward
     inward = (-polygon.edge_normals[best_edge_idx][0], -polygon.edge_normals[best_edge_idx][1])
-    offset = 0.05
-    position = (best_pos[0] + offset * inward[0], best_pos[1] + offset * inward[1])
+    position = _offset_inward(best_pos, inward, offset=0.05)
 
     aim = _calculate_edge_perpendicular_aim(position, best_edge_idx, polygon)
     return position, aim
 
 
 # =============================================================================
-# SECTION 4: Visibility / Aiming
+# SECTION 6: Visibility / Aiming
 # =============================================================================
 
 
@@ -719,7 +889,7 @@ def _calculate_cone_coverage(
 
 
 # =============================================================================
-# SECTION 5: Tilt Utilities
+# SECTION 7: Tilt Utilities
 # =============================================================================
 
 
@@ -827,13 +997,10 @@ def apply_tilt(
     dx, dy = ax - lx, ay - ly
     current_h_dist = hypot(dx, dy)
 
-    if current_h_dist < 1e-6:
-        # Original aim is directly below lamp, pick arbitrary direction
+    # Normalize direction (use arbitrary direction if aim is directly below lamp)
+    dx, dy = _normalize(dx, dy)
+    if dx == 0.0 and dy == 0.0:
         dx, dy = 1.0, 0.0
-        current_h_dist = 1.0
-
-    # Normalize direction
-    dx, dy = dx / current_h_dist, dy / current_h_dist
 
     # Calculate horizontal distance for exact tilt
     h_dist = lz * np.tan(np.radians(tilt))
@@ -855,7 +1022,7 @@ def apply_tilt(
 
 
 # =============================================================================
-# SECTION 6: Downlight Placement (existing)
+# SECTION 8: Downlight Placement
 # =============================================================================
 
 
@@ -1087,142 +1254,3 @@ def _find_closest_candidate(candidates: np.ndarray, target: tuple[float, float])
     tx, ty = target
     dists = (candidates[:, 0] - tx) ** 2 + (candidates[:, 1] - ty) ** 2
     return int(np.argmin(dists))
-
-
-# =============================================================================
-# SECTION 7: Legacy Perimeter (existing, keep for compatibility)
-# =============================================================================
-
-
-def new_lamp_position_perimeter(lamp_idx, x, y, num_divisions=100):
-    """
-    Place lamps as far apart as possible *on the perimeter* of the rectangle.
-    Order: corner, opposite corner, remaining two corners, then farthest-point
-    sampling along the edges.
-
-    lamp_idx is 1-based.
-    """
-    xp = np.linspace(0, x, num_divisions + 1)
-    yp = np.linspace(0, y, num_divisions + 1)
-
-    xidx, yidx = _get_perimeter_idx(lamp_idx, num_divisions=num_divisions)
-    return xp[xidx], yp[yidx]
-
-
-def _get_perimeter_idx(num_points, num_divisions=100):
-    return _place_points_on_perimeter(num_divisions, num_points)[-1]
-
-
-def _place_points_on_perimeter(num_divisions, num_points):
-    """
-    Return a list of (xidx, yidx) integer indices on the perimeter of a
-    (num_divisions+1) x (num_divisions+1) lattice.
-    """
-    if num_points < 1:
-        raise ValueError("num_points must be >= 1")
-
-    M = N = num_divisions + 1
-    candidates = []
-    for xi in range(M):
-        candidates.append((xi, 0))
-        candidates.append((xi, N - 1))
-    for yi in range(1, N - 1):
-        candidates.append((0, yi))
-        candidates.append((M - 1, yi))
-    candidates = list(dict.fromkeys(candidates))
-
-    corners = [(0, 0), (M - 1, N - 1), (0, N - 1), (M - 1, 0)]
-    points = []
-    chosen = set()
-
-    for c in corners:
-        if len(points) >= num_points:
-            return points
-        points.append(c)
-        chosen.add(c)
-
-    for _ in range(len(points), num_points):
-        best = None
-        best_d = -1.0
-
-        for p in candidates:
-            if p in chosen:
-                continue
-            d = min(np.hypot(p[0] - q[0], p[1] - q[1]) for q in points)
-            if d > best_d:
-                best_d = d
-                best = p
-
-        points.append(best)
-        chosen.add(best)
-
-    return points
-
-
-def new_lamp_position_polygon_perimeter(
-    lamp_idx: int, polygon: "Polygon2D", num_divisions: int = 100
-):
-    """
-    Place lamps along the perimeter of a polygon, as far apart as possible.
-    Starts with vertices, then fills in along edges.
-
-    lamp_idx is 1-based.
-    """
-    candidates = _get_polygon_perimeter_points(polygon, num_divisions)
-
-    if lamp_idx == 1:
-        return candidates[0]
-
-    chosen_idx = _place_points_on_polygon_perimeter(candidates, lamp_idx)
-    return candidates[chosen_idx]
-
-
-def _get_polygon_perimeter_points(polygon: "Polygon2D", num_divisions: int) -> list:
-    """Generate evenly-spaced points along polygon perimeter."""
-    total_perimeter = sum(polygon.edge_lengths)
-    points_per_unit = num_divisions / total_perimeter
-
-    candidates = []
-    for (x1, y1), (x2, y2) in polygon.edges:
-        edge_length = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-        num_edge_points = max(2, int(edge_length * points_per_unit))
-
-        for i in range(num_edge_points):
-            t = i / num_edge_points
-            x = x1 + t * (x2 - x1)
-            y = y1 + t * (y2 - y1)
-            candidates.append((x, y))
-
-    return candidates
-
-
-def _place_points_on_polygon_perimeter(candidates: list, num_points: int) -> int:
-    """
-    Place points on polygon perimeter using farthest-point sampling.
-    Returns the index of the last placed point.
-    """
-    chosen_indices = [0]
-    chosen_set = {0}
-
-    for _ in range(1, num_points):
-        best_idx = None
-        best_min_dist = -1.0
-
-        for i, pt in enumerate(candidates):
-            if i in chosen_set:
-                continue
-
-            min_dist = min(
-                np.sqrt((pt[0] - candidates[j][0]) ** 2 + (pt[1] - candidates[j][1]) ** 2)
-                for j in chosen_indices
-            )
-
-            if min_dist > best_min_dist:
-                best_min_dist = min_dist
-                best_idx = i
-
-        if best_idx is not None:
-            chosen_indices.append(best_idx)
-            chosen_set.add(best_idx)
-
-    return chosen_indices[-1]

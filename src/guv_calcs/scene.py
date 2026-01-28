@@ -5,19 +5,7 @@ from .room_dims import RoomDimensions, PolygonRoomDimensions
 from .lamp import Lamp
 from .calc_zone import CalcZone, CalcPlane, CalcVol
 from .reflectance import Surface, init_room_surfaces
-from .lamp_helpers import (
-    new_lamp_position,
-    new_lamp_position_perimeter,
-    new_lamp_position_polygon,
-    new_lamp_position_polygon_perimeter,
-    farthest_visible_point,
-    new_lamp_position_corner,
-    new_lamp_position_edge,
-    calculate_tilt,
-    clamp_aim_to_max_tilt,
-    apply_tilt,
-)
-from .polygon import Polygon2D
+from .lamp_placement import LampPlacer
 from .safety import PhotStandard
 from .scene_registry import LampRegistry, ZoneRegistry, SurfaceRegistry
 from .units import LengthUnits, convert_length
@@ -130,132 +118,24 @@ class Scene:
         max_tilt: float | None = None,
     ):
         """
-        Position a lamp as far from other lamps and the walls as possible.
-
-        For rectangular rooms, uses bounding-box based placement.
-        For polygon rooms, places lamps inside the polygon boundary.
+        Position lamps using the specified placement mode.
 
         Args:
             mode: Placement mode:
                 - "downlight": places lamps inside the room pointing down
                 - "corner": places lamps at corners, ranked by visibility
                 - "edge": places lamps at edge centers, aiming perpendicular to wall
-                - "tilted": deprecated, use "corner" or "edge" instead
+                - "horizontal": like edge but aimed straight horizontally
             tilt: Force exact tilt angle in degrees (0 = straight down, 90 = horizontal)
             max_tilt: Maximum allowed tilt angle in degrees (clamps auto-calculated tilt)
         """
         offset = convert_length(LengthUnits.METERS, self.dim.units, 0.1, sigfigs=2)
+        existing = [(l.position[0], l.position[1]) for l in self.lamps.values()]
+        placer = LampPlacer.for_dims(self.dim, existing=existing)
 
-        lamps = self._init_lamp(*args)
-        for lamp in lamps:
-            idx = len(self.lamps) + 1
-
-            # Get existing lamp positions for corner/edge modes
-            existing_positions = [
-                (l.position[0], l.position[1]) for l in self.lamps.values()
-            ]
-
-            # Get polygon (create from rect dims if needed)
-            if self.dim.is_polygon:
-                polygon = self.dim.polygon
-            else:
-                polygon = Polygon2D.rectangle(self.dim.x, self.dim.y)
-
-            mode_lower = mode.lower()
-
-            if mode_lower == "downlight":
-                if self.dim.is_polygon:
-                    x, y = new_lamp_position_polygon(idx, polygon)
-                else:
-                    x, y = new_lamp_position(idx, self.dim.x, self.dim.y)
-                lamp.move(x, y, self.dim.z - offset).aim(x, y, 0.0)
-
-            elif mode_lower == "tilted":
-                # Legacy tilted mode - deprecated
-                warnings.warn(
-                    "mode='tilted' is deprecated. Use mode='corner' or mode='edge' instead.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-                if self.dim.is_polygon:
-                    x, y = new_lamp_position_polygon_perimeter(idx, polygon)
-                    aim_x, aim_y = farthest_visible_point((x, y), polygon)
-                else:
-                    x, y = new_lamp_position_perimeter(idx, self.dim.x, self.dim.y)
-                    x = x + offset if x == 0.0 else x - offset
-                    y = y + offset if y == 0.0 else y - offset
-                    aim_x, aim_y = self.dim.x - x, self.dim.y - y
-
-                lamp.move(x, y, self.dim.z - offset)
-                aim_x, aim_y = self._apply_tilt_controls(
-                    lamp, (aim_x, aim_y), polygon, tilt, max_tilt
-                )
-                lamp.aim(aim_x, aim_y, 0.0)
-
-            elif mode_lower == "corner":
-                # Get beam angle from lamp if available
-                beam_angle = self._get_lamp_beam_angle(lamp)
-                (x, y), (aim_x, aim_y) = new_lamp_position_corner(
-                    idx, polygon, existing_positions, beam_angle=beam_angle
-                )
-                lamp.move(x, y, self.dim.z - offset)
-                aim_x, aim_y = self._apply_tilt_controls(
-                    lamp, (aim_x, aim_y), polygon, tilt, max_tilt
-                )
-                lamp.aim(aim_x, aim_y, 0.0)
-
-            elif mode_lower == "edge":
-                (x, y), (aim_x, aim_y) = new_lamp_position_edge(
-                    idx, polygon, existing_positions
-                )
-                lamp.move(x, y, self.dim.z - offset)
-                aim_x, aim_y = self._apply_tilt_controls(
-                    lamp, (aim_x, aim_y), polygon, tilt, max_tilt
-                )
-                lamp.aim(aim_x, aim_y, 0.0)
-
-            elif mode_lower == "horizontal":
-                # Like edge mode but aimed straight horizontally (tilt=90)
-                (x, y), (aim_x, aim_y) = new_lamp_position_edge(
-                    idx, polygon, existing_positions
-                )
-                lamp_z = self.dim.z - offset
-                lamp.move(x, y, lamp_z)
-                lamp.aim(aim_x, aim_y, lamp_z)  # Same z = horizontal
-
-            else:
-                raise ValueError(f"invalid lamp placement mode {mode}")
-
+        for lamp in self._init_lamp(*args):
+            placer.place_lamp(lamp, mode=mode, tilt=tilt, max_tilt=max_tilt, offset=offset)
             self.add_lamp(lamp, on_collision=on_collision)
-
-    def _apply_tilt_controls(
-        self,
-        lamp,
-        aim_point: tuple[float, float],
-        polygon: Polygon2D,
-        tilt: float | None,
-        max_tilt: float | None,
-    ) -> tuple[float, float]:
-        """Apply tilt or max_tilt controls to adjust aim point."""
-        lamp_pos = lamp.position
-
-        if tilt is not None:
-            # Force exact tilt angle
-            return apply_tilt(lamp_pos, aim_point, polygon, tilt)
-        elif max_tilt is not None:
-            # Clamp to max tilt
-            return clamp_aim_to_max_tilt(lamp_pos, aim_point, max_tilt, polygon)
-        else:
-            return aim_point
-
-    def _get_lamp_beam_angle(self, lamp, default: float = 30.0) -> float:
-        """Get the beam angle from lamp's photometry, or return default."""
-        try:
-            if lamp.ies and lamp.ies.photometry:
-                return lamp.ies.photometry.beam_angle
-        except (AttributeError, TypeError):
-            pass
-        return default
 
     def _init_lamp(self, *args):
         lst = []

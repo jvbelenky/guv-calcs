@@ -10,7 +10,7 @@ from .io import get_spectral_weightings
 from .efficacy import Data
 from .safety import PhotStandard, get_tlvs
 from .units import convert_units, convert_length, convert_time
-from .lamp_helpers import new_lamp_position, get_lamp_positions
+from .lamp_placement import LampPlacer, new_lamp_position, get_lamp_positions
 from ._read import read_export_file, file_to_zone
 from ._version import __version__
 
@@ -35,6 +35,7 @@ __all__ = [
     "convert_units",
     "convert_length",
     "convert_time",
+    "LampPlacer",
     "new_lamp_position",
     "get_lamp_positions",
     "read_export_file",
