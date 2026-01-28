@@ -516,6 +516,15 @@ class Room:
 
     # ------------------- Data and Plotting ----------------------
 
+    def fluence_at(self, wavelength, zone_id: str = "WholeRoomFluence"):
+        """temporary function for 0.5.0.1 patch"""
+        zone = self.zone(zone_id)
+        fluence_dict = {wv: 0.0 for wv in self.lamps.wavelengths.values()}
+        for k, v in self.lamps.wavelengths.items():
+            if k in zone.lamp_cache.keys():
+                fluence_dict[v] = fluence_dict[v] + zone.lamp_cache[k].values.mean()
+        return fluence_dict.get(wavelength, None)                
+
     def get_efficacy_data(self, zone_id: str = "WholeRoomFluence", **kwargs) -> Data:
         """
         Create Data instance from this room's fluence values.=

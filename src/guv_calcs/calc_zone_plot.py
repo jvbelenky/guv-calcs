@@ -76,7 +76,13 @@ def plot_plane(zone, fig=None, ax=None, vmin=None, vmax=None, title=None):
             zone.geometry.y2,
         ]
 
-        values = values.T[::-1]
+        ref_surface = getattr(zone.geometry, 'ref_surface', None)
+        direction = getattr(zone.geometry, 'direction', 1)
+        values = values.T
+        # XZ planes with direction=1 have v pointing in -Z, so don't flip
+        # Other planes need the flip to orient correctly
+        if not (ref_surface == 'xz' and direction == 1):
+            values = values[::-1]
         img = ax.imshow(values, extent=extent, vmin=vmin, vmax=vmax, cmap=zone.colormap)
         cbar = fig.colorbar(img, pad=0.03)
         ax.set_title(title)
