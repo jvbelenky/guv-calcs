@@ -1,252 +1,13 @@
+"""Lamp placement algorithms for various room geometries and placement modes."""
+
+from math import atan, degrees, hypot
 import numpy as np
 from .polygon import Polygon2D
 
 
-def get_lamp_positions(num_lamps, x, y, num_divisions=100):
-    """
-    generate a list of (x,y) positions for a lamp given room dimensions and
-    the number of lamps desired
-    """
-    lst = [new_lamp_position(i + 1, x, y) for i in range(num_lamps)]
-    return np.array(lst).T
-
-
-def new_lamp_position(lamp_idx, x, y, num_divisions=100):
-    """
-    get the default position for an additional new lamp
-    x and y are the room dimensions
-    first index is 1, not 0.
-    """
-    xp = np.linspace(0, x, num_divisions + 1)
-    yp = np.linspace(0, y, num_divisions + 1)
-    xidx, yidx = _get_idx(lamp_idx, num_divisions=num_divisions)
-    return xp[xidx], yp[yidx]
-
-
-def _get_idx(num_points, num_divisions=100):
-    grid_size = (num_divisions, num_divisions)
-    return _place_points(grid_size, num_points)[-1]
-
-
-def _place_points(grid_size, num_points):
-    M, N = grid_size
-    grid = np.zeros(grid_size)
-    points = []
-
-    # Place the first point in the center
-    center = (M // 2, N // 2)
-    points.append(center)
-    grid[center] = 1  # Marking the grid cell as occupied
-
-    for _ in range(1, num_points):
-        max_dist = -1
-        best_point = None
-
-        for x in range(M):
-            for y in range(N):
-                if grid[x, y] == 0:
-                    # Calculate the minimum distance to all existing points
-                    min_point_dist = min(
-                        [np.sqrt((x - px) ** 2 + (y - py) ** 2) for px, py in points]
-                    )
-                    # Calculate the distance to the nearest boundary
-                    min_boundary_dist = min(x, M - 1 - x, y, N - 1 - y)
-                    # Find the point where the minimum of these distances is maximized
-                    min_dist = min(min_point_dist, min_boundary_dist)
-
-                    if min_dist > max_dist:
-                        max_dist = min_dist
-                        best_point = (x, y)
-
-        if best_point:
-            points.append(best_point)
-            grid[best_point] = 1  # Marking the grid cell as occupied
-    return points
-
-
-def new_lamp_position_perimeter(lamp_idx, x, y, num_divisions=100):
-    """
-    Place lamps as far apart as possible *on the perimeter* of the rectangle.
-    Order: corner, opposite corner, remaining two corners, then farthest-point
-    sampling along the edges.
-
-    lamp_idx is 1-based.
-    """
-    xp = np.linspace(0, x, num_divisions + 1)
-    yp = np.linspace(0, y, num_divisions + 1)
-
-    xidx, yidx = _get_perimeter_idx(lamp_idx, num_divisions=num_divisions)
-    return xp[xidx], yp[yidx]
-
-
-def _get_perimeter_idx(num_points, num_divisions=100):
-    # indices run 0..num_divisions inclusive (same as xp/yp)
-    return _place_points_on_perimeter(num_divisions, num_points)[-1]
-
-
-def _place_points_on_perimeter(num_divisions, num_points):
-    """
-    Return a list of (xidx, yidx) integer indices on the perimeter of a
-    (num_divisions+1) x (num_divisions+1) lattice.
-    """
-    if num_points < 1:
-        raise ValueError("num_points must be >= 1")
-
-    M = N = num_divisions + 1
-    # perimeter candidates
-    candidates = []
-    for xi in range(M):
-        candidates.append((xi, 0))
-        candidates.append((xi, N - 1))
-    for yi in range(1, N - 1):
-        candidates.append((0, yi))
-        candidates.append((M - 1, yi))
-    # de-dupe while preserving order
-    candidates = list(dict.fromkeys(candidates))
-
-    # seed corners in the order you described
-    corners = [(0, 0), (M - 1, N - 1), (0, N - 1), (M - 1, 0)]
-    points = []
-    chosen = set()
-
-    for c in corners:
-        if len(points) >= num_points:
-            return points
-        points.append(c)
-        chosen.add(c)
-
-    # greedy farthest-point sampling on the perimeter
-    for _ in range(len(points), num_points):
-        best = None
-        best_d = -1.0
-
-        for p in candidates:
-            if p in chosen:
-                continue
-            # maximize distance to nearest already-chosen point
-            d = min(np.hypot(p[0] - q[0], p[1] - q[1]) for q in points)
-            if d > best_d:
-                best_d = d
-                best = p
-
-        points.append(best)
-        chosen.add(best)
-
-    return points
-
-
-# ============== Polygon Room Lamp Placement ==============
-
-
-def new_lamp_position_polygon(lamp_idx: int, polygon: "Polygon2D", num_divisions: int = 100):
-    """
-    Get the position for lamp number `lamp_idx` inside a polygon.
-    Uses farthest-point sampling: maximizes distance to existing lamps and polygon edges.
-
-    lamp_idx is 1-based.
-    """
-    x_min, y_min, x_max, y_max = polygon.bounding_box
-
-    # Create candidate grid inside polygon
-    xp = np.linspace(x_min, x_max, num_divisions + 1)
-    yp = np.linspace(y_min, y_max, num_divisions + 1)
-    xx, yy = np.meshgrid(xp, yp, indexing="ij")
-    all_points = np.column_stack([xx.ravel(), yy.ravel()])
-
-    # Filter to points inside polygon
-    inside_mask = polygon.contains_points(all_points)
-    inside_points = all_points[inside_mask]
-
-    if len(inside_points) == 0:
-        # Fallback to centroid
-        return polygon.centroid
-
-    # Get indices for this lamp using farthest-point sampling
-    chosen_idx = _place_points_in_polygon(inside_points, polygon, lamp_idx)
-    return tuple(inside_points[chosen_idx])
-
-
-def _place_points_in_polygon(candidates: np.ndarray, polygon: "Polygon2D", num_points: int):
-    """
-    Place points inside polygon using rectangular decomposition + farthest-point sampling.
-    Returns the index of the last placed point.
-    """
-    # Get rectangle centroids (sorted by area, largest first)
-    rect_centroids = _get_rectangle_centroids(polygon)
-
-    chosen_indices = []
-    chosen_set = set()
-
-    for lamp_num in range(num_points):
-        if lamp_num < len(rect_centroids):
-            # Use rectangle centroid for first N lamps (N = number of rectangles)
-            best_idx = _find_closest_candidate(candidates, rect_centroids[lamp_num])
-            # Avoid duplicates if centroids map to same candidate
-            while best_idx in chosen_set and lamp_num < len(rect_centroids):
-                lamp_num += 1
-                if lamp_num < len(rect_centroids):
-                    best_idx = _find_closest_candidate(candidates, rect_centroids[lamp_num])
-                else:
-                    best_idx = None
-                    break
-
-        if lamp_num >= len(rect_centroids) or best_idx is None or best_idx in chosen_set:
-            # Fallback: farthest-point sampling
-            best_idx = None
-            best_min_dist = -1.0
-
-            for i, pt in enumerate(candidates):
-                if i in chosen_set:
-                    continue
-
-                if not chosen_indices:
-                    # First lamp (no centroids available): maximize distance to edges
-                    min_dist = _distance_to_polygon_boundary(pt, polygon)
-                else:
-                    # Distance to nearest chosen point
-                    min_dist_to_chosen = min(
-                        np.sqrt((pt[0] - candidates[j, 0]) ** 2 + (pt[1] - candidates[j, 1]) ** 2)
-                        for j in chosen_indices
-                    )
-                    # Distance to nearest polygon edge
-                    min_dist_to_edge = _distance_to_polygon_boundary(pt, polygon)
-                    # Take minimum of both constraints
-                    min_dist = min(min_dist_to_chosen, min_dist_to_edge)
-
-                if min_dist > best_min_dist:
-                    best_min_dist = min_dist
-                    best_idx = i
-
-        if best_idx is not None:
-            chosen_indices.append(best_idx)
-            chosen_set.add(best_idx)
-
-    return chosen_indices[-1] if chosen_indices else 0
-
-
-def _distance_to_polygon_boundary(point: np.ndarray, polygon: "Polygon2D") -> float:
-    """Calculate minimum distance from point to any polygon edge."""
-    px, py = point
-    min_dist = float("inf")
-
-    for (x1, y1), (x2, y2) in polygon.edges:
-        # Distance from point to line segment
-        dist = _point_to_segment_distance(px, py, x1, y1, x2, y2)
-        min_dist = min(min_dist, dist)
-
-    return min_dist
-
-
-def _median_distance_to_edges(point: np.ndarray, polygon: "Polygon2D") -> float:
-    """Calculate median distance from point to all polygon edges."""
-    px, py = point
-    dists = []
-
-    for (x1, y1), (x2, y2) in polygon.edges:
-        dist = _point_to_segment_distance(px, py, x1, y1, x2, y2)
-        dists.append(dist)
-
-    return float(np.median(dists))
+# =============================================================================
+# SECTION 1: Geometry Utilities
+# =============================================================================
 
 
 def _point_to_segment_distance(px, py, x1, y1, x2, y2) -> float:
@@ -264,207 +25,6 @@ def _point_to_segment_distance(px, py, x1, y1, x2, y2) -> float:
     proj_y = y1 + t * dy
 
     return np.sqrt((px - proj_x) ** 2 + (py - proj_y) ** 2)
-
-
-def _get_rectangle_centroids(polygon: "Polygon2D") -> list[tuple[float, float]]:
-    """
-    Decompose an axis-aligned rectilinear polygon into rectangles and return their centroids.
-    Returns centroids sorted by rectangle area (largest first).
-    """
-    # Find reflex (concave) vertices - where interior angle > 180°
-    reflex_vertices = _find_reflex_vertices(polygon)
-
-    if not reflex_vertices:
-        # Convex polygon (or simple rectangle) - just return centroid
-        return [polygon.centroid]
-
-    # For rectilinear polygons, decompose by extending cuts from reflex vertices
-    rectangles = _decompose_rectilinear(polygon, reflex_vertices)
-
-    if not rectangles:
-        return [polygon.centroid]
-
-    # Compute centroids and sort by area (largest first)
-    centroids_with_area = []
-    for x1, y1, x2, y2 in rectangles:
-        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-        area = abs((x2 - x1) * (y2 - y1))
-        centroids_with_area.append((area, (cx, cy)))
-
-    centroids_with_area.sort(reverse=True, key=lambda x: x[0])
-    return [c for _, c in centroids_with_area]
-
-
-def _find_reflex_vertices(polygon: "Polygon2D") -> list[tuple[float, float]]:
-    """Find vertices where the interior angle is > 180° (concave/reflex vertices)."""
-    reflex = []
-    n = len(polygon.vertices)
-
-    for i in range(n):
-        prev_v = polygon.vertices[(i - 1) % n]
-        curr_v = polygon.vertices[i]
-        next_v = polygon.vertices[(i + 1) % n]
-
-        # Cross product to determine turn direction (CCW polygon)
-        cross = (curr_v[0] - prev_v[0]) * (next_v[1] - curr_v[1]) - \
-                (curr_v[1] - prev_v[1]) * (next_v[0] - curr_v[0])
-
-        # For CCW polygon, negative cross product means reflex vertex
-        if cross < 0:
-            reflex.append(curr_v)
-
-    return reflex
-
-
-def _decompose_rectilinear(
-    polygon: "Polygon2D", reflex_vertices: list[tuple[float, float]]
-) -> list[tuple[float, float, float, float]]:
-    """
-    Decompose a rectilinear polygon into rectangles using cuts from reflex vertices.
-    Returns list of (x1, y1, x2, y2) tuples for each rectangle.
-    """
-    x_min, y_min, x_max, y_max = polygon.bounding_box
-
-    # Collect all x and y coordinates that define region boundaries
-    x_coords = {x_min, x_max}
-    y_coords = {y_min, y_max}
-
-    for vx, vy in polygon.vertices:
-        x_coords.add(vx)
-        y_coords.add(vy)
-
-    x_coords = sorted(x_coords)
-    y_coords = sorted(y_coords)
-
-    # Generate candidate rectangles from the grid
-    rectangles = []
-    for i in range(len(x_coords) - 1):
-        for j in range(len(y_coords) - 1):
-            x1, x2 = x_coords[i], x_coords[i + 1]
-            y1, y2 = y_coords[j], y_coords[j + 1]
-
-            # Check if rectangle center is inside polygon
-            cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-            if polygon.contains_point(cx, cy):
-                rectangles.append((x1, y1, x2, y2))
-
-    return rectangles
-
-
-def _find_closest_candidate(
-    candidates: np.ndarray, target: tuple[float, float]
-) -> int:
-    """Find the index of the candidate point closest to the target."""
-    tx, ty = target
-    dists = (candidates[:, 0] - tx) ** 2 + (candidates[:, 1] - ty) ** 2
-    return int(np.argmin(dists))
-
-
-def new_lamp_position_polygon_perimeter(
-    lamp_idx: int, polygon: "Polygon2D", num_divisions: int = 100
-):
-    """
-    Place lamps along the perimeter of a polygon, as far apart as possible.
-    Starts with vertices, then fills in along edges.
-
-    lamp_idx is 1-based.
-    """
-    # Generate candidate points along perimeter
-    candidates = _get_polygon_perimeter_points(polygon, num_divisions)
-
-    if lamp_idx == 1:
-        # First lamp at first vertex
-        return candidates[0]
-
-    # Use farthest-point sampling
-    chosen_idx = _place_points_on_polygon_perimeter(candidates, lamp_idx)
-    return candidates[chosen_idx]
-
-
-def _get_polygon_perimeter_points(polygon: "Polygon2D", num_divisions: int) -> list:
-    """Generate evenly-spaced points along polygon perimeter."""
-    total_perimeter = sum(polygon.edge_lengths)
-    points_per_unit = num_divisions / total_perimeter
-
-    candidates = []
-    for (x1, y1), (x2, y2) in polygon.edges:
-        edge_length = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-        num_edge_points = max(2, int(edge_length * points_per_unit))
-
-        for i in range(num_edge_points):
-            t = i / num_edge_points
-            x = x1 + t * (x2 - x1)
-            y = y1 + t * (y2 - y1)
-            candidates.append((x, y))
-
-    return candidates
-
-
-def _place_points_on_polygon_perimeter(candidates: list, num_points: int) -> int:
-    """
-    Place points on polygon perimeter using farthest-point sampling.
-    Returns the index of the last placed point.
-    """
-    # Start with first vertex
-    chosen_indices = [0]
-    chosen_set = {0}
-
-    for _ in range(1, num_points):
-        best_idx = None
-        best_min_dist = -1.0
-
-        for i, pt in enumerate(candidates):
-            if i in chosen_set:
-                continue
-
-            # Distance to nearest chosen point
-            min_dist = min(
-                np.sqrt((pt[0] - candidates[j][0]) ** 2 + (pt[1] - candidates[j][1]) ** 2)
-                for j in chosen_indices
-            )
-
-            if min_dist > best_min_dist:
-                best_min_dist = min_dist
-                best_idx = i
-
-        if best_idx is not None:
-            chosen_indices.append(best_idx)
-            chosen_set.add(best_idx)
-
-    return chosen_indices[-1]
-
-
-# ============== Visibility and Aim Point Helpers ==============
-
-
-def _line_intersects_polygon_edge(
-    p1: tuple[float, float],
-    p2: tuple[float, float],
-    polygon: "Polygon2D",
-    origin_edge_idx: int = -1,
-) -> bool:
-    """
-    Check if line segment p1-p2 intersects any polygon edge.
-
-    Args:
-        p1: Start point of line segment
-        p2: End point of line segment
-        polygon: The polygon to check against
-        origin_edge_idx: Index of edge to skip (the edge the origin sits on)
-
-    Returns:
-        True if the line intersects any edge (excluding origin_edge_idx)
-    """
-    for i, ((x1, y1), (x2, y2)) in enumerate(polygon.edges):
-        if i == origin_edge_idx:
-            continue
-
-        # Standard line segment intersection test
-        # Check if segments (p1, p2) and ((x1, y1), (x2, y2)) intersect
-        if _segments_cross(p1, p2, (x1, y1), (x2, y2)):
-            return True
-
-    return False
 
 
 def _segments_cross(
@@ -495,6 +55,34 @@ def _segments_cross(
     return False
 
 
+def _line_intersects_polygon_edge(
+    p1: tuple[float, float],
+    p2: tuple[float, float],
+    polygon: "Polygon2D",
+    origin_edge_idx: int = -1,
+) -> bool:
+    """
+    Check if line segment p1-p2 intersects any polygon edge.
+
+    Args:
+        p1: Start point of line segment
+        p2: End point of line segment
+        polygon: The polygon to check against
+        origin_edge_idx: Index of edge to skip (the edge the origin sits on)
+
+    Returns:
+        True if the line intersects any edge (excluding origin_edge_idx)
+    """
+    for i, ((x1, y1), (x2, y2)) in enumerate(polygon.edges):
+        if i == origin_edge_idx:
+            continue
+
+        if _segments_cross(p1, p2, (x1, y1), (x2, y2)):
+            return True
+
+    return False
+
+
 def _find_origin_edge(
     origin: tuple[float, float], polygon: "Polygon2D", tolerance: float = 1e-6
 ) -> int:
@@ -507,6 +95,527 @@ def _find_origin_edge(
     return -1
 
 
+def _distance_to_polygon_boundary(point: np.ndarray, polygon: "Polygon2D") -> float:
+    """Calculate minimum distance from point to any polygon edge."""
+    px, py = point
+    min_dist = float("inf")
+
+    for (x1, y1), (x2, y2) in polygon.edges:
+        dist = _point_to_segment_distance(px, py, x1, y1, x2, y2)
+        min_dist = min(min_dist, dist)
+
+    return min_dist
+
+
+def _ray_polygon_intersection(
+    origin: tuple[float, float],
+    direction: tuple[float, float],
+    polygon: "Polygon2D",
+    origin_edge_idx: int = -1,
+) -> tuple[float, float] | None:
+    """
+    Find where a ray from origin in given direction intersects the polygon boundary.
+
+    Args:
+        origin: Starting point of ray
+        direction: Direction vector (will be normalized)
+        polygon: The polygon boundary
+        origin_edge_idx: Edge to skip (if ray starts on an edge)
+
+    Returns:
+        Intersection point, or None if no intersection found
+    """
+    ox, oy = origin
+    dx, dy = direction
+    length = hypot(dx, dy)
+    if length < 1e-10:
+        return None
+    dx, dy = dx / length, dy / length
+
+    best_t = float("inf")
+    best_point = None
+
+    for i, ((x1, y1), (x2, y2)) in enumerate(polygon.edges):
+        if i == origin_edge_idx:
+            continue
+
+        # Edge direction
+        ex, ey = x2 - x1, y2 - y1
+
+        # Solve for intersection: origin + t*dir = edge_start + s*edge_dir
+        denom = dx * ey - dy * ex
+        if abs(denom) < 1e-10:
+            continue  # Parallel
+
+        t = ((x1 - ox) * ey - (y1 - oy) * ex) / denom
+        s = ((x1 - ox) * dy - (y1 - oy) * dx) / denom
+
+        # Check if intersection is valid (t > 0 for ray, 0 <= s <= 1 for segment)
+        if t > 1e-6 and 0 <= s <= 1:
+            if t < best_t:
+                best_t = t
+                best_point = (ox + t * dx, oy + t * dy)
+
+    return best_point
+
+
+# =============================================================================
+# SECTION 2: Corner Placement
+# =============================================================================
+
+
+def get_corners(polygon: Polygon2D) -> list[tuple[float, float]]:
+    """
+    Return convex vertices (interior angle < 180°) as potential corner lamp positions.
+
+    Excludes reflex vertices (interior angle > 180°) because they have poor visibility
+    and are tucked into concave regions of the room.
+    """
+    reflex = set(_find_reflex_vertices(polygon))
+    return [v for v in polygon.vertices if v not in reflex]
+
+
+def _calculate_visible_floor_area(
+    corner: tuple[float, float], polygon: Polygon2D, num_rays: int = 36
+) -> float:
+    """
+    Estimate floor area visible from corner position by casting rays.
+
+    Uses a simplified approach: cast rays in all directions and sum the distances
+    to polygon boundaries (proportional to visible area in that direction).
+    """
+    cx, cy = corner
+    total_dist = 0.0
+
+    for i in range(num_rays):
+        angle = 2 * np.pi * i / num_rays
+        dx, dy = np.cos(angle), np.sin(angle)
+
+        # Find intersection with polygon boundary
+        intersection = _ray_polygon_intersection(corner, (dx, dy), polygon)
+        if intersection:
+            ix, iy = intersection
+            total_dist += hypot(ix - cx, iy - cy)
+
+    return total_dist
+
+
+def _rank_corners_by_visibility(
+    polygon: Polygon2D, num_rays: int = 36
+) -> list[int]:
+    """
+    Return corner indices sorted by visible floor area (most visible first).
+    Uses angle from centroid as tiebreaker for consistent ordering on symmetric shapes.
+    """
+    corners = get_corners(polygon)
+    cx, cy = polygon.centroid
+    visibility_scores = []
+
+    for i, corner in enumerate(corners):
+        # Offset corner slightly inward to avoid edge-case issues
+        dx, dy = cx - corner[0], cy - corner[1]
+        length = hypot(dx, dy)
+        if length > 0:
+            offset = 0.01  # Small inward offset
+            test_point = (corner[0] + offset * dx / length, corner[1] + offset * dy / length)
+        else:
+            test_point = corner
+
+        score = _calculate_visible_floor_area(test_point, polygon, num_rays)
+        # Angle from centroid as tiebreaker (for consistent ordering on symmetric shapes)
+        angle = np.arctan2(corner[1] - cy, corner[0] - cx)
+        visibility_scores.append((i, score, angle))
+
+    # Sort by score descending, then by angle for consistent tiebreaking
+    visibility_scores.sort(key=lambda x: (-x[1], x[2]))
+    return [idx for idx, _, _ in visibility_scores]
+
+
+def _get_corner_edge_directions(
+    corner: tuple[float, float],
+    polygon: Polygon2D,
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Get the two edge directions at a corner (pointing away from corner)."""
+    vertices = list(polygon.vertices)
+    try:
+        idx = vertices.index(corner)
+    except ValueError:
+        return ((1, 0), (0, 1))  # Fallback
+
+    n = len(vertices)
+    prev_v = vertices[(idx - 1) % n]
+    next_v = vertices[(idx + 1) % n]
+
+    # Directions along edges (away from corner)
+    d1 = (prev_v[0] - corner[0], prev_v[1] - corner[1])
+    d2 = (next_v[0] - corner[0], next_v[1] - corner[1])
+
+    # Normalize
+    len1 = hypot(d1[0], d1[1])
+    len2 = hypot(d2[0], d2[1])
+    if len1 > 0:
+        d1 = (d1[0] / len1, d1[1] / len1)
+    if len2 > 0:
+        d2 = (d2[0] / len2, d2[1] / len2)
+
+    return (d1, d2)
+
+
+def _angle_to_wall(
+    direction: tuple[float, float],
+    wall_dir: tuple[float, float],
+) -> float:
+    """Calculate angle between a direction and a wall (0-90 degrees)."""
+    # Dot product gives cos of angle
+    dot = abs(direction[0] * wall_dir[0] + direction[1] * wall_dir[1])
+    # Clamp to valid range for acos
+    dot = min(1.0, max(-1.0, dot))
+    angle = np.arccos(dot)
+    # Convert to degrees and ensure 0-90 range
+    return min(degrees(angle), 90.0)
+
+
+def _calculate_corner_aim(
+    corner: tuple[float, float],
+    polygon: Polygon2D,
+    beam_angle: float = 30.0,
+    num_candidates: int = 72,
+    min_wall_angle: float = 15.0,
+) -> tuple[float, float]:
+    """
+    Calculate optimal aim point for a corner-mounted lamp.
+
+    Finds the farthest visible point that isn't too parallel to adjacent walls.
+    This maximizes coverage while avoiding losing cone output to nearby walls.
+    Samples angles relative to the corner bisector for symmetric results.
+
+    Args:
+        corner: The corner position
+        polygon: Room polygon
+        beam_angle: Lamp beam angle in degrees
+        num_candidates: Number of directions to sample
+        min_wall_angle: Minimum angle (degrees) from wall direction to consider
+    """
+    edge_dirs = _get_corner_edge_directions(corner, polygon)
+
+    # Get bisector as reference angle for symmetric sampling
+    inward = _get_corner_inward_direction(corner, polygon)
+    bisector_angle = np.arctan2(inward[1], inward[0])
+
+    best_point = polygon.centroid
+    best_score = -1.0
+
+    # Sample angles symmetrically around the bisector
+    for i in range(num_candidates):
+        # Offset from bisector: -pi to +pi, centered on bisector
+        offset = (i / num_candidates - 0.5) * 2 * np.pi
+        angle = bisector_angle + offset
+        dx, dy = np.cos(angle), np.sin(angle)
+
+        intersection = _ray_polygon_intersection(corner, (dx, dy), polygon)
+        if intersection is None:
+            continue
+
+        # Check angle to both adjacent walls
+        angle_to_wall1 = _angle_to_wall((dx, dy), edge_dirs[0])
+        angle_to_wall2 = _angle_to_wall((dx, dy), edge_dirs[1])
+        min_angle = min(angle_to_wall1, angle_to_wall2)
+
+        # Skip directions too parallel to walls
+        if min_angle < min_wall_angle:
+            continue
+
+        ix, iy = intersection
+        dist = hypot(ix - corner[0], iy - corner[1])
+
+        # Score by distance, with bonus for being far from walls
+        wall_bonus = min_angle / 90.0  # 0 to 1 based on angle from walls
+        score = dist * (0.5 + 0.5 * wall_bonus)
+
+        if score > best_score:
+            best_score = score
+            best_point = intersection
+
+    # If no valid candidates found (all too close to walls), use bisector
+    if best_score < 0:
+        aim = _ray_polygon_intersection(corner, inward, polygon)
+        if aim is not None:
+            return aim
+
+    return best_point
+
+
+def _get_corner_inward_direction(
+    corner: tuple[float, float],
+    polygon: Polygon2D,
+) -> tuple[float, float]:
+    """
+    Calculate the inward-pointing bisector direction at a corner.
+
+    Returns a unit vector pointing into the room interior.
+    """
+    # Find the vertex index
+    vertices = list(polygon.vertices)
+    try:
+        idx = vertices.index(corner)
+    except ValueError:
+        # Corner not in vertices, fall back to centroid direction
+        cx, cy = polygon.centroid
+        dx, dy = cx - corner[0], cy - corner[1]
+        length = hypot(dx, dy)
+        return (dx / length, dy / length) if length > 0 else (0, 0)
+
+    n = len(vertices)
+    prev_v = vertices[(idx - 1) % n]
+    next_v = vertices[(idx + 1) % n]
+
+    # Vectors along edges from corner
+    v1 = (prev_v[0] - corner[0], prev_v[1] - corner[1])
+    v2 = (next_v[0] - corner[0], next_v[1] - corner[1])
+
+    # Normalize
+    len1 = hypot(v1[0], v1[1])
+    len2 = hypot(v2[0], v2[1])
+    if len1 > 0:
+        v1 = (v1[0] / len1, v1[1] / len1)
+    if len2 > 0:
+        v2 = (v2[0] / len2, v2[1] / len2)
+
+    # Bisector is sum of unit vectors
+    bx, by = v1[0] + v2[0], v1[1] + v2[1]
+    length = hypot(bx, by)
+    if length > 0:
+        bx, by = bx / length, by / length
+    else:
+        # Edges are parallel, use perpendicular
+        bx, by = -v1[1], v1[0]
+
+    # Test if bisector points inward (into polygon)
+    test_point = (corner[0] + bx * 0.01, corner[1] + by * 0.01)
+    if not polygon.contains_point(*test_point):
+        # Flip direction
+        bx, by = -bx, -by
+
+    return (bx, by)
+
+
+def new_lamp_position_corner(
+    lamp_idx: int,
+    polygon: Polygon2D,
+    existing_positions: list[tuple[float, float]] | None = None,
+    beam_angle: float = 30.0,
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """
+    Get position and aim point for corner placement.
+
+    Places lamps at corners ranked by visibility. When all corners are occupied,
+    delegates to edge placement.
+
+    Args:
+        lamp_idx: 1-based lamp index
+        polygon: Room polygon
+        existing_positions: Positions of already-placed lamps
+        beam_angle: Lamp beam angle in degrees
+
+    Returns:
+        (position, aim_point) tuple
+    """
+    if existing_positions is None:
+        existing_positions = []
+
+    corners = get_corners(polygon)
+    ranked_indices = _rank_corners_by_visibility(polygon)
+
+    # Find available corners (not already occupied)
+    # Use larger tolerance to account for inward offset applied to positions
+    occupied_corners = set()
+    for ex, ey in existing_positions:
+        for i, (cx, cy) in enumerate(corners):
+            if hypot(ex - cx, ey - cy) < 0.2:
+                occupied_corners.add(i)
+
+    available = [i for i in ranked_indices if i not in occupied_corners]
+
+    if available:
+        # Place at best available corner
+        corner_idx = available[0]
+        corner = corners[corner_idx]
+
+        # Get inward direction using corner bisector
+        inward = _get_corner_inward_direction(corner, polygon)
+        offset = 0.05
+        position = (corner[0] + offset * inward[0], corner[1] + offset * inward[1])
+
+        # Verify position is inside polygon; if not, reduce offset
+        if not polygon.contains_point(*position):
+            offset = 0.01
+            position = (corner[0] + offset * inward[0], corner[1] + offset * inward[1])
+
+        # Final check - if still outside, use corner directly
+        if not polygon.contains_point(*position):
+            position = corner
+
+        aim = _calculate_corner_aim(position, polygon, beam_angle)
+        return position, aim
+    else:
+        # All corners occupied, delegate to edge placement
+        return new_lamp_position_edge(lamp_idx, polygon, existing_positions)
+
+
+# =============================================================================
+# SECTION 3: Edge Placement
+# =============================================================================
+
+
+def get_edge_centers(polygon: Polygon2D) -> list[tuple[float, float, int]]:
+    """
+    Return (x, y, edge_index) for each edge midpoint.
+    """
+    centers = []
+    for i, ((x1, y1), (x2, y2)) in enumerate(polygon.edges):
+        mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+        centers.append((mx, my, i))
+    return centers
+
+
+def _calculate_edge_perpendicular_aim(
+    lamp_pos: tuple[float, float],
+    edge_index: int,
+    polygon: Polygon2D,
+) -> tuple[float, float]:
+    """
+    Find where perpendicular ray from edge intersects opposite boundary.
+
+    The perpendicular direction points inward (opposite of outward normal).
+    """
+    # Get inward normal (opposite of outward normal)
+    outward = polygon.edge_normals[edge_index]
+    inward = (-outward[0], -outward[1])
+
+    # Cast ray from lamp position in inward direction
+    intersection = _ray_polygon_intersection(lamp_pos, inward, polygon, edge_index)
+
+    if intersection:
+        return intersection
+    else:
+        # Fallback to centroid if no intersection found
+        return polygon.centroid
+
+
+def _calculate_sightline_distance(
+    position: tuple[float, float],
+    edge_idx: int,
+    polygon: Polygon2D,
+) -> float:
+    """Calculate the perpendicular sightline distance from edge position into room."""
+    aim = _calculate_edge_perpendicular_aim(position, edge_idx, polygon)
+    return hypot(aim[0] - position[0], aim[1] - position[1])
+
+
+def new_lamp_position_edge(
+    lamp_idx: int,
+    polygon: Polygon2D,
+    existing_positions: list[tuple[float, float]] | None = None,
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """
+    Get position and aim point for edge placement.
+
+    Places lamps at edge centers, prioritizing long sightlines (perpendicular distance
+    across the room). When all edge centers are occupied, uses farthest-point sampling.
+
+    Args:
+        lamp_idx: 1-based lamp index
+        polygon: Room polygon
+        existing_positions: Positions of already-placed lamps
+
+    Returns:
+        (position, aim_point) tuple
+    """
+    if existing_positions is None:
+        existing_positions = []
+
+    edge_centers = get_edge_centers(polygon)
+
+    # Find available edge centers (not already occupied)
+    occupied_centers = set()
+    for ex, ey in existing_positions:
+        for i, (mx, my, _) in enumerate(edge_centers):
+            if hypot(ex - mx, ey - my) < 0.2:
+                occupied_centers.add(i)
+
+    available = [i for i in range(len(edge_centers)) if i not in occupied_centers]
+
+    if available:
+        # Score each available center by sightline distance (longer = better)
+        best_idx = None
+        best_score = -1.0
+
+        for i in available:
+            mx, my, edge_idx = edge_centers[i]
+
+            # Calculate sightline distance (how far the lamp can see perpendicular to wall)
+            sightline = _calculate_sightline_distance((mx, my), edge_idx, polygon)
+            score = sightline
+
+            if score > best_score:
+                best_score = score
+                best_idx = i
+
+        mx, my, edge_idx = edge_centers[best_idx]
+
+        # Offset slightly inward from edge
+        inward = (-polygon.edge_normals[edge_idx][0], -polygon.edge_normals[edge_idx][1])
+        offset = 0.05
+        position = (mx + offset * inward[0], my + offset * inward[1])
+
+        aim = _calculate_edge_perpendicular_aim(position, edge_idx, polygon)
+        return position, aim
+    else:
+        # All edge centers occupied, use farthest-point sampling along perimeter
+        return _farthest_perimeter_position(polygon, existing_positions)
+
+
+def _farthest_perimeter_position(
+    polygon: Polygon2D,
+    existing_positions: list[tuple[float, float]],
+    num_samples_per_edge: int = 20,
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """
+    Find the perimeter position farthest from existing lamps.
+    """
+    best_pos = None
+    best_edge_idx = 0
+    best_score = -1.0
+
+    for edge_idx, ((x1, y1), (x2, y2)) in enumerate(polygon.edges):
+        for i in range(num_samples_per_edge):
+            t = (i + 0.5) / num_samples_per_edge
+            px, py = x1 + t * (x2 - x1), y1 + t * (y2 - y1)
+
+            if existing_positions:
+                min_dist = min(hypot(ex - px, ey - py) for ex, ey in existing_positions)
+            else:
+                min_dist = float("inf")
+
+            if min_dist > best_score:
+                best_score = min_dist
+                best_pos = (px, py)
+                best_edge_idx = edge_idx
+
+    # Offset slightly inward
+    inward = (-polygon.edge_normals[best_edge_idx][0], -polygon.edge_normals[best_edge_idx][1])
+    offset = 0.05
+    position = (best_pos[0] + offset * inward[0], best_pos[1] + offset * inward[1])
+
+    aim = _calculate_edge_perpendicular_aim(position, best_edge_idx, polygon)
+    return position, aim
+
+
+# =============================================================================
+# SECTION 4: Visibility / Aiming
+# =============================================================================
+
+
 def farthest_visible_point(
     origin: tuple[float, float], polygon: "Polygon2D", num_divisions: int = 50
 ) -> tuple[float, float]:
@@ -515,14 +624,6 @@ def farthest_visible_point(
 
     The returned point has a clear line-of-sight from origin (doesn't cross any
     polygon edges). Used for aiming tilted lamps toward the farthest reachable point.
-
-    Args:
-        origin: The (x, y) position of the lamp
-        polygon: The polygon boundary
-        num_divisions: Resolution for internal grid sampling
-
-    Returns:
-        The (x, y) coordinates of the farthest visible point
     """
     # Find which edge the origin sits on (to exclude from intersection tests)
     origin_edge_idx = _find_origin_edge(origin, polygon)
@@ -568,3 +669,560 @@ def farthest_visible_point(
                 best_point = (cx, cy)
 
     return best_point
+
+
+def _calculate_cone_coverage(
+    origin: tuple[float, float],
+    target: tuple[float, float],
+    polygon: Polygon2D,
+    beam_half_angle: float,
+    num_rays: int = 9,
+) -> float:
+    """
+    Returns 0.0-1.0 indicating what fraction of cone is unobstructed.
+
+    Samples rays across cone width, counts how many reach target distance without
+    hitting walls first.
+    """
+    ox, oy = origin
+    tx, ty = target
+    target_dist = hypot(tx - ox, ty - oy)
+
+    if target_dist < 1e-6:
+        return 1.0
+
+    # Angle to target
+    center_angle = np.arctan2(ty - oy, tx - ox)
+    half_angle_rad = np.radians(beam_half_angle)
+
+    origin_edge_idx = _find_origin_edge(origin, polygon)
+    unobstructed = 0
+
+    for i in range(num_rays):
+        # Spread rays across cone
+        t = (i / (num_rays - 1)) - 0.5 if num_rays > 1 else 0
+        ray_angle = center_angle + t * 2 * half_angle_rad
+
+        dx, dy = np.cos(ray_angle), np.sin(ray_angle)
+        intersection = _ray_polygon_intersection(origin, (dx, dy), polygon, origin_edge_idx)
+
+        if intersection:
+            ix, iy = intersection
+            intersect_dist = hypot(ix - ox, iy - oy)
+            # Ray is unobstructed if it reaches at least as far as target
+            if intersect_dist >= target_dist * 0.95:
+                unobstructed += 1
+        else:
+            unobstructed += 1
+
+    return unobstructed / num_rays
+
+
+# =============================================================================
+# SECTION 5: Tilt Utilities
+# =============================================================================
+
+
+def calculate_tilt(lamp_z: float, lamp_xy: tuple[float, float], aim_xy: tuple[float, float]) -> float:
+    """
+    Calculate tilt angle from vertical.
+
+    Args:
+        lamp_z: Height of lamp above floor
+        lamp_xy: (x, y) position of lamp
+        aim_xy: (x, y) position of aim point on floor
+
+    Returns:
+        Tilt angle in degrees. 0 = straight down, 90 = horizontal.
+    """
+    h_dist = hypot(aim_xy[0] - lamp_xy[0], aim_xy[1] - lamp_xy[1])
+    v_dist = lamp_z  # aiming at floor (z=0)
+
+    if v_dist <= 0:
+        return 90.0
+    return degrees(atan(h_dist / v_dist))
+
+
+def clamp_aim_to_max_tilt(
+    lamp_pos: tuple[float, float, float],
+    aim_point: tuple[float, float],
+    max_tilt: float,
+    polygon: Polygon2D,
+) -> tuple[float, float]:
+    """
+    If calculated tilt > max_tilt, recalculate aim point at max_tilt angle.
+
+    Ensures the adjusted aim point stays inside the polygon.
+
+    Args:
+        lamp_pos: (x, y, z) lamp position
+        aim_point: Current (x, y) aim point on floor
+        max_tilt: Maximum allowed tilt angle in degrees
+        polygon: Room polygon
+
+    Returns:
+        Adjusted (x, y) aim point
+    """
+    lx, ly, lz = lamp_pos
+    ax, ay = aim_point
+
+    current_tilt = calculate_tilt(lz, (lx, ly), (ax, ay))
+
+    if current_tilt <= max_tilt:
+        return aim_point
+
+    # Calculate new aim point at max_tilt
+    # horizontal distance = z * tan(max_tilt)
+    max_h_dist = lz * np.tan(np.radians(max_tilt))
+
+    # Direction from lamp to original aim
+    dx, dy = ax - lx, ay - ly
+    current_h_dist = hypot(dx, dy)
+
+    if current_h_dist < 1e-6:
+        return aim_point
+
+    # Scale direction to max_h_dist
+    scale = max_h_dist / current_h_dist
+    new_ax = lx + dx * scale
+    new_ay = ly + dy * scale
+
+    # Ensure aim is inside polygon
+    if not polygon.contains_point(new_ax, new_ay):
+        # Find intersection with polygon boundary along this direction
+        intersection = _ray_polygon_intersection(
+            (lx, ly), (dx, dy), polygon, _find_origin_edge((lx, ly), polygon)
+        )
+        if intersection:
+            ix, iy = intersection
+            # Use point just inside boundary
+            new_ax = lx + (ix - lx) * 0.95
+            new_ay = ly + (iy - ly) * 0.95
+
+    return (new_ax, new_ay)
+
+
+def apply_tilt(
+    lamp_pos: tuple[float, float, float],
+    aim_point: tuple[float, float],
+    polygon: Polygon2D,
+    tilt: float,
+) -> tuple[float, float]:
+    """
+    Force exact tilt angle, keeping the aim direction the same.
+
+    Args:
+        lamp_pos: (x, y, z) lamp position
+        aim_point: Current (x, y) aim point
+        polygon: Room polygon
+        tilt: Exact tilt angle in degrees
+
+    Returns:
+        New (x, y) aim point at specified tilt
+    """
+    lx, ly, lz = lamp_pos
+    ax, ay = aim_point
+
+    # Direction from lamp to original aim
+    dx, dy = ax - lx, ay - ly
+    current_h_dist = hypot(dx, dy)
+
+    if current_h_dist < 1e-6:
+        # Original aim is directly below lamp, pick arbitrary direction
+        dx, dy = 1.0, 0.0
+        current_h_dist = 1.0
+
+    # Normalize direction
+    dx, dy = dx / current_h_dist, dy / current_h_dist
+
+    # Calculate horizontal distance for exact tilt
+    h_dist = lz * np.tan(np.radians(tilt))
+
+    new_ax = lx + dx * h_dist
+    new_ay = ly + dy * h_dist
+
+    # Ensure aim is inside polygon
+    if not polygon.contains_point(new_ax, new_ay):
+        intersection = _ray_polygon_intersection(
+            (lx, ly), (dx, dy), polygon, _find_origin_edge((lx, ly), polygon)
+        )
+        if intersection:
+            ix, iy = intersection
+            new_ax = lx + (ix - lx) * 0.95
+            new_ay = ly + (iy - ly) * 0.95
+
+    return (new_ax, new_ay)
+
+
+# =============================================================================
+# SECTION 6: Downlight Placement (existing)
+# =============================================================================
+
+
+def get_lamp_positions(num_lamps, x, y, num_divisions=100):
+    """
+    Generate a list of (x,y) positions for lamps given room dimensions and
+    the number of lamps desired.
+    """
+    lst = [new_lamp_position(i + 1, x, y) for i in range(num_lamps)]
+    return np.array(lst).T
+
+
+def new_lamp_position(lamp_idx, x, y, num_divisions=100):
+    """
+    Get the default position for an additional new lamp.
+    x and y are the room dimensions. lamp_idx is 1-based.
+    """
+    xp = np.linspace(0, x, num_divisions + 1)
+    yp = np.linspace(0, y, num_divisions + 1)
+    xidx, yidx = _get_idx(lamp_idx, num_divisions=num_divisions)
+    return xp[xidx], yp[yidx]
+
+
+def _get_idx(num_points, num_divisions=100):
+    grid_size = (num_divisions, num_divisions)
+    return _place_points(grid_size, num_points)[-1]
+
+
+def _place_points(grid_size, num_points):
+    M, N = grid_size
+    grid = np.zeros(grid_size)
+    points = []
+
+    # Place the first point in the center
+    center = (M // 2, N // 2)
+    points.append(center)
+    grid[center] = 1
+
+    for _ in range(1, num_points):
+        max_dist = -1
+        best_point = None
+
+        for x in range(M):
+            for y in range(N):
+                if grid[x, y] == 0:
+                    min_point_dist = min(
+                        [np.sqrt((x - px) ** 2 + (y - py) ** 2) for px, py in points]
+                    )
+                    min_boundary_dist = min(x, M - 1 - x, y, N - 1 - y)
+                    min_dist = min(min_point_dist, min_boundary_dist)
+
+                    if min_dist > max_dist:
+                        max_dist = min_dist
+                        best_point = (x, y)
+
+        if best_point:
+            points.append(best_point)
+            grid[best_point] = 1
+    return points
+
+
+def new_lamp_position_polygon(lamp_idx: int, polygon: "Polygon2D", num_divisions: int = 100):
+    """
+    Get the position for lamp number `lamp_idx` inside a polygon.
+    Uses farthest-point sampling: maximizes distance to existing lamps and polygon edges.
+
+    lamp_idx is 1-based.
+    """
+    x_min, y_min, x_max, y_max = polygon.bounding_box
+
+    # Create candidate grid inside polygon
+    xp = np.linspace(x_min, x_max, num_divisions + 1)
+    yp = np.linspace(y_min, y_max, num_divisions + 1)
+    xx, yy = np.meshgrid(xp, yp, indexing="ij")
+    all_points = np.column_stack([xx.ravel(), yy.ravel()])
+
+    # Filter to points inside polygon
+    inside_mask = polygon.contains_points(all_points)
+    inside_points = all_points[inside_mask]
+
+    if len(inside_points) == 0:
+        return polygon.centroid
+
+    # Get indices for this lamp using farthest-point sampling
+    chosen_idx = _place_points_in_polygon(inside_points, polygon, lamp_idx)
+    return tuple(inside_points[chosen_idx])
+
+
+def _place_points_in_polygon(candidates: np.ndarray, polygon: "Polygon2D", num_points: int):
+    """
+    Place points inside polygon using rectangular decomposition + farthest-point sampling.
+    Returns the index of the last placed point.
+    """
+    rect_centroids = _get_rectangle_centroids(polygon)
+
+    chosen_indices = []
+    chosen_set = set()
+
+    for lamp_num in range(num_points):
+        if lamp_num < len(rect_centroids):
+            best_idx = _find_closest_candidate(candidates, rect_centroids[lamp_num])
+            while best_idx in chosen_set and lamp_num < len(rect_centroids):
+                lamp_num += 1
+                if lamp_num < len(rect_centroids):
+                    best_idx = _find_closest_candidate(candidates, rect_centroids[lamp_num])
+                else:
+                    best_idx = None
+                    break
+
+        if lamp_num >= len(rect_centroids) or best_idx is None or best_idx in chosen_set:
+            best_idx = None
+            best_min_dist = -1.0
+
+            for i, pt in enumerate(candidates):
+                if i in chosen_set:
+                    continue
+
+                if not chosen_indices:
+                    min_dist = _distance_to_polygon_boundary(pt, polygon)
+                else:
+                    min_dist_to_chosen = min(
+                        np.sqrt((pt[0] - candidates[j, 0]) ** 2 + (pt[1] - candidates[j, 1]) ** 2)
+                        for j in chosen_indices
+                    )
+                    min_dist_to_edge = _distance_to_polygon_boundary(pt, polygon)
+                    min_dist = min(min_dist_to_chosen, min_dist_to_edge)
+
+                if min_dist > best_min_dist:
+                    best_min_dist = min_dist
+                    best_idx = i
+
+        if best_idx is not None:
+            chosen_indices.append(best_idx)
+            chosen_set.add(best_idx)
+
+    return chosen_indices[-1] if chosen_indices else 0
+
+
+def _median_distance_to_edges(point: np.ndarray, polygon: "Polygon2D") -> float:
+    """Calculate median distance from point to all polygon edges."""
+    px, py = point
+    dists = []
+
+    for (x1, y1), (x2, y2) in polygon.edges:
+        dist = _point_to_segment_distance(px, py, x1, y1, x2, y2)
+        dists.append(dist)
+
+    return float(np.median(dists))
+
+
+def _get_rectangle_centroids(polygon: "Polygon2D") -> list[tuple[float, float]]:
+    """
+    Decompose an axis-aligned rectilinear polygon into rectangles and return their centroids.
+    Returns centroids sorted by rectangle area (largest first).
+    """
+    reflex_vertices = _find_reflex_vertices(polygon)
+
+    if not reflex_vertices:
+        return [polygon.centroid]
+
+    rectangles = _decompose_rectilinear(polygon, reflex_vertices)
+
+    if not rectangles:
+        return [polygon.centroid]
+
+    centroids_with_area = []
+    for x1, y1, x2, y2 in rectangles:
+        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+        area = abs((x2 - x1) * (y2 - y1))
+        centroids_with_area.append((area, (cx, cy)))
+
+    centroids_with_area.sort(reverse=True, key=lambda x: x[0])
+    return [c for _, c in centroids_with_area]
+
+
+def _find_reflex_vertices(polygon: "Polygon2D") -> list[tuple[float, float]]:
+    """Find vertices where the interior angle is > 180° (concave/reflex vertices)."""
+    reflex = []
+    n = len(polygon.vertices)
+
+    for i in range(n):
+        prev_v = polygon.vertices[(i - 1) % n]
+        curr_v = polygon.vertices[i]
+        next_v = polygon.vertices[(i + 1) % n]
+
+        cross = (curr_v[0] - prev_v[0]) * (next_v[1] - curr_v[1]) - \
+                (curr_v[1] - prev_v[1]) * (next_v[0] - curr_v[0])
+
+        if cross < 0:
+            reflex.append(curr_v)
+
+    return reflex
+
+
+def _decompose_rectilinear(
+    polygon: "Polygon2D", reflex_vertices: list[tuple[float, float]]
+) -> list[tuple[float, float, float, float]]:
+    """
+    Decompose a rectilinear polygon into rectangles using cuts from reflex vertices.
+    Returns list of (x1, y1, x2, y2) tuples for each rectangle.
+    """
+    x_min, y_min, x_max, y_max = polygon.bounding_box
+
+    x_coords = {x_min, x_max}
+    y_coords = {y_min, y_max}
+
+    for vx, vy in polygon.vertices:
+        x_coords.add(vx)
+        y_coords.add(vy)
+
+    x_coords = sorted(x_coords)
+    y_coords = sorted(y_coords)
+
+    rectangles = []
+    for i in range(len(x_coords) - 1):
+        for j in range(len(y_coords) - 1):
+            x1, x2 = x_coords[i], x_coords[i + 1]
+            y1, y2 = y_coords[j], y_coords[j + 1]
+
+            cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+            if polygon.contains_point(cx, cy):
+                rectangles.append((x1, y1, x2, y2))
+
+    return rectangles
+
+
+def _find_closest_candidate(candidates: np.ndarray, target: tuple[float, float]) -> int:
+    """Find the index of the candidate point closest to the target."""
+    tx, ty = target
+    dists = (candidates[:, 0] - tx) ** 2 + (candidates[:, 1] - ty) ** 2
+    return int(np.argmin(dists))
+
+
+# =============================================================================
+# SECTION 7: Legacy Perimeter (existing, keep for compatibility)
+# =============================================================================
+
+
+def new_lamp_position_perimeter(lamp_idx, x, y, num_divisions=100):
+    """
+    Place lamps as far apart as possible *on the perimeter* of the rectangle.
+    Order: corner, opposite corner, remaining two corners, then farthest-point
+    sampling along the edges.
+
+    lamp_idx is 1-based.
+    """
+    xp = np.linspace(0, x, num_divisions + 1)
+    yp = np.linspace(0, y, num_divisions + 1)
+
+    xidx, yidx = _get_perimeter_idx(lamp_idx, num_divisions=num_divisions)
+    return xp[xidx], yp[yidx]
+
+
+def _get_perimeter_idx(num_points, num_divisions=100):
+    return _place_points_on_perimeter(num_divisions, num_points)[-1]
+
+
+def _place_points_on_perimeter(num_divisions, num_points):
+    """
+    Return a list of (xidx, yidx) integer indices on the perimeter of a
+    (num_divisions+1) x (num_divisions+1) lattice.
+    """
+    if num_points < 1:
+        raise ValueError("num_points must be >= 1")
+
+    M = N = num_divisions + 1
+    candidates = []
+    for xi in range(M):
+        candidates.append((xi, 0))
+        candidates.append((xi, N - 1))
+    for yi in range(1, N - 1):
+        candidates.append((0, yi))
+        candidates.append((M - 1, yi))
+    candidates = list(dict.fromkeys(candidates))
+
+    corners = [(0, 0), (M - 1, N - 1), (0, N - 1), (M - 1, 0)]
+    points = []
+    chosen = set()
+
+    for c in corners:
+        if len(points) >= num_points:
+            return points
+        points.append(c)
+        chosen.add(c)
+
+    for _ in range(len(points), num_points):
+        best = None
+        best_d = -1.0
+
+        for p in candidates:
+            if p in chosen:
+                continue
+            d = min(np.hypot(p[0] - q[0], p[1] - q[1]) for q in points)
+            if d > best_d:
+                best_d = d
+                best = p
+
+        points.append(best)
+        chosen.add(best)
+
+    return points
+
+
+def new_lamp_position_polygon_perimeter(
+    lamp_idx: int, polygon: "Polygon2D", num_divisions: int = 100
+):
+    """
+    Place lamps along the perimeter of a polygon, as far apart as possible.
+    Starts with vertices, then fills in along edges.
+
+    lamp_idx is 1-based.
+    """
+    candidates = _get_polygon_perimeter_points(polygon, num_divisions)
+
+    if lamp_idx == 1:
+        return candidates[0]
+
+    chosen_idx = _place_points_on_polygon_perimeter(candidates, lamp_idx)
+    return candidates[chosen_idx]
+
+
+def _get_polygon_perimeter_points(polygon: "Polygon2D", num_divisions: int) -> list:
+    """Generate evenly-spaced points along polygon perimeter."""
+    total_perimeter = sum(polygon.edge_lengths)
+    points_per_unit = num_divisions / total_perimeter
+
+    candidates = []
+    for (x1, y1), (x2, y2) in polygon.edges:
+        edge_length = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        num_edge_points = max(2, int(edge_length * points_per_unit))
+
+        for i in range(num_edge_points):
+            t = i / num_edge_points
+            x = x1 + t * (x2 - x1)
+            y = y1 + t * (y2 - y1)
+            candidates.append((x, y))
+
+    return candidates
+
+
+def _place_points_on_polygon_perimeter(candidates: list, num_points: int) -> int:
+    """
+    Place points on polygon perimeter using farthest-point sampling.
+    Returns the index of the last placed point.
+    """
+    chosen_indices = [0]
+    chosen_set = {0}
+
+    for _ in range(1, num_points):
+        best_idx = None
+        best_min_dist = -1.0
+
+        for i, pt in enumerate(candidates):
+            if i in chosen_set:
+                continue
+
+            min_dist = min(
+                np.sqrt((pt[0] - candidates[j][0]) ** 2 + (pt[1] - candidates[j][1]) ** 2)
+                for j in chosen_indices
+            )
+
+            if min_dist > best_min_dist:
+                best_min_dist = min_dist
+                best_idx = i
+
+        if best_idx is not None:
+            chosen_indices.append(best_idx)
+            chosen_set.add(best_idx)
+
+    return chosen_indices[-1]

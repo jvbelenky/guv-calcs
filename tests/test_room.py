@@ -105,6 +105,152 @@ class TestRoomLampManagement:
         assert len(room_with_lamp.lamps) == 0
 
 
+class TestLampPlacementModes:
+    """Tests for lamp placement modes (downlight, tilted, corner, edge)."""
+
+    def test_place_lamp_downlight_mode(self, basic_room):
+        """Downlight mode places lamp in center pointing down."""
+        basic_room.place_lamp("aerolamp", mode="downlight")
+        lamp = list(basic_room.lamps.values())[0]
+        # Should be roughly centered
+        assert 2.5 < lamp.position[0] < 3.5
+        assert 1.5 < lamp.position[1] < 2.5
+        # Aiming straight down (aim x,y equals position x,y)
+        assert lamp.aimx == pytest.approx(lamp.position[0], abs=0.01)
+        assert lamp.aimy == pytest.approx(lamp.position[1], abs=0.01)
+
+    def test_place_lamp_tilted_mode_deprecated(self, basic_room):
+        """Tilted mode is deprecated but still works."""
+        with pytest.warns(DeprecationWarning, match="mode='tilted' is deprecated"):
+            basic_room.place_lamp("aerolamp", mode="tilted")
+        lamp = list(basic_room.lamps.values())[0]
+        # Should be near edge/corner
+        x, y = lamp.position[:2]
+        near_edge = (x < 0.5 or x > 5.5 or y < 0.5 or y > 3.5)
+        assert near_edge
+        # Aiming inward (different from position)
+        assert lamp.aimx != pytest.approx(lamp.position[0], abs=0.1) or \
+               lamp.aimy != pytest.approx(lamp.position[1], abs=0.1)
+
+    def test_place_lamp_corner_mode(self, basic_room):
+        """Corner mode places lamp at corners."""
+        basic_room.place_lamp("aerolamp", mode="corner")
+        lamp = list(basic_room.lamps.values())[0]
+        x, y = lamp.position[:2]
+        # Should be near a corner
+        near_corner = (x < 0.5 or x > 5.5) and (y < 0.5 or y > 3.5)
+        assert near_corner
+
+    def test_place_lamp_edge_mode(self, basic_room):
+        """Edge mode places lamp at edge centers."""
+        basic_room.place_lamp("aerolamp", mode="edge")
+        lamp = list(basic_room.lamps.values())[0]
+        x, y = lamp.position[:2]
+        # Should be near an edge center (mid x or mid y, but on edge)
+        near_x_mid = 2.5 < x < 3.5
+        near_y_mid = 1.5 < y < 2.5
+        on_edge = (y < 0.5 or y > 3.5) or (x < 0.5 or x > 5.5)
+        assert (near_x_mid or near_y_mid) and on_edge
+
+    def test_place_lamp_corner_mode_fills_all_corners(self, basic_room):
+        """Corner mode fills all 4 corners before switching to edges."""
+        for _ in range(4):
+            basic_room.place_lamp("aerolamp", mode="corner")
+        positions = [(l.position[0], l.position[1]) for l in basic_room.lamps.values()]
+        # All 4 should be at different corners
+        corners_hit = set()
+        for x, y in positions:
+            if x < 0.5 and y < 0.5:
+                corners_hit.add("bl")
+            elif x > 5.5 and y < 0.5:
+                corners_hit.add("br")
+            elif x < 0.5 and y > 3.5:
+                corners_hit.add("tl")
+            elif x > 5.5 and y > 3.5:
+                corners_hit.add("tr")
+        assert len(corners_hit) == 4
+
+    def test_place_lamp_with_tilt(self, basic_room):
+        """Tilt parameter forces exact tilt angle."""
+        basic_room.place_lamp("aerolamp", mode="corner", tilt=30.0)
+        lamp = list(basic_room.lamps.values())[0]
+        # Calculate actual tilt
+        from guv_calcs.lamp_helpers import calculate_tilt
+        actual_tilt = calculate_tilt(
+            lamp.position[2],
+            (lamp.position[0], lamp.position[1]),
+            (lamp.aimx, lamp.aimy)
+        )
+        assert actual_tilt == pytest.approx(30.0, abs=2.0)
+
+    def test_place_lamp_with_max_tilt(self, basic_room):
+        """Max_tilt parameter limits tilt angle."""
+        basic_room.place_lamp("aerolamp", mode="corner", max_tilt=20.0)
+        lamp = list(basic_room.lamps.values())[0]
+        from guv_calcs.lamp_helpers import calculate_tilt
+        actual_tilt = calculate_tilt(
+            lamp.position[2],
+            (lamp.position[0], lamp.position[1]),
+            (lamp.aimx, lamp.aimy)
+        )
+        assert actual_tilt <= 20.5  # Small tolerance
+
+    def test_place_lamp_invalid_mode(self, basic_room):
+        """Invalid mode raises ValueError."""
+        with pytest.raises(ValueError, match="invalid lamp placement mode"):
+            basic_room.place_lamp("aerolamp", mode="invalid")
+
+    def test_place_lamp_horizontal_mode(self, basic_room):
+        """Horizontal mode places lamp at edge aimed straight horizontally."""
+        basic_room.place_lamp("aerolamp", mode="horizontal")
+        lamp = list(basic_room.lamps.values())[0]
+        # Lamp Z should equal aim Z (horizontal)
+        assert lamp.position[2] == pytest.approx(lamp.aimz, abs=0.001)
+
+
+class TestPolygonRoomPlacement:
+    """Tests for lamp placement in polygon rooms."""
+
+    def test_polygon_room_corner_mode(self):
+        """Corner mode works with polygon rooms."""
+        room = Room(polygon=Polygon2D.rectangle(6.0, 4.0), z=2.7)
+        room.place_lamp("aerolamp", mode="corner")
+        lamp = list(room.lamps.values())[0]
+        x, y = lamp.position[:2]
+        # Should be near a corner
+        near_corner = (x < 0.5 or x > 5.5) and (y < 0.5 or y > 3.5)
+        assert near_corner
+
+    def test_polygon_room_edge_mode(self):
+        """Edge mode works with polygon rooms."""
+        room = Room(polygon=Polygon2D.rectangle(6.0, 4.0), z=2.7)
+        room.place_lamp("aerolamp", mode="edge")
+        lamp = list(room.lamps.values())[0]
+        # Should be inside room
+        assert room.scene.dim.polygon.contains_point(lamp.position[0], lamp.position[1])
+
+    def test_l_shaped_room_corner_mode(self):
+        """Corner mode works with L-shaped polygon rooms."""
+        l_shape = Polygon2D(vertices=(
+            (0.0, 0.0), (6.0, 0.0), (6.0, 2.0),
+            (3.0, 2.0), (3.0, 4.0), (0.0, 4.0)
+        ))
+        room = Room(polygon=l_shape, z=2.7)
+        # L-shape has 6 vertices but only 5 convex corners (excludes reflex vertex at (3,2))
+        for _ in range(5):
+            room.place_lamp("aerolamp", mode="corner")
+        assert len(room.lamps) == 5
+        # All lamps should be inside room
+        for lamp in room.lamps.values():
+            x, y = lamp.position[:2]
+            inside = l_shape.contains_point(x, y)
+            # Or very close to boundary (offset)
+            from guv_calcs.lamp_helpers import _distance_to_polygon_boundary
+            import numpy as np
+            near_boundary = _distance_to_polygon_boundary(np.array([x, y]), l_shape) < 0.2
+            assert inside or near_boundary
+
+
 class TestRoomZoneManagement:
     """Tests for calc zone management in Room."""
 
