@@ -508,3 +508,158 @@ class TestLampPlacerAPI:
             result = placer.place(mode, lamp_idx=1)
             assert result.position is not None
             assert result.aim is not None
+
+
+class TestFixtureAwarePlacement:
+    """Tests for fixture-aware lamp placement offsets."""
+
+    def test_ceiling_offset_from_housing_height(self):
+        """Lamp with housing_height should be placed at least that far below ceiling."""
+        from guv_calcs import Lamp
+        from guv_calcs.lamp_placement import LampPlacer
+
+        # Create lamp with known housing dimensions
+        lamp = Lamp.from_keyword(
+            "aerolamp",
+            housing_width=0.2,
+            housing_length=0.2,
+            housing_height=0.1,
+        )
+        placer = LampPlacer.for_room(x=5, y=5, z=3)
+        placer.place_lamp(lamp, mode="downlight")
+
+        # Lamp z should be ceiling - (housing_height + margin)
+        # With housing_height=0.1, offset = 0.1 + 0.02 = 0.12
+        expected_max_z = 3 - 0.12
+        assert lamp.z <= expected_max_z + 0.001
+
+    def test_wall_clearance_from_fixture_width(self):
+        """Lamp with fixture dimensions should be offset based on 3D diagonal for rotation safety."""
+        from guv_calcs import Lamp
+        from guv_calcs.lamp_placement import LampPlacer
+
+        lamp = Lamp.from_keyword(
+            "aerolamp",
+            housing_width=0.3,
+            housing_length=0.2,
+            housing_height=0.1,
+        )
+        placer = LampPlacer.for_room(x=5, y=5, z=3)
+        placer.place_lamp(lamp, mode="corner")
+
+        # 3D diagonal = sqrt(0.3² + 0.2² + 0.1²) ≈ 0.374
+        # wall_clearance = 0.374/2 * 1.1 * 1.42 ≈ 0.29
+        x, y = lamp.x, lamp.y
+        corners = [(0, 0), (5, 0), (5, 5), (0, 5)]
+        min_dist = min(np.hypot(x - cx, y - cy) for cx, cy in corners)
+        assert min_dist >= 0.28
+
+    def test_default_clearance_no_fixture(self):
+        """Lamp without fixture dimensions uses default clearances."""
+        from guv_calcs import Lamp
+        from guv_calcs.lamp_placement import LampPlacer
+
+        # Create lamp without housing dimensions
+        lamp = Lamp.from_keyword("aerolamp")
+        # Ensure no housing dimensions
+        assert lamp.fixture.housing_height == 0.0 or not lamp.fixture.has_dimensions
+
+        placer = LampPlacer.for_room(x=5, y=5, z=3)
+        placer.place_lamp(lamp, mode="downlight")
+
+        # Default offset is 0.1
+        expected_z = 3 - 0.1
+        assert lamp.z == pytest.approx(expected_z, abs=0.01)
+
+    def test_explicit_offset_overrides_fixture(self):
+        """Explicit offset parameter should override fixture-derived value."""
+        from guv_calcs import Lamp
+        from guv_calcs.lamp_placement import LampPlacer
+
+        lamp = Lamp.from_keyword(
+            "aerolamp",
+            housing_height=0.1,  # Would give offset=0.12
+        )
+        placer = LampPlacer.for_room(x=5, y=5, z=3)
+        placer.place_lamp(lamp, mode="downlight", offset=0.2)
+
+        # Explicit offset=0.2 should be used
+        expected_z = 3 - 0.2
+        assert lamp.z == pytest.approx(expected_z, abs=0.001)
+
+    def test_explicit_wall_clearance_overrides(self):
+        """Explicit wall_clearance parameter should override fixture-derived value."""
+        from guv_calcs import Lamp
+        from guv_calcs.lamp_placement import LampPlacer
+
+        lamp = Lamp.from_keyword(
+            "aerolamp",
+            housing_width=0.3,
+            housing_length=0.2,
+        )
+        placer = LampPlacer.for_room(x=5, y=5, z=3)
+        placer.place_lamp(lamp, mode="corner", wall_clearance=0.4)
+
+        # With explicit wall_clearance=0.4, position should be at least 0.4 from corner
+        x, y = lamp.x, lamp.y
+        corners = [(0, 0), (5, 0), (5, 5), (0, 5)]
+        min_dist = min(np.hypot(x - cx, y - cy) for cx, cy in corners)
+        assert min_dist >= 0.39
+
+    def test_downlight_ceiling_offset(self):
+        """Downlight mode should also use fixture housing_height for ceiling offset."""
+        from guv_calcs import Lamp
+        from guv_calcs.lamp_placement import LampPlacer
+
+        lamp = Lamp.from_keyword(
+            "aerolamp",
+            housing_height=0.15,
+        )
+        placer = LampPlacer.for_room(x=5, y=5, z=3)
+        placer.place_lamp(lamp, mode="downlight")
+
+        # With housing_height=0.15, offset = 0.15 + 0.02 = 0.17
+        expected_max_z = 3 - 0.17
+        assert lamp.z <= expected_max_z + 0.001
+
+    def test_edge_wall_clearance(self):
+        """Edge placement should use fixture dimensions for wall offset."""
+        from guv_calcs import Lamp
+        from guv_calcs.lamp_placement import LampPlacer
+
+        lamp = Lamp.from_keyword(
+            "aerolamp",
+            housing_width=0.2,
+            housing_length=0.2,
+            housing_height=0.1,
+        )
+        placer = LampPlacer.for_room(x=5, y=5, z=3)
+        placer.place_lamp(lamp, mode="edge")
+
+        # 3D diagonal = sqrt(0.2² + 0.2² + 0.1²) ≈ 0.3
+        # wall_clearance = 0.3/2 * 1.1 * 1.42 ≈ 0.23
+        x, y = lamp.x, lamp.y
+        # Position should be at least 0.22 from any edge
+        assert x >= 0.22 and x <= 4.78
+        assert y >= 0.22 and y <= 4.78
+
+    def test_asymmetric_fixture(self):
+        """Fixture with different width/length uses 3D diagonal for rotation-safe clearance."""
+        from guv_calcs import Lamp
+        from guv_calcs.lamp_placement import LampPlacer
+
+        lamp = Lamp.from_keyword(
+            "aerolamp",
+            housing_width=0.4,
+            housing_length=0.2,
+            housing_height=0.1,
+        )
+        placer = LampPlacer.for_room(x=5, y=5, z=3)
+        placer.place_lamp(lamp, mode="corner")
+
+        # 3D diagonal = sqrt(0.4² + 0.2² + 0.1²) ≈ 0.458
+        # wall_clearance = 0.458/2 * 1.1 * 1.42 ≈ 0.358
+        x, y = lamp.x, lamp.y
+        corners = [(0, 0), (5, 0), (5, 5), (0, 5)]
+        min_dist = min(np.hypot(x - cx, y - cy) for cx, cy in corners)
+        assert min_dist >= 0.35

@@ -118,13 +118,17 @@ class LampPlacer:
 
     def _place_corner(self, idx: int, **kwargs) -> PlacementResult:
         beam_angle = kwargs.get("beam_angle", 30.0)
+        wall_offset = kwargs.get("wall_offset", 0.05)
         (x, y), (aim_x, aim_y) = new_lamp_position_corner(
-            idx, self.polygon, self._existing, beam_angle=beam_angle
+            idx, self.polygon, self._existing, beam_angle=beam_angle, wall_offset=wall_offset
         )
         return PlacementResult(position=(x, y), aim=(aim_x, aim_y))
 
     def _place_edge(self, idx: int, **kwargs) -> PlacementResult:
-        (x, y), (aim_x, aim_y) = new_lamp_position_edge(idx, self.polygon, self._existing)
+        wall_offset = kwargs.get("wall_offset", 0.05)
+        (x, y), (aim_x, aim_y) = new_lamp_position_edge(
+            idx, self.polygon, self._existing, wall_offset=wall_offset
+        )
         return PlacementResult(position=(x, y), aim=(aim_x, aim_y))
 
     def _place_horizontal(self, idx: int, **kwargs) -> PlacementResult:
@@ -137,7 +141,8 @@ class LampPlacer:
         mode: str = "downlight",
         tilt: float = None,
         max_tilt: float = None,
-        offset: float = 0.1,
+        offset: float = None,
+        wall_clearance: float = None,
     ):
         """
         Position and aim a lamp, returning it for chaining.
@@ -147,7 +152,11 @@ class LampPlacer:
             mode: Placement mode ("downlight", "corner", "edge", "horizontal")
             tilt: Force exact tilt angle in degrees (0=down, 90=horizontal)
             max_tilt: Maximum allowed tilt angle in degrees
-            offset: Distance below ceiling to place lamp (default 0.1)
+            offset: Distance below ceiling to place lamp. If None, calculated from
+                fixture.housing_height + 0.02 margin (minimum 0.05).
+            wall_clearance: Distance from walls for corner/edge modes. If None,
+                calculated from fixture diagonal to account for rotation when aiming
+                (minimum 0.05).
 
         Returns:
             The lamp object for method chaining
@@ -155,11 +164,34 @@ class LampPlacer:
         if self.z is None:
             raise ValueError("z must be set to use place_lamp (use for_room or for_dims)")
 
+        # Calculate ceiling offset from fixture if not specified
+        if offset is None:
+            fixture = getattr(lamp, "fixture", None)
+            if fixture is not None and fixture.housing_height > 0:
+                offset = fixture.housing_height + 0.02
+                offset = max(offset, 0.05)
+            else:
+                offset = 0.1  # Default when no fixture dimensions
+
+        # Calculate wall clearance from fixture dimensions
+        if wall_clearance is None:
+            fixture = getattr(lamp, "fixture", None)
+            if fixture is not None and fixture.has_dimensions:
+                # When tilted, housing_height contributes to horizontal extent
+                # Use 3D diagonal plus safety margin for axis-aligned bounding box expansion
+                w, l, h = fixture.housing_width, fixture.housing_length, fixture.housing_height
+                diagonal_3d = (w**2 + l**2 + h**2) ** 0.5
+                # Half-diagonal * 1.1 for AABB safety; * sqrt(2) for corner bisector offset
+                wall_clearance = diagonal_3d / 2 * 1.1 * 1.42
+                wall_clearance = max(wall_clearance, 0.05)
+            else:
+                wall_clearance = 0.05  # Default when no fixture dimensions
+
         idx = len(self._existing) + 1
         beam_angle = self._get_beam_angle(lamp)
         mode_lower = mode.lower()
 
-        result = self.place(mode_lower, idx, beam_angle=beam_angle)
+        result = self.place(mode_lower, idx, beam_angle=beam_angle, wall_offset=wall_clearance)
 
         lamp_z = self.z - offset
         lamp.move(result.position[0], result.position[1], lamp_z)
@@ -578,6 +610,7 @@ def new_lamp_position_corner(
     polygon: Polygon2D,
     existing_positions: list[tuple[float, float]] | None = None,
     beam_angle: float = 30.0,
+    wall_offset: float = 0.05,
 ) -> tuple[tuple[float, float], tuple[float, float]]:
     """
     Get position and aim point for corner placement.
@@ -590,6 +623,7 @@ def new_lamp_position_corner(
         polygon: Room polygon
         existing_positions: Positions of already-placed lamps
         beam_angle: Lamp beam angle in degrees
+        wall_offset: Distance to offset from corner (default 0.05)
 
     Returns:
         (position, aim_point) tuple
@@ -617,11 +651,11 @@ def new_lamp_position_corner(
 
         # Get inward direction using corner bisector
         inward = _get_corner_inward_direction(corner, polygon)
-        position = _offset_inward(corner, inward, offset=0.05)
+        position = _offset_inward(corner, inward, offset=wall_offset)
 
         # Verify position is inside polygon; if not, reduce offset
         if not polygon.contains_point(*position):
-            position = _offset_inward(corner, inward, offset=0.01)
+            position = _offset_inward(corner, inward, offset=min(wall_offset, 0.01))
 
         # Final check - if still outside, use corner directly
         if not polygon.contains_point(*position):
@@ -631,7 +665,7 @@ def new_lamp_position_corner(
         return position, aim
     else:
         # All corners occupied, delegate to edge placement
-        return new_lamp_position_edge(lamp_idx, polygon, existing_positions)
+        return new_lamp_position_edge(lamp_idx, polygon, existing_positions, wall_offset=wall_offset)
 
 
 # =============================================================================
@@ -688,6 +722,7 @@ def new_lamp_position_edge(
     lamp_idx: int,
     polygon: Polygon2D,
     existing_positions: list[tuple[float, float]] | None = None,
+    wall_offset: float = 0.05,
 ) -> tuple[tuple[float, float], tuple[float, float]]:
     """
     Get position and aim point for edge placement.
@@ -699,6 +734,7 @@ def new_lamp_position_edge(
         lamp_idx: 1-based lamp index
         polygon: Room polygon
         existing_positions: Positions of already-placed lamps
+        wall_offset: Distance to offset from edge (default 0.05)
 
     Returns:
         (position, aim_point) tuple
@@ -737,23 +773,22 @@ def new_lamp_position_edge(
 
         # Offset slightly inward from edge
         inward = (-polygon.edge_normals[edge_idx][0], -polygon.edge_normals[edge_idx][1])
-        position = _offset_inward((mx, my), inward, offset=0.05)
+        position = _offset_inward((mx, my), inward, offset=wall_offset)
 
         aim = _calculate_edge_perpendicular_aim(position, edge_idx, polygon)
         return position, aim
     else:
         # All edge centers occupied, use farthest-point sampling along perimeter
-        return _farthest_perimeter_position(polygon, existing_positions)
+        return _farthest_perimeter_position(polygon, existing_positions, wall_offset=wall_offset)
 
 
 def _farthest_perimeter_position(
     polygon: Polygon2D,
     existing_positions: list[tuple[float, float]],
     num_samples_per_edge: int = 20,
+    wall_offset: float = 0.05,
 ) -> tuple[tuple[float, float], tuple[float, float]]:
-    """
-    Find the perimeter position farthest from existing lamps.
-    """
+    """Find the perimeter position farthest from existing lamps."""
     best_pos = None
     best_edge_idx = 0
     best_score = -1.0
@@ -775,7 +810,7 @@ def _farthest_perimeter_position(
 
     # Offset slightly inward
     inward = (-polygon.edge_normals[best_edge_idx][0], -polygon.edge_normals[best_edge_idx][1])
-    position = _offset_inward(best_pos, inward, offset=0.05)
+    position = _offset_inward(best_pos, inward, offset=wall_offset)
 
     aim = _calculate_edge_perpendicular_aim(position, best_edge_idx, polygon)
     return position, aim
