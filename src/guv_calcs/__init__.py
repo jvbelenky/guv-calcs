@@ -1,6 +1,5 @@
 from .room import Room
 from .lamp import Lamp
-from .lamp_surface import LampSurface
 from .lamp_type import LampType, GUVType
 from .calc_zone import CalcVol, CalcPlane
 from .polygon import Polygon2D
@@ -17,7 +16,6 @@ from ._version import __version__
 __all__ = [
     "Room",
     "Lamp",
-    "LampSurface",
     "LampType",
     "GUVType",
     "CalcVol",
@@ -36,8 +34,6 @@ __all__ = [
     "convert_length",
     "convert_time",
     "LampPlacer",
-    "new_lamp_position",
-    "get_lamp_positions",
     "read_export_file",
     "file_to_zone",
 ]
