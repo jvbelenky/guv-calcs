@@ -259,7 +259,6 @@ def generate_report(self, fname=None):
                 "Tilt",
                 "Surface Length",
                 "Surface Width",
-                "Fixture Depth",
                 "Scaling factor",
             ]
         ]
@@ -279,7 +278,6 @@ def generate_report(self, fname=None):
                     fmt(lamp.bank),
                     fmt(lamp.surface.length),
                     fmt(lamp.surface.width),
-                    fmt(lamp.surface.depth),
                     fmt(lamp.scaling_factor),
                 ]
             ]

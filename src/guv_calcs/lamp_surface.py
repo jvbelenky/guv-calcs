@@ -1,8 +1,12 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
 import numpy as np
 from .units import convert_units, LengthUnits
-from .lamp_orientation import LampOrientation
 from .lamp_surface_plotter import LampSurfacePlotter
 from .intensity_map import IntensityMap
+
+if TYPE_CHECKING:
+    from .lamp_geometry import LampGeometry
 
 
 class LampSurface:
@@ -10,10 +14,9 @@ class LampSurface:
 
     def __init__(
         self,
-        pose: "LampOrientation",
         width: float | None = None,
         length: float | None = None,
-        depth: float = 0.0,
+        height: float | None = None,
         units: "LengthUnits" = LengthUnits.METERS,
         source_density: int = 1,
         intensity_map=None,
@@ -21,14 +24,18 @@ class LampSurface:
         # Track user-provided values (None means user didn't specify)
         self._user_width = width
         self._user_length = length
+        self._user_height = height   
+        self._user_units = units
 
         # Working values (0.0 if user didn't specify and no IES loaded yet)
         self.width = width if width is not None else 0.0
         self.length = length if length is not None else 0.0
-        self.depth = depth
+        self.height = height if height is not None else 0.0
         self.units = LengthUnits.from_any(units)
 
-        self._pose = pose
+        # Back-reference to geometry container (set via set_geometry)
+        self._geometry: "LampGeometry | None" = None
+
         self._source_density = source_density
         self._intensity_map = IntensityMap(intensity_map)
 
@@ -44,13 +51,29 @@ class LampSurface:
 
         self.plotter = LampSurfacePlotter(self)
 
+    # ---- Geometry back-reference ----
+
+    def set_geometry(self, geometry: "LampGeometry"):
+        """Set back-reference to parent LampGeometry. Called by LampGeometry.__init__."""
+        self._geometry = geometry
+        self._invalidate_grid()
+
+    @property
+    def _pose(self):
+        """Access pose via geometry back-reference."""
+        if self._geometry is None:
+            raise RuntimeError("LampSurface requires geometry back-reference. Use LampGeometry.")
+        return self._geometry.pose
+
     # ---- Public properties with lazy computation ----
 
     @property
     def position(self):
         """Surface center position in world coordinates."""
+        if self._geometry is None:
+            return np.array([0.0, 0.0, 0.0])
         if self._position_dirty:
-            self._position_cache = self._calculate_surface_position()
+            self._position_cache = self._geometry.surface_position
             self._position_dirty = False
         return self._position_cache
 
@@ -126,39 +149,40 @@ class LampSurface:
         self.length = length if length is not None else 0.0
         self._invalidate_grid()
 
-    def set_depth(self, depth):
-        """Change the z axis offset of the surface."""
-        self.depth = depth
-        self._invalidate_position()
+    def set_height(self, height):
+        """Set z-axis extent of luminous opening (for 3D sources like cylinders)."""
+        if height is not None and height < 0:
+            raise ValueError(f"height must be non-negative, got {height}")
+        self._user_height = height
+        self.height = height if height is not None else 0.0
+        self._invalidate_grid()
 
     def set_units(self, units):
         """Set units and convert all values."""
         units = LengthUnits.from_any(units)
         if units != self.units:
-            self.width, self.length, self.depth = convert_units(
-                self.units, units, self.width, self.length, self.depth
+            self.width, self.length = convert_units(
+                self.units, units, self.width, self.length
             )
             self.units = units
             self._invalidate_grid()
 
-    def set_pose(self, pose):
-        """Update the lamp pose/orientation."""
-        self._pose = pose
-        self._invalidate_position()
-        self._invalidate_grid()
-
     def set_ies(self, ies):
         """
-        Populate length/width/units values from an IESFile object.
-        Only overwrites width/length if user didn't explicitly provide them.
+        Populate length/width/height/units values from an IESFile object.
+        Only overwrites values if user didn't explicitly provide them.
         """
         if ies is not None:
             units_dict = {1: LengthUnits.FEET, 2: LengthUnits.METERS}
             self.units = units_dict[ies.units]
+
             if self._user_width is None:
-                self.width = ies.width
+                self.width = abs(ies.width)
             if self._user_length is None:
-                self.length = ies.length
+                self.length = abs(ies.length)
+            if self._user_height is None:
+                self.height = abs(ies.height)
+
             self._invalidate_grid()
 
     def load_intensity_map(self, intensity_map):
@@ -174,12 +198,14 @@ class LampSurface:
         return {
             "width": self.width,
             "length": self.length,
-            "depth": self.depth,
+            "height": self.height,
             "units": self.units.value if hasattr(self.units, "value") else str(self.units),
             "source_density": self._source_density,
             "intensity_map": orig.tolist() if orig is not None else None,
             "_user_width": self._user_width,
             "_user_length": self._user_length,
+            "_user_height": self._user_height,
+            "_user_units": self._user_units,
         }
 
     # ---- Plotting delegates ----
@@ -214,7 +240,7 @@ class LampSurface:
         num_u, num_v = self._get_num_points()
         self._num_points_cache = (num_u, num_v)
 
-        if self._source_density:
+        if self._source_density and self._geometry is not None:
             u_points, v_points = self._generate_raw_points(num_u, num_v)
             vv, uu = np.meshgrid(v_points, u_points)
 
@@ -232,12 +258,6 @@ class LampSurface:
             num_u, num_v, self._generate_raw_points
         )
         self._grid_dirty = False
-
-    def _calculate_surface_position(self):
-        """Compute the surface center based on the lamp's depth and aim direction."""
-        direction = self._pose.aim_point - self._pose.position
-        normal = direction / np.linalg.norm(direction)
-        return self._pose.position + normal * self.depth
 
     def _make_points_1d(self, extent, num_points):
         """Generate evenly-spaced points centered at origin."""

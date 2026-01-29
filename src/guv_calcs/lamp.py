@@ -10,10 +10,12 @@ from .spectrum import Spectrum
 from .lamp_surface import LampSurface
 from .lamp_plotter import LampPlotter
 from .lamp_orientation import LampOrientation
+from .lamp_geometry import LampGeometry
+from .fixture import Fixture
 from .trigonometry import to_polar
 from .safety import get_tlvs
 from .lamp_type import GUVType, LampUnitType, LampType
-from .units import LengthUnits
+from .units import LengthUnits, convert_length
 
 VALID_LAMPS = [
     "aerolamp",
@@ -42,12 +44,11 @@ class Lamp:
         A unique identifier for the lamp object.
     name: str, default=None
         Non-unique display name for the lamp. If None set by lamp_id
-    filename: Path, str
-        If None or not pathlike, `filedata` must not be None
     filedata: Path or bytes, default=None
-        Set by `filename` if filename is pathlike.
+        Photometric data file (IES format).
     x, y, z: floats, default=[0,0,0]
-        Sets initial position of lamp in cartesian space
+        Sets initial position of lamp in cartesian space. This is the photometric
+        center / luminous surface center.
     angle: float, default=0
         Sets lamps initial rotation on its own axis.
     aimx, aimy, aimz: floats, default=[0,0,z-1]
@@ -59,65 +60,62 @@ class Lamp:
         Optional label for principle GUV wavelength. Set from guv_type if guv_type
         is not "Other".
     spectra_source: Path or bytes, default=None
-        Optional. Data source for spectra. May be a filepath, a binary stream,
-        or a dict where the first value contains values of wavelengths, and
-        the second value contains values of relative intensity.
-    width, length, depth: floats, default=[None, None]
-        x-axis and y-axis source extent, plus fixture depth in the units
-        provided. If not provided, will be read from the .ies file. Note that
-        the ies file interface labels `depth` as `height` instead.
+        Optional. Data source for spectra.
+    width, length, height: floats, default=None
+        x, y, and z axes of luminous opening. If not provided, read from IES file.
     units: str or int in [1, 2] or None
-        `feet` or `meters`. 1 corresponds to feet, 2 to `meters`. If not
-        provided, will be read from .ies file, and lengt and width parameters
-        will be ignored.
-    source_density: int or float, default=1
-        parameter that determines the fineness of the source discretization.
-        Grid size follows fibonacci sequence. For an approximately square
-        source, SD=1 => 1x1 grid, SD=2 => 3x3 grid, SD=3 => 5x5 grid. This is
-        to ensure that a center point is always present while ensuring evenness
-        of grid size.
+        `feet` or `meters`. 1=feet, 2=meters. Defaults to IES file value.
+    housing_width, housing_length, housing_height: floats, default=None
+        Physical fixture housing dimensions. Defaults to luminous surface size.
+    housing_units: str or LengthUnits, default=None
+        Units for housing dimensions. If different from `units`, dimensions are converted.
+        Accepts: "meters", "feet", "inches", "centimeters", "yards" (or aliases).
+        Defaults to same as `units`.    
+    source_density: int, default=1
+        Parameter that determines the fineness of the source discretization.
     intensity_map: arraylike
-        A relative intensity map for non-uniform sources. Must be of the same
-        size as the grid generated
-    enabled: bool, defualt=True
-        Determines if lamp participates in calculations. A lamp may be created
-        and added to a room, but disabled.
-
+        A relative intensity map for non-uniform sources.
+    enabled: bool, default=True
+        Determines if lamp participates in calculations.
+    scaling_factor: float, default=1.0
+        Scaling factor for photometry.
     """
 
     def __init__(
         self,
-        lamp_id=None,
-        name=None,
+        lamp_id: str | None = None,
+        name: str | None = None,
         filedata=None,
-        filename=None,
         x: float = 0.0,
         y: float = 0.0,
         z: float = 0.0,
         angle: float = 0.0,
-        aimx=None,
-        aimy=None,
-        aimz=None,
+        aimx: float | None = None,
+        aimy: float | None = None,
+        aimz: float | None = None,
         intensity_units=None,
         guv_type=None,
-        wavelength=None,
+        wavelength: int | float | None = None,
         spectra_source=None,
-        width=None,
-        length=None,
-        depth=0.0,
+        width: float | None = None,
+        length: float | None = None,
+        height: float | None = None,        
         units=LengthUnits.METERS,
+        housing_width: float | None = None,
+        housing_length: float | None = None,
+        housing_height: float | None = None,
+        housing_units=None,
         source_density: int = 1,
         intensity_map=None,
         enabled: bool = True,
         scaling_factor: float = 1.0,
     ):
-
         self._lamp_id = lamp_id or "Lamp"
         self.name = str(self.lamp_id) if name is None else str(name)
         self.enabled = True if enabled is None else enabled
 
-        # Position / orientation
-        self.pose = LampOrientation(
+        # Create pose (orientation)
+        pose = LampOrientation(
             x=x,
             y=y,
             z=z,
@@ -127,23 +125,51 @@ class Lamp:
             aimz=z - 1.0 if aimz is None else aimz,
         )
 
-        # Surface data
-        self.surface = LampSurface(
+        # Create surface (luminous area)
+        surface = LampSurface(
             width=width,
             length=length,
-            depth=depth,
+            height=height,
             units=units,
             source_density=source_density,
             intensity_map=intensity_map,
-            pose=self.pose,
         )
+
+        # Convert housing dimensions if specified in different units
+        h_units = LengthUnits.from_any(housing_units) if housing_units else LengthUnits.from_any(units)
+        target_units = LengthUnits.from_any(units)
+        if h_units != target_units:
+            if housing_width is not None:
+                housing_width = convert_length(h_units, target_units, housing_width)
+            if housing_length is not None:
+                housing_length = convert_length(h_units, target_units, housing_length)
+            if housing_height is not None:
+                housing_height = convert_length(h_units, target_units, housing_height)
+
+        # Create initial fixture with placeholder dimensions (will be finalized after IES load)
+        fixture = Fixture(
+            housing_width=housing_width if housing_width is not None else (width or 0.0),
+            housing_length=housing_length if housing_length is not None else (length or 0.0),
+            housing_height=housing_height or 0.0,
+        )
+
+        # Create geometry container (owns pose, surface, fixture)
+        self.geometry = LampGeometry(pose, surface, fixture)
 
         # Photometric data
         self.ies = None
         self._base_ies = None
-        self._scaling_factor = scaling_factor # used in load_ies
+        self._scaling_factor = scaling_factor  # used in load_ies
         self.load_ies(filedata)
-        
+
+        # Finalize fixture with surface dimensions if user didn't specify housing
+        if housing_width is None and housing_length is None:
+            self.geometry._fixture = Fixture(
+                housing_width=self.surface.width,
+                housing_length=self.surface.length,
+                housing_height=housing_height or 0.0,
+            )
+
         # Spectral data
         self.spectra_source = spectra_source
         self.lamp_type = LampType(
@@ -152,7 +178,7 @@ class Lamp:
             _wavelength=wavelength,
         )
 
-        # mW/sr or uW/cm2 typically; not directly specified in .ies file and they can vary for GUV fixtures
+        # mW/sr or uW/cm2 typically; not directly specified in .ies file
         self.intensity_units = LampUnitType.from_any(intensity_units)
 
         # plotting
@@ -189,10 +215,28 @@ class Lamp:
             f"units={self.intensity_units.label}, "
             f"scaling_factor={self.scaling_factor}, "
             f"{self.lamp_type.__repr__()}, "
-            f"surface=({self.surface.width}×{self.surface.length}×{self.surface.depth} {self.surface.units}), "
+            f"surface=({self.surface.width}×{self.surface.length} {self.surface.units}), "
+            f"fixture=(housing_h={self.fixture.housing_height}), "
             f"source_density={self.surface.source_density}, "
             f"enabled={self.enabled})"
         )
+
+    # --- Geometry access (backward compatible) ---
+
+    @property
+    def pose(self):
+        """Lamp orientation/position (via geometry)."""
+        return self.geometry.pose
+
+    @property
+    def surface(self):
+        """Luminous surface (via geometry)."""
+        return self.geometry.surface
+
+    @property
+    def fixture(self):
+        """Physical fixture housing."""
+        return self.geometry.fixture
 
     @property
     def lamp_id(self) -> str:
@@ -208,10 +252,9 @@ class Lamp:
 
     def to_dict(self):
         """
-        save just the minimum number of parameters required to re-instantiate the lamp
-        Returns dict. If filename is not None, saves dict as json.
+        Save the minimum parameters required to re-instantiate the lamp.
+        Returns dict.
         """
-
         data = {}
         data["lamp_id"] = self.lamp_id
         data["name"] = self.name
@@ -227,11 +270,10 @@ class Lamp:
         data["wavelength"] = self.wavelength
 
         # Store user-provided values (None if not explicitly set)
-        # These will be used during from_dict to restore user intent
         data["width"] = self.surface._user_width
         data["length"] = self.surface._user_length
-        data["depth"] = self.surface.depth
-        data["units"] = self.surface.units
+        data["height"] = self.surface._user_height
+        data["units"] = self.surface._user_units
         data["source_density"] = self.surface.source_density
         data["scaling_factor"] = float(self.scaling_factor)
 
@@ -242,8 +284,11 @@ class Lamp:
 
         data["enabled"] = True
 
-        # Include surface dict for new format (also preserves backward compat via flat fields)
+        # Include surface dict for new format
         data["surface"] = self.surface.to_dict()
+
+        # Include fixture dict
+        data["fixture"] = self.fixture.to_dict()
 
         filedata = self.save_ies(original=True)
         data["filedata"] = filedata.decode() if filedata is not None else None
@@ -258,9 +303,11 @@ class Lamp:
 
     @classmethod
     def from_dict(cls, data):
-        """initialize class from dict"""
+        """Initialize lamp from dict, with migration support for old formats."""
         keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
-        if data["spectra"] is not None:
+
+        # Handle spectra
+        if data.get("spectra") is not None:
             data["spectra_source"] = {}
             for k, v in data["spectra"].items():
                 if isinstance(v, str):
@@ -269,17 +316,34 @@ class Lamp:
                     lst = v
                 data["spectra_source"][k] = np.array(lst)
 
-        # Handle different serialization formats for user intent tracking
+        # --- Migration: handle old 'depth' field ---
+        if "depth" in data and "fixture" not in data and "height" not in data:
+            # Old format: 'depth' was on LampSurface
+            legacy_depth = data.pop("depth", 0.0)
+            # Housing defaults to luminous surface size
+            data.setdefault("housing_width", data.get("width"))
+            data.setdefault("housing_length", data.get("length"))
+            data.setdefault("housing_height", legacy_depth)
+
+        # --- Handle new format with nested fixture dict ---
+        if "fixture" in data:
+            fixture_data = data["fixture"]
+            # Ignore legacy 'height' and 'mount_type' fields from fixture
+            data["housing_width"] = fixture_data.get("housing_width", 0.0)
+            data["housing_length"] = fixture_data.get("housing_length", 0.0)
+            data["housing_height"] = fixture_data.get("housing_height", 0.0)
+
+        # Handle surface dict for user intent tracking
         if "surface" in data:
-            # New format - extract user values from surface dict
             surface_data = data["surface"]
             data["width"] = surface_data.get("_user_width")
             data["length"] = surface_data.get("_user_length")
+            data["height"] = surface_data.get("_user_height")
         else:
-            # Legacy format (before user intent tracking) - don't pass width/length
-            # so that IES values will be used (treats old files as if user never set these)
+            # Legacy format - don't pass width/length so IES values will be used
             data.pop("width", None)
             data.pop("length", None)
+            data.pop("height", None)
 
         return cls(**{k: v for k, v in data.items() if k in keys})
 
@@ -364,7 +428,7 @@ class Lamp:
             self.aimz,
             self.surface.length,  # only for nearfield
             self.surface.width,  # ""
-            self.surface.depth,
+            self.surface.height,  # luminous z-extent
             self.surface.units,  # ""
             self.surface.source_density,  # ""
             map_fingerprint,
@@ -485,58 +549,50 @@ class Lamp:
         return self.pose.bank
 
     def move(self, x=None, y=None, z=None):
-        """Designate lamp position in cartesian space"""
-        self.pose = self.pose.move(x=x, y=y, z=z)
-        self.surface.set_pose(self.pose)
+        """Designate lamp position in cartesian space."""
+        self.geometry.move(x=x, y=y, z=z)
         return self
 
     def rotate(self, angle):
-        """designate lamp orientation with respect to its z axis"""
-        self.pose = self.pose.rotate(angle)
-        self.surface.set_pose(self.pose)
+        """Designate lamp orientation with respect to its z axis."""
+        self.geometry.rotate(angle)
         return self
 
     def aim(self, x=None, y=None, z=None):
-        """aim lamp at a point in cartesian space"""
-        self.pose = self.pose.aim(x=x, y=y, z=z)
-        self.surface.set_pose(self.pose)
+        """Aim lamp at a point in cartesian space."""
+        self.geometry.aim(x=x, y=y, z=z)
         return self
 
     def transform_to_world(self, coords, scale=1, which="cartesian"):
         """
-        transform coordinates from the lamp frame of reference to the world
-        Scale parameter should generally only be used for photometric_coords
+        Transform coordinates from the lamp frame of reference to the world.
+        Scale parameter should generally only be used for photometric_coords.
         """
         return self.pose.transform_to_world(coords, scale=scale, which=which)
 
     def transform_to_lamp(self, coords, which="cartesian"):
-        """
-        transform coordinates to align with the lamp's coordinates
-        """
+        """Transform coordinates to align with the lamp's coordinates."""
         return self.pose.transform_to_lamp(coords, which=which)
 
     def set_orientation(self, orientation, dimensions=None, distance=None):
         """
-        set orientation/heading.
-        alternative to setting aim point with `aim`
-        distinct from rotation; applies to a tilted lamp. to rotate a lamp along its axis,
-        use the `rotate` method
+        Set orientation/heading.
+        Alternative to setting aim point with `aim`.
+        Distinct from rotation; applies to a tilted lamp.
         """
-        self.pose = self.pose.recalculate_aim_point(
+        self.geometry.recalculate_aim_point(
             heading=orientation, dimensions=dimensions, distance=distance
         )
-        self.surface.set_pose(self.pose)
         return self
 
     def set_tilt(self, tilt, dimensions=None, distance=None):
         """
-        set tilt/bank
-        alternative to setting aim point with `aim`
+        Set tilt/bank.
+        Alternative to setting aim point with `aim`.
         """
-        self.pose = self.pose.recalculate_aim_point(
+        self.geometry.recalculate_aim_point(
             bank=tilt, dimensions=dimensions, distance=distance
         )
-        self.surface.set_pose(self.pose)
         return self
 
     # ---------------------- Photometry --------------------------------
@@ -748,41 +804,57 @@ class Lamp:
         return self.surface.width
 
     @property
+    def height(self):
+        """Z-extent of luminous opening (for 3D sources). From IES file."""
+        return self.surface.height
+
+    @property
     def depth(self):
-        return self.surface.depth
+        """Backward-compatible alias for housing_height."""
+        return self.fixture.housing_height
 
     def set_source_density(self, source_density):
-        """change source discretization"""
+        """Change source discretization."""
         self.surface.set_source_density(source_density)
 
     def set_units(self, units):
-        """set units"""
+        """Set units for lamp surface and fixture dimensions."""
+        new_units = LengthUnits.from_any(units)
+        old_units = self.surface.units
+
         if self.ies is not None:
             self.ies.update(units=1 if units == "feet" else 2)
         self.surface.set_units(units)
+
+        # Convert fixture dimensions if units changed
+        if old_units != new_units and self.fixture.has_dimensions:
+            hw, hl, hh = convert_length(
+                old_units, new_units,
+                self.fixture.housing_width,
+                self.fixture.housing_length,
+                self.fixture.housing_height,
+            )
+            self.geometry._fixture = Fixture(
+                housing_width=hw,
+                housing_length=hl,
+                housing_height=hh,
+                shape=self.fixture.shape,
+            )
         return self
 
     def set_width(self, width):
-        """change x-axis extent of lamp emissive surface"""
+        """Change x-axis extent of lamp emissive surface."""
         if self.ies is not None:
             self.ies.update(width=width)
         self.surface.set_width(width)
         return self
 
     def set_length(self, length):
-        """change y-axis extent of lamp emissive surface"""
+        """Change y-axis extent of lamp emissive surface."""
         if self.ies is not None:
             self.ies.update(length=length)
         self.surface.set_length(length)
         return self
-
-    def set_depth(self, depth):
-        """
-        TODO: this should actually be decoupled from the ies file, that
-        property is rightly height not depth.
-        change the z-axis offset of where the lamp's emissive surface is
-        """
-        self.surface.set_depth(depth)
 
     # ------------------------ Plotting ------------------------------
 

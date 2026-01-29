@@ -2,11 +2,14 @@ from enum import Enum
 from dataclasses import dataclass, field
 from collections.abc import MutableMapping, Iterator
 from typing import Generic, TypeVar, Optional, Dict, Callable
+import warnings
+
+import numpy as np
+
 from .room_dims import RoomDimensions
 from .lamp import Lamp
 from .calc_zone import CalcZone
 from .reflectance import Surface
-import warnings
 
 
 # todo - integrate this
@@ -25,7 +28,6 @@ class Registry(Generic[T], MutableMapping[str, T]):
 
     base_id = "item"
     expected_type: type | None = None
-    use_bounding_box: bool = False
     on_collision: str = "increment"  # "error" | "overwrite" | "increment"
     dims: Optional[Callable[[], "RoomDimensions"]] = None
     _items: Dict[str, T] = field(default_factory=dict)
@@ -80,54 +82,38 @@ class Registry(Generic[T], MutableMapping[str, T]):
         # Next free number
         return f"{base}-{max_suffix + 1}"
 
-    def _check_position(self, dims, obj, use_bounding_box=False):
-        """
-        Check if an object's dimensions exceed the room's boundaries.
-
-        For polygon rooms:
-        - use_bounding_box=False: check if point is inside the polygon (for lamps)
-        - use_bounding_box=True: check against bounding box (for zones/surfaces)
-        """
-        msg = None
+    def _check_position(self, corners, obj):
+        """Check if all bounding box corners are within room boundaries."""
         room_dims = self.dims()
-
-        if room_dims.is_polygon:
-            x, y, z = dims
-            if use_bounding_box:
-                # Check against bounding box (for zones/surfaces that are rectangular grids)
-                x_min, y_min, x_max, y_max = room_dims.polygon.bounding_box
-                if x > x_max or x < x_min or y > y_max or y < y_min:
-                    msg = f"{obj.name} exceeds room boundaries!"
-                    warnings.warn(msg, stacklevel=2)
-                elif z < 0 or z > room_dims.z:
-                    msg = f"{obj.name} exceeds room boundaries!"
-                    warnings.warn(msg, stacklevel=2)
-            else:
-                # Check if point is inside the polygon (for lamps)
+        for x, y, z in corners:
+            if room_dims.is_polygon:
                 if not room_dims.polygon.contains_point(x, y):
                     msg = f"{obj.name} exceeds room boundaries!"
                     warnings.warn(msg, stacklevel=2)
-                elif z < 0 or z > room_dims.z:
+                    return msg
+                if z < 0 or z > room_dims.z:
                     msg = f"{obj.name} exceeds room boundaries!"
                     warnings.warn(msg, stacklevel=2)
-        else:
-            # Rectangular room - use bounding box check
-            origin, roomdims = room_dims.origin, room_dims.dimensions
-            for coord, pt1, pt2 in zip(dims, origin, roomdims):
-                if coord > pt2 or coord < pt1:
+                    return msg
+            else:
+                origin, dims = room_dims.origin, room_dims.dimensions
+                if not (origin[0] <= x <= dims[0] and
+                        origin[1] <= y <= dims[1] and
+                        origin[2] <= z <= dims[2]):
                     msg = f"{obj.name} exceeds room boundaries!"
                     warnings.warn(msg, stacklevel=2)
-        return msg
+                    return msg
+        return None
 
-    def _extract_dimensions(self, obj: T) -> tuple:
-        """Override to extract position/dimensions from object."""
+    def _extract_dimensions(self, obj: T) -> np.ndarray:
+        """Override to extract bounding box corners (N, 3) array from object."""
         raise NotImplementedError
 
     def check_position(self, obj: T) -> str | None:
         """Check object position against room dimensions."""
         try:
-            dimensions = self._extract_dimensions(obj)
-            return self._check_position(dimensions, obj, use_bounding_box=self.use_bounding_box)
+            corners = self._extract_dimensions(obj)
+            return self._check_position(corners, obj)
         except NotImplementedError:
             return None
 
@@ -183,10 +169,9 @@ class Registry(Generic[T], MutableMapping[str, T]):
 class LampRegistry(Registry["Lamp"]):
     base_id = "Lamp"
     expected_type: type | None = Lamp
-    use_bounding_box: bool = False
 
     def _extract_dimensions(self, lamp):
-        return lamp.position
+        return lamp.geometry.get_bounding_box_corners()
 
     def _validate(self, lamp):
         lamp = super()._validate(lamp)
@@ -203,19 +188,27 @@ class LampRegistry(Registry["Lamp"]):
 class ZoneRegistry(Registry["CalcZone"]):
     base_id = "CalcZone"
     expected_type: type | None = CalcZone
-    use_bounding_box: bool = True
 
     def _extract_dimensions(self, zone):
         x, y, z = zone.coords.T
-        return x.max(), y.max(), z.max()
+        return np.array([
+            [x.min(), y.min(), z.min()], [x.max(), y.min(), z.min()],
+            [x.max(), y.max(), z.min()], [x.min(), y.max(), z.min()],
+            [x.min(), y.min(), z.max()], [x.max(), y.min(), z.max()],
+            [x.max(), y.max(), z.max()], [x.min(), y.max(), z.max()],
+        ])
 
 
 @dataclass
 class SurfaceRegistry(Registry["Surface"]):
     base_id = "Surface"
     expected_type: type | None = Surface
-    use_bounding_box: bool = True
 
     def _extract_dimensions(self, surface):
         x, y, z = surface.plane.coords.T
-        return x.max(), y.max(), z.max()
+        return np.array([
+            [x.min(), y.min(), z.min()], [x.max(), y.min(), z.min()],
+            [x.max(), y.max(), z.min()], [x.min(), y.max(), z.min()],
+            [x.min(), y.min(), z.max()], [x.max(), y.min(), z.max()],
+            [x.max(), y.max(), z.max()], [x.min(), y.max(), z.max()],
+        ])

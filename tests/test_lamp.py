@@ -293,7 +293,6 @@ class TestLampSurface:
 
         assert "width" in surface_dict
         assert "length" in surface_dict
-        assert "depth" in surface_dict
         assert "units" in surface_dict
         assert "source_density" in surface_dict
         assert "_user_width" in surface_dict
@@ -430,13 +429,13 @@ class TestLazyCaching:
         basic_lamp.set_width(0.5)
         assert surface._grid_dirty
 
-    def test_set_depth_invalidates_position(self, basic_lamp):
-        """Setting depth should invalidate position cache."""
+    def test_move_invalidates_position(self, basic_lamp):
+        """Moving lamp should invalidate surface position cache."""
         surface = basic_lamp.surface
         # Ensure position is computed
         _ = surface.position
         assert not surface._position_dirty
 
-        # Set depth should invalidate
-        surface.set_depth(0.1)
+        # Move lamp should invalidate surface position (via geometry)
+        basic_lamp.move(1.0, 2.0, 3.0)
         assert surface._position_dirty
