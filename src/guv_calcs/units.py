@@ -37,6 +37,7 @@ class LengthUnits(UnitEnum):
     FEET = ("feet", 0.3048, ("ft", "foot"))
     INCHES = ("inches", 0.0254, ("in", "inch"))
     CENTIMETERS = ("centimeters", 0.01, ("cm", "centimeter"))
+    MILLIMETERS = ("millimeters", 0.001, ("mm", "millimeter", "milimeter"))
     YARDS = ("yards", 0.9144, ("yard",))
 
     @classmethod
