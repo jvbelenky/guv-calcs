@@ -30,8 +30,10 @@ class RoomPlotter:
         # first delete any extraneous traces
         lamp_ids = list(self.room.lamps.keys())
         aim_ids = [lampid + "_aim" for lampid in lamp_ids]
+        surface_ids = [lampid + "_surface" for lampid in lamp_ids]
+        fixture_ids = [lampid + "_fixture" for lampid in lamp_ids]
         zone_ids = list(self.room.calc_zones.keys())
-        for active_ids in [lamp_ids, aim_ids, zone_ids]:
+        for active_ids in [lamp_ids, aim_ids, surface_ids, fixture_ids, zone_ids]:
             self._remove_traces_by_ids(fig, active_ids)
 
         # plot lamps
@@ -201,11 +203,37 @@ class RoomPlotter:
             showlegend=False,
         )
 
+        # Fixture housing box (only if fixture has dimensions)
+        fixturetrace = None
+        if lamp.fixture.has_dimensions:
+            # Get bounding box corners and convert to room units if needed
+            corners = lamp.geometry.get_bounding_box_corners()
+            # Corners are in surface.units, convert to room.units if different
+            if lamp.surface.units != self.room.units:
+                corners = convert_units(
+                    lamp.surface.units, self.room.units, corners
+                )
+            xf, yf, zf = self._get_box_coords_from_corners(corners)
+            fixturetrace = go.Scatter3d(
+                x=xf,
+                y=yf,
+                z=zf,
+                mode="lines",
+                line=dict(color=lampcolor, width=3),
+                opacity=0.7,
+                name=lamp.name + " fixture",
+                customdata=["lamp_" + lamp.lamp_id + "_fixture"],
+                legendgroup="lamp_" + lamp.lamp_id,
+                showlegend=False,
+            )
+
         traces = [trace.customdata[0] for trace in fig.data]
         if lamptrace.customdata[0] not in traces:
             fig.add_trace(lamptrace)
             fig.add_trace(aimtrace)
             fig.add_trace(surfacetrace)
+            if fixturetrace is not None:
+                fig.add_trace(fixturetrace)
         else:
             self._update_trace_by_id(
                 fig,
@@ -229,6 +257,19 @@ class RoomPlotter:
             )
 
             self._update_trace_by_id(fig, lamp.lamp_id + "_surface", x=xs, y=ys, z=zs)
+
+            if fixturetrace is not None:
+                if "lamp_" + lamp.lamp_id + "_fixture" in traces:
+                    self._update_trace_by_id(
+                        fig,
+                        lamp.lamp_id + "_fixture",
+                        x=xf,
+                        y=yf,
+                        z=zf,
+                        line=dict(color=lampcolor, width=3),
+                    )
+                else:
+                    fig.add_trace(fixturetrace)
         return fig
 
     def _plot_plane(self, zone, fig, select_id=None):
@@ -517,6 +558,28 @@ class RoomPlotter:
             x_coords.extend([vertices[v1][0], vertices[v2][0], None])
             y_coords.extend([vertices[v1][1], vertices[v2][1], None])
             z_coords.extend([vertices[v1][2], vertices[v2][2], None])
+
+        return x_coords, y_coords, z_coords
+
+    def _get_box_coords_from_corners(self, corners):
+        """Generate wireframe coordinates from 8 corner vertices.
+
+        corners: (8, 3) array with vertices ordered as:
+            0: (-x, -y, z_min), 1: (+x, -y, z_min), 2: (+x, +y, z_min), 3: (-x, +y, z_min)
+            4: (-x, -y, z_max), 5: (+x, -y, z_max), 6: (+x, +y, z_max), 7: (-x, +y, z_max)
+        """
+        # Define edges by vertex indices (same as _get_box_coords)
+        edges = [
+            (0, 1), (1, 2), (2, 3), (3, 0),  # Bottom face
+            (4, 5), (5, 6), (6, 7), (7, 4),  # Top face
+            (0, 4), (1, 5), (2, 6), (3, 7),  # Side edges
+        ]
+
+        x_coords, y_coords, z_coords = [], [], []
+        for v1, v2 in edges:
+            x_coords.extend([corners[v1, 0], corners[v2, 0], None])
+            y_coords.extend([corners[v1, 1], corners[v2, 1], None])
+            z_coords.extend([corners[v1, 2], corners[v2, 2], None])
 
         return x_coords, y_coords, z_coords
 
