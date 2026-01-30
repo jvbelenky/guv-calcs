@@ -8,7 +8,9 @@ from .room_dims import RoomDimensions, PolygonRoomDimensions
 from .polygon import Polygon2D
 from .reflectance import ReflectanceManager, Surface
 from .scene import Scene
-from .io import load_room_data, save_room_data, export_room_zip, generate_report
+from .io import parse_guv_file, save_room_data, export_room_zip, generate_report, get_version
+from packaging.version import Version
+from pathlib import Path
 from .safety import PhotStandard, check_lamps, SafetyCheckResult
 from .units import LengthUnits, convert_length
 from .efficacy import Data
@@ -165,9 +167,36 @@ class Room:
 
     @classmethod
     def load(cls, filedata):
-        """load a room from a json object"""
-        dct = load_room_data(filedata)
-        return cls.from_dict(dct)
+        """Load a room from a .guv file, JSON string, or dict."""
+        load_data = parse_guv_file(filedata)
+
+        saved_version = load_data.get("guv-calcs_version", "0.0.0")
+        current_version = get_version(Path(__file__).parent / "_version.py")
+        if saved_version != current_version:
+            warnings.warn(
+                f"File was saved with guv-calcs {saved_version}, "
+                f"current version is {current_version}"
+            )
+
+        room_dict = load_data.get("data", load_data)
+
+        # Migrate legacy schema (< 0.4.33)
+        if Version(saved_version) < Version("0.4.33"):
+            from .reflectance import init_room_surfaces
+            dims = RoomDimensions(
+                x=room_dict.get("x"),
+                y=room_dict.get("y"),
+                z=room_dict.get("z"),
+            )
+            surfaces = init_room_surfaces(
+                dims=dims,
+                reflectances=room_dict.get("reflectances"),
+                x_spacings=room_dict.get("x_spacings"),
+                y_spacings=room_dict.get("y_spacings"),
+            )
+            room_dict["surfaces"] = {k: v.to_dict() for k, v in surfaces.items()}
+
+        return cls.from_dict(room_dict)
 
     @classmethod
     def from_dict(cls, data: dict):

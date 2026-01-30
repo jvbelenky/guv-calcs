@@ -19,76 +19,34 @@ from .room_dims import RoomDimensions
 # -------------- Loading a room from file -------------------
 
 
-def load_room_data(filedata):
-    """
-    TODO: wow this is hideous this should really just be a class method
-    load a room object from json filedata
-    """
-    # from .room import Room
-
-    load_data = _parse_loadfile(filedata)
-    saved_version = load_data["guv-calcs_version"]
-    current_version = get_version(Path(__file__).parent / "_version.py")
-    if saved_version != current_version:
-        msg = f"This file was saved with guv-calcs {saved_version}, while you have {current_version} installed."
-        warnings.warn(msg)
-
-    room_dict = load_data["data"]
-
-    if Version(saved_version) < Version("0.4.33"):
-        from .reflectance import init_room_surfaces
-
-        # reserialize reflective surfaces for older schema versions
-        dims = RoomDimensions(
-            x=room_dict.get("x"),
-            y=room_dict.get("y"),
-            z=room_dict.get("z"),
-        )
-        surfaces = init_room_surfaces(
-            dims=dims,
-            reflectances=room_dict.get("reflectances", None),
-            x_spacings=room_dict.get("x_spacings", None),
-            y_spacings=room_dict.get("y_spacings", None),
-        )
-        room_dict["surfaces"] = {}
-        for key, val in surfaces.items():
-            room_dict["surfaces"][key] = val.to_dict()
-
-    return room_dict
-
-
-def _parse_loadfile(filedata):
-    """
-    validate and parse a loadfile
-    """
-
+def parse_guv_file(filedata):
+    """Parse a .guv file from various input types (path, string, bytes, dict)."""
     if isinstance(filedata, dict):
-        dct = filedata
-    elif isinstance(filedata, (str, bytes, bytearray)):
+        return filedata
+    if isinstance(filedata, (str, bytes, bytearray)):
         try:
-            dct = json.loads(filedata)
+            return json.loads(filedata)
         except json.JSONDecodeError:
-            path = Path(filedata)
-            dct = _load_file(path)
-    elif isinstance(filedata, pathlib.PurePath):
-        dct = _load_file(filedata)
+            # Not JSON string, try as file path
+            return _load_guv_file(Path(filedata))
+    if isinstance(filedata, pathlib.PurePath):
+        return _load_guv_file(filedata)
+    raise TypeError(f"Cannot load room from {type(filedata).__name__}")
 
-    return dct
 
-
-def _load_file(path):
-    """load json from a path"""
-    if path.is_file():
-        if path.suffix.lower() != ".guv":
-            raise ValueError("Please provide a valid .guv file")
-        with open(path, "r") as json_file:
-            try:
-                dct = json.load(json_file)
-            except json.JSONDecodeError:
-                raise ValueError(".guv file is malformed")
-    else:
-        raise FileNotFoundError("Please provide a valid .guv file")
-    return dct
+def _load_guv_file(path):
+    """Load JSON from a .guv file path."""
+    if not path.exists():
+        raise FileNotFoundError(f"File not found: {path}")
+    if not path.is_file():
+        raise ValueError(f"Not a file: {path}")
+    if path.suffix.lower() != ".guv":
+        raise ValueError(f"Please provide a valid .guv file (got {path.suffix}): {path}")
+    with open(path, "r") as f:
+        try:
+            return json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Malformed JSON in {path}: {e}") from e
 
 
 def save_room_data(room, fname):
