@@ -16,20 +16,7 @@ from .trigonometry import to_polar
 from .safety import get_tlvs
 from .lamp_type import GUVType, LampUnitType, LampType
 from .units import LengthUnits, convert_length
-
-VALID_LAMPS = [
-    "aerolamp",
-    "beacon",
-    "lumenizer_zone",
-    "nukit_lantern",
-    "nukit_torch",
-    "sterilray",
-    "ushio_b1",
-    "ushio_b1.5",
-    "uvpro222_b1",
-    "uvpro222_b2",
-    "visium",
-]
+from .lamp_configs import resolve_keyword, get_valid_keys
 
 
 class Lamp:
@@ -349,24 +336,33 @@ class Lamp:
 
     @property
     def keywords(self):
-        return VALID_LAMPS
+        return get_valid_keys()
 
     @classmethod
     def _prepare_from_key(cls, key: str, kwargs: dict) -> dict:
         """Common logic for from_keyword / from_index."""
         if not isinstance(key, str):
             raise TypeError(f"Keyword must be str, not {type(key)}")
-        if key.lower() not in VALID_LAMPS:
-            raise KeyError(
-                f"{key} is not a valid lamp key. Valid keys are {VALID_LAMPS}"
-            )
-        path = "guv_calcs.data.lamp_data"
-        fn = resources.files(path).joinpath(key.lower() + ".ies")
-        sn = resources.files(path).joinpath(key.lower() + ".csv")
-        kwargs.setdefault("filedata", fn)
-        kwargs.setdefault("spectra_source", sn)
-        if kwargs.get("lamp_id", None) is None:
-            kwargs.setdefault("lamp_id", key)
+
+        canonical, config = resolve_keyword(key)
+
+        path = resources.files("guv_calcs.data.lamp_data")
+        kwargs.setdefault("filedata", path.joinpath(config["ies_file"]))
+        if config.get("spectra_file"):
+            kwargs.setdefault("spectra_source", path.joinpath(config["spectra_file"]))
+
+        # Apply guv_type default from config only if no spectrum file
+        # (spectrum will determine guv_type when present)
+        if config.get("guv_type") and not config.get("spectra_file"):
+            kwargs.setdefault("guv_type", config["guv_type"])
+
+        # Apply fixture defaults from config (user kwargs override)
+        fixture_cfg = config.get("fixture", {})
+        for k in ("housing_width", "housing_length", "housing_height"):
+            if fixture_cfg.get(k) is not None:
+                kwargs.setdefault(k, fixture_cfg[k])
+
+        kwargs.setdefault("lamp_id", canonical)
         return kwargs
 
     @classmethod
@@ -380,12 +376,13 @@ class Lamp:
         """define a Lamp object from an index value"""
         if not isinstance(key_index, int):
             raise TypeError(f"Keyword index must be int, not {type(key_index)}")
-        if key_index >= len(VALID_LAMPS):
+        valid_keys = get_valid_keys()
+        if key_index >= len(valid_keys):
             raise IndexError(
-                f"Only {len(VALID_LAMPS)} lamps are available. "
-                f"Available lamps: {VALID_LAMPS}"
+                f"Only {len(valid_keys)} lamps are available. "
+                f"Available lamps: {valid_keys}"
             )
-        key = VALID_LAMPS[key_index]
+        key = valid_keys[key_index]
         kwargs = cls._prepare_from_key(key, kwargs)
         return cls(**kwargs)
 

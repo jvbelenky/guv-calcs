@@ -161,19 +161,27 @@ class TestLampFixtureIntegration:
         assert lamp.fixture.housing_height == 0.1
 
     def test_lamp_default_fixture_from_surface(self):
-        """Fixture dimensions should default to surface dimensions."""
-        lamp = Lamp.from_keyword("aerolamp", width=0.2, length=0.1)
-        # Housing should default to surface dimensions
+        """Fixture dimensions should default to surface dimensions when config has none."""
+        # Create a lamp directly (not from keyword) to avoid config defaults
+        lamp = Lamp(filedata=None, width=0.2, length=0.1)
+        # Housing should default to surface dimensions when no config/kwargs provided
         assert lamp.fixture.housing_width == 0.2
         assert lamp.fixture.housing_length == 0.1
 
     def test_lamp_default_fixture_from_ies(self):
-        """Fixture dimensions should default to IES dimensions when not specified."""
+        """Fixture dimensions should use config defaults when available."""
         lamp = Lamp.from_keyword("aerolamp")
-        # Housing should default to IES surface dimensions
-        assert lamp.fixture.housing_width == lamp.surface.width
-        assert lamp.fixture.housing_length == lamp.surface.length
-        assert lamp.fixture.housing_width > 0  # Should have real IES values
+        # Housing should use config defaults (not IES surface dimensions)
+        # aerolamp config has fixture: housing_width=0.1, housing_length=0.118, housing_height=0.076
+        assert lamp.fixture.housing_width == 0.1
+        assert lamp.fixture.housing_length == 0.118
+        assert lamp.fixture.housing_height == 0.076
+
+    def test_lamp_fixture_override_config(self):
+        """User-provided fixture dimensions should override config defaults."""
+        lamp = Lamp.from_keyword("aerolamp", housing_width=0.5, housing_length=0.4)
+        assert lamp.fixture.housing_width == 0.5
+        assert lamp.fixture.housing_length == 0.4
 
     def test_lamp_height_property(self):
         """lamp.height should return surface.height (luminous z-extent)."""

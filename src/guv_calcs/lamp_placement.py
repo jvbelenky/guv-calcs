@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from math import atan, degrees, hypot
 import numpy as np
 from .polygon import Polygon2D
+from .lamp_configs import resolve_keyword
 
 
 # =============================================================================
@@ -138,7 +139,7 @@ class LampPlacer:
     def place_lamp(
         self,
         lamp,
-        mode: str = "downlight",
+        mode: str = None,
         tilt: float = None,
         max_tilt: float = None,
         offset: float = None,
@@ -149,9 +150,11 @@ class LampPlacer:
 
         Args:
             lamp: Lamp object to position
-            mode: Placement mode ("downlight", "corner", "edge", "horizontal")
+            mode: Placement mode ("downlight", "corner", "edge", "horizontal").
+                If None, uses the lamp's config default or "downlight".
             tilt: Force exact tilt angle in degrees (0=down, 90=horizontal)
-            max_tilt: Maximum allowed tilt angle in degrees
+            max_tilt: Maximum allowed tilt angle in degrees. If None, uses the
+                lamp's config default.
             offset: Distance below ceiling to place lamp. If None, calculated from
                 fixture.housing_height + 0.02 margin (minimum 0.05).
             wall_clearance: Distance from walls for corner/edge modes. If None,
@@ -163,6 +166,19 @@ class LampPlacer:
         """
         if self.z is None:
             raise ValueError("z must be set to use place_lamp (use for_room or for_dims)")
+
+        # Get placement defaults from lamp config if available
+        if mode is None or max_tilt is None:
+            try:
+                _, config = resolve_keyword(lamp.lamp_id)
+                placement = config.get("placement", {})
+                if mode is None:
+                    mode = placement.get("mode", "downlight")
+                if max_tilt is None:
+                    max_tilt = placement.get("max_tilt")
+            except KeyError:
+                if mode is None:
+                    mode = "downlight"
 
         # Calculate ceiling offset from fixture if not specified
         if offset is None:
@@ -635,11 +651,13 @@ def new_lamp_position_corner(
     ranked_indices = _rank_corners_by_visibility(polygon)
 
     # Find available corners (not already occupied)
-    # Use larger tolerance to account for inward offset applied to positions
+    # Tolerance must account for the wall_offset (lamp is offset from corner)
+    # Use wall_offset * sqrt(2) since offset is along the diagonal, plus margin
+    tolerance = max(0.2, wall_offset * 1.5 + 0.1)
     occupied_corners = set()
     for ex, ey in existing_positions:
         for i, (cx, cy) in enumerate(corners):
-            if hypot(ex - cx, ey - cy) < 0.2:
+            if hypot(ex - cx, ey - cy) < tolerance:
                 occupied_corners.add(i)
 
     available = [i for i in ranked_indices if i not in occupied_corners]

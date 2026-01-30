@@ -559,15 +559,15 @@ class TestFixtureAwarePlacement:
         from guv_calcs import Lamp
         from guv_calcs.lamp_placement import LampPlacer
 
-        # Create lamp without housing dimensions
-        lamp = Lamp.from_keyword("aerolamp")
+        # Create lamp directly (not from keyword) without housing dimensions
+        lamp = Lamp(lamp_id="test", filedata=None)
         # Ensure no housing dimensions
         assert lamp.fixture.housing_height == 0.0 or not lamp.fixture.has_dimensions
 
         placer = LampPlacer.for_room(x=5, y=5, z=3)
         placer.place_lamp(lamp, mode="downlight")
 
-        # Default offset is 0.1
+        # Default offset is 0.1 when no fixture dimensions
         expected_z = 3 - 0.1
         assert lamp.z == pytest.approx(expected_z, abs=0.01)
 

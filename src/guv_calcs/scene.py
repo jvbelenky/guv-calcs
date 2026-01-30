@@ -132,7 +132,7 @@ class Scene:
         self,
         *args,
         on_collision=None,
-        mode="downlight",
+        mode: str | None = None,
         tilt: float | None = None,
         max_tilt: float | None = None,
     ):
@@ -140,13 +140,14 @@ class Scene:
         Position lamps using the specified placement mode.
 
         Args:
-            mode: Placement mode:
+            mode: Placement mode. If None, uses the lamp's config default or "downlight":
                 - "downlight": places lamps inside the room pointing down
                 - "corner": places lamps at corners, ranked by visibility
                 - "edge": places lamps at edge centers, aiming perpendicular to wall
                 - "horizontal": like edge but aimed straight horizontally
             tilt: Force exact tilt angle in degrees (0 = straight down, 90 = horizontal)
-            max_tilt: Maximum allowed tilt angle in degrees (clamps auto-calculated tilt)
+            max_tilt: Maximum allowed tilt angle in degrees. If None, uses lamp's config
+                default (clamps auto-calculated tilt)
         """
         offset = convert_length(LengthUnits.METERS, self.dim.units, 0.1, sigfigs=2)
         existing = [(l.position[0], l.position[1]) for l in self.lamps.values()]
