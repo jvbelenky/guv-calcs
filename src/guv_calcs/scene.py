@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+import copy
 import warnings
 from matplotlib import colormaps
 from .room_dims import RoomDimensions, PolygonRoomDimensions
@@ -37,6 +38,24 @@ class Scene:
             dims=lambda: self.dim,
             on_collision=on_collision,
         )
+
+    def __deepcopy__(self, memo):
+        """Deep copy with proper rebinding of registry lambdas."""
+        # Create a new instance without calling __init__
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+
+        # Deep copy all attributes
+        for k, v in self.__dict__.items():
+            setattr(result, k, copy.deepcopy(v, memo))
+
+        # Rebind registry lambdas to point to the new instance's dim
+        result.lamps.dims = lambda: result.dim
+        result.calc_zones.dims = lambda: result.dim
+        result.surfaces.dims = lambda: result.dim
+
+        return result
 
     # ------------------------ Global --------------------------
     def add(self, *args, on_collision=None):

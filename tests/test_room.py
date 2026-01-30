@@ -80,16 +80,16 @@ class TestRoomUnits:
 class TestRoomLampManagement:
     """Tests for lamp management in Room."""
 
-    def test_add_lamp(self, basic_room, basic_lamp):
+    def test_add_lamp(self, basic_room, positioned_lamp):
         """Lamp should be added to room.lamps dict."""
-        basic_room.add_lamp(basic_lamp)
+        basic_room.add_lamp(positioned_lamp)
         assert len(basic_room.lamps) == 1
-        assert basic_lamp.lamp_id in basic_room.lamps
+        assert positioned_lamp.lamp_id in basic_room.lamps
 
     def test_add_multiple_lamps(self, basic_room):
         """Multiple lamps can be added to a room."""
-        lamp1 = Lamp.from_keyword("aerolamp")
-        lamp2 = Lamp.from_keyword("ushio_b1")
+        lamp1 = Lamp.from_keyword("aerolamp").move(2, 2, 2.5)
+        lamp2 = Lamp.from_keyword("ushio_b1").move(4, 2, 2.5)
         basic_room.add_lamp(lamp1).add_lamp(lamp2)
         assert len(basic_room.lamps) == 2
 

@@ -87,7 +87,8 @@ class Registry(Generic[T], MutableMapping[str, T]):
         room_dims = self.dims()
         for x, y, z in corners:
             if room_dims.is_polygon:
-                if not room_dims.polygon.contains_point(x, y):
+                # Use inclusive check to accept points on the boundary
+                if not room_dims.polygon.contains_point_inclusive(x, y):
                     msg = f"{obj.name} exceeds room boundaries!"
                     warnings.warn(msg, stacklevel=2)
                     return msg
@@ -205,10 +206,4 @@ class SurfaceRegistry(Registry["Surface"]):
     expected_type: type | None = Surface
 
     def _extract_dimensions(self, surface):
-        x, y, z = surface.plane.coords.T
-        return np.array([
-            [x.min(), y.min(), z.min()], [x.max(), y.min(), z.min()],
-            [x.max(), y.max(), z.min()], [x.min(), y.max(), z.min()],
-            [x.min(), y.min(), z.max()], [x.max(), y.min(), z.max()],
-            [x.max(), y.max(), z.max()], [x.min(), y.max(), z.max()],
-        ])
+        return surface.plane.coords

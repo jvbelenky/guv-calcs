@@ -189,6 +189,33 @@ class Polygon2D:
             j = i
         return inside
 
+    def point_on_boundary(self, x: float, y: float, tol: float = 1e-9) -> bool:
+        """Check if a point is on the polygon boundary within tolerance."""
+        for (x1, y1), (x2, y2) in self.edges:
+            # Check if point is within bounding box of edge (with tolerance)
+            if not (min(x1, x2) - tol <= x <= max(x1, x2) + tol and
+                    min(y1, y2) - tol <= y <= max(y1, y2) + tol):
+                continue
+            # Calculate distance from point to line segment
+            dx, dy = x2 - x1, y2 - y1
+            length_sq = dx * dx + dy * dy
+            if length_sq < tol * tol:
+                # Degenerate edge (point), check distance to vertex
+                if (x - x1) ** 2 + (y - y1) ** 2 <= tol * tol:
+                    return True
+                continue
+            # Project point onto line and check distance
+            t = max(0, min(1, ((x - x1) * dx + (y - y1) * dy) / length_sq))
+            proj_x, proj_y = x1 + t * dx, y1 + t * dy
+            dist_sq = (x - proj_x) ** 2 + (y - proj_y) ** 2
+            if dist_sq <= tol * tol:
+                return True
+        return False
+
+    def contains_point_inclusive(self, x: float, y: float, tol: float = 1e-9) -> bool:
+        """Check if a point is inside or on the boundary of the polygon."""
+        return self.contains_point(x, y) or self.point_on_boundary(x, y, tol)
+
     def contains_points(self, points: np.ndarray) -> np.ndarray:
         """
         Check if multiple points are inside the polygon.
