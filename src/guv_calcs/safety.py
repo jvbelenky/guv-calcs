@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from enum import StrEnum
 import numpy as np
-from .lamp.spectrum import Spectrum, log_interp
+from .lamp.spectrum import Spectrum, log_interp, sum_spectrum
 from .io import get_spectral_weightings
 from .lamp.lamp_type import GUVType
 
@@ -88,19 +88,86 @@ class PhotStandard(StrEnum):
 
 
 def get_tlvs(ref, standard=PhotStandard.ACGIH):
-    skin = _tlv(ref, standard.skin_weights)
-    eye = _tlv(ref, standard.eye_weights)
+    """Get threshold limit values (skin, eye) for a wavelength or spectrum."""
+    skin = get_skin_tlv(ref, standard)
+    eye = get_eye_tlv(ref, standard)
     return skin, eye
+    
+def get_skin_tlv(ref, standard=PhotStandard.ACGIH) -> float:
+    """Get skin threshold limit value in mJ/cm2/8 hours."""
+    return _tlv(ref, get_weights("skin", standard))
 
+def get_eye_tlv(ref, standard=PhotStandard.ACGIH) -> float:
+    """Get eye threshold limit value in mJ/cm2/8 hours."""
+    return _tlv(ref, get_weights("eye", standard))
+    
+def get_tlv(ref, standard=PhotStandard.ACGIH, target: str = "eye") -> float:
+    """Get threshold limit values (skin or eye) for a wavelength or spectrum."""
+    weights = get_weights(target, standard)
+    return _tlv(ref, weights)
 
-def _tlv(ref, weights: dict):
+def get_max_irradiance(ref, standard=PhotStandard.ACGIH, target: str = "eye") -> float:
+    """
+    Return max allowed irradiance for a wavelength or spectrum (µW/cm²).
+
+    Args:
+        ref: Wavelength (nm) or Spectrum object
+        standard: Photobiological safety standard
+        target: "skin" or "eye"
+    """
+    weights = get_weights(target, standard)
+    tlv = _tlv(ref, weights)
+    return tlv / 60 / 60 / 8 * 1000
+
+def get_seconds_to_tlv(
+    ref, irradiance: float, standard=PhotStandard.ACGIH, target: str = "eye"
+) -> float:
+    """
+    Return seconds until TLV is reached at given irradiance (µW/cm²).
+
+    Args:
+        ref: Wavelength (nm) or Spectrum object
+        irradiance: Irradiance in µW/cm²
+        standard: Photobiological safety standard
+        target: "skin" or "eye"
+    """
+    weights = get_weights(target, standard)
+    wavelengths = list(weights.keys())
+    values = list(weights.values())
+
     if isinstance(ref, (int, float)):
-        wavelengths = list(weights.keys())
-        values = list(weights.values())
+        weighting = log_interp(ref, wavelengths, values)
+        weighted_irradiance = irradiance * weighting
+    elif isinstance(ref, Spectrum):
+        w = log_interp(np.array(ref.wavelengths), wavelengths, values)
+        ints = np.array(ref.intensities)
+        i_new = ints * irradiance / ref.sum()
+        weighted_irradiance = sum_spectrum(np.array(ref.wavelengths), w * i_new)
+    else:
+        raise TypeError(
+            f"Argument `ref` must be either float, int, or Spectrum object, not {type(ref)}"
+        )
+    return 3000 / weighted_irradiance
+    
+def get_weights(target: str, standard: PhotStandard):
+    if target.lower() not in ["skin", "eye"]:
+        raise ValueError(f"weight must be `skin` or `eye` (got {target})")
+    return standard.skin_weights if target.lower() == "skin" else standard.eye_weights
+    
+def _tlv(ref, weights: dict) -> float:
+    """Calculate TLV for a single weighting function."""
+    wavelengths = list(weights.keys())
+    values = list(weights.values())
+
+    if isinstance(ref, (int, float)):
         weighting = log_interp(ref, wavelengths, values)
         return 3 / weighting  # value not to be exceeded in 8 hours
     elif isinstance(ref, Spectrum):
-        return ref.get_tlv(weights)
+        w = log_interp(np.array(ref.wavelengths), wavelengths, values)
+        ints = np.array(ref.intensities)
+        i_new = ints / ref.sum()
+        s_lambda = sum_spectrum(np.array(ref.wavelengths), w * i_new)
+        return 3 / s_lambda
     raise TypeError(
         f"Argument `ref` must be either float, int, or Spectrum object, not {type(ref)}"
     )

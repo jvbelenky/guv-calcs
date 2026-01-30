@@ -1,8 +1,8 @@
-"""Tests for the safety module (PhotStandard, get_tlvs)."""
+"""Tests for the safety module (PhotStandard, get_tlvs, get_max_irradiance, get_seconds_to_tlv)."""
 
 import pytest
 import numpy as np
-from guv_calcs import PhotStandard, get_tlvs, Spectrum
+from guv_calcs import PhotStandard, get_tlvs, get_max_irradiance, get_seconds_to_tlv, Spectrum
 
 
 class TestPhotStandardCreation:
@@ -166,3 +166,75 @@ class TestGetTlvs:
         """get_tlvs with invalid type should raise TypeError."""
         with pytest.raises(TypeError):
             get_tlvs("not_a_number", PhotStandard.ACGIH)
+
+
+class TestGetMaxIrradiance:
+    """Tests for get_max_irradiance function."""
+
+    def test_max_irradiance_wavelength(self):
+        """get_max_irradiance should return positive value for wavelength."""
+        irrad = get_max_irradiance(254, PhotStandard.ACGIH)
+        assert irrad > 0
+
+    def test_max_irradiance_skin_vs_eye(self):
+        """Skin and eye max irradiance should differ."""
+        skin = get_max_irradiance(254, PhotStandard.ACGIH, target="skin")
+        eye = get_max_irradiance(254, PhotStandard.ACGIH, target="eye")
+        assert skin != eye
+
+    def test_max_irradiance_spectrum(self):
+        """get_max_irradiance should work with Spectrum object."""
+        spec = Spectrum(
+            [200, 210, 220, 230, 240, 250, 260],
+            [0.01, 0.1, 0.5, 1.0, 0.5, 0.1, 0.01]
+        )
+        irrad = get_max_irradiance(spec, PhotStandard.ACGIH)
+        assert irrad > 0
+
+    def test_max_irradiance_consistent_with_tlv(self):
+        """Max irradiance should be TLV / (8 hours) * 1000."""
+        skin_tlv, _ = get_tlvs(254, PhotStandard.ACGIH)
+        skin_irrad = get_max_irradiance(254, PhotStandard.ACGIH, target="skin")
+        expected = skin_tlv / 60 / 60 / 8 * 1000
+        assert np.isclose(skin_irrad, expected, rtol=0.01)
+
+
+class TestGetSecondsToTlv:
+    """Tests for get_seconds_to_tlv function."""
+
+    def test_seconds_to_tlv_wavelength(self):
+        """get_seconds_to_tlv should return positive value."""
+        seconds = get_seconds_to_tlv(254, irradiance=10, standard=PhotStandard.ACGIH)
+        assert seconds > 0
+
+    def test_seconds_to_tlv_higher_irradiance_shorter_time(self):
+        """Higher irradiance should mean shorter time to TLV."""
+        time_low = get_seconds_to_tlv(254, irradiance=1, standard=PhotStandard.ACGIH)
+        time_high = get_seconds_to_tlv(254, irradiance=10, standard=PhotStandard.ACGIH)
+        assert time_high < time_low
+
+    def test_seconds_to_tlv_proportional(self):
+        """Time to TLV should be inversely proportional to irradiance."""
+        time1 = get_seconds_to_tlv(254, irradiance=1, standard=PhotStandard.ACGIH)
+        time10 = get_seconds_to_tlv(254, irradiance=10, standard=PhotStandard.ACGIH)
+        assert np.isclose(time1 / time10, 10, rtol=0.01)
+
+    def test_seconds_to_tlv_spectrum(self):
+        """get_seconds_to_tlv should work with Spectrum object."""
+        spec = Spectrum(
+            [200, 210, 220, 230, 240, 250, 260],
+            [0.01, 0.1, 0.5, 1.0, 0.5, 0.1, 0.01]
+        )
+        seconds = get_seconds_to_tlv(spec, irradiance=10, standard=PhotStandard.ACGIH)
+        assert seconds > 0
+
+    def test_seconds_to_tlv_skin_vs_eye(self):
+        """Skin and eye times should differ."""
+        skin_time = get_seconds_to_tlv(254, irradiance=10, standard=PhotStandard.ACGIH, target="skin")
+        eye_time = get_seconds_to_tlv(254, irradiance=10, standard=PhotStandard.ACGIH, target="eye")
+        assert skin_time != eye_time
+
+    def test_seconds_to_tlv_invalid_type(self):
+        """Invalid ref type should raise TypeError."""
+        with pytest.raises(TypeError):
+            get_seconds_to_tlv("not_a_number", irradiance=10, standard=PhotStandard.ACGIH)

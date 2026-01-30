@@ -1,13 +1,9 @@
-"""Spectral power distribution for UV lamps."""
-
 import csv
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
-
 import matplotlib.pyplot as plt
 import numpy as np
-
 from ..io import get_spectral_weightings, load_csv, rows_to_bytes
 
 
@@ -22,14 +18,12 @@ class Spectrum:
     Attributes:
         wavelengths: Wavelength values in nanometers (sorted ascending)
         intensities: Relative intensity values (same length as wavelengths)
-        weighted_intensities: Dict of weighted intensity arrays by standard name
+        weighted_intensities: Dict of weighted intensity arrays by standard name (lazy)
     """
 
     wavelengths: tuple[float, ...]
     intensities: tuple[float, ...]
-    weighted_intensities: dict[str, tuple[float, ...]] = field(
-        default_factory=dict, compare=False
-    )
+    _cache: dict = field(default_factory=dict, repr=False, compare=False)
 
     def __post_init__(self):
         # Convert to numpy for processing, then back to tuple for immutability
@@ -48,9 +42,14 @@ class Spectrum:
         object.__setattr__(self, "wavelengths", tuple(wl.tolist()))
         object.__setattr__(self, "intensities", tuple(ints.tolist()))
 
-        # Compute weighted intensities
-        weighted = _compute_weighted_spectra(wl, ints)
-        object.__setattr__(self, "weighted_intensities", weighted)
+    @property
+    def weighted_intensities(self) -> dict[str, tuple[float, ...]]:
+        """Dict of weighted intensity arrays by standard name (computed lazily)."""
+        if "weighted" not in self._cache:
+            self._cache["weighted"] = _compute_weighted_spectra(
+                np.array(self.wavelengths), np.array(self.intensities)
+            )
+        return self._cache["weighted"]
 
     @classmethod
     def from_source(cls, source) -> "Spectrum | None":
@@ -186,37 +185,6 @@ class Spectrum:
 
         return sum_spectrum(wl_filt, ints_filt)
 
-    def get_tlv(self, weights: dict) -> float:
-        """
-        Return total UV dose over 8 hours for this spectrum (mJ/cm²).
-
-        Args:
-            weights: dict mapping wavelength to spectral effectiveness value
-        """
-        wavelengths = list(weights.keys())
-        values = list(weights.values())
-        w = log_interp(np.array(self.wavelengths), wavelengths, values)
-        ints = np.array(self.intensities)
-        i_new = ints / self.sum()
-        s_lambda = sum_spectrum(np.array(self.wavelengths), w * i_new)
-        return 3 / s_lambda
-
-    def get_max_irradiance(self, weights: dict) -> float:
-        """Return max irradiance for this spectrum (µW/cm²)."""
-        return self.get_tlv(weights) / 60 / 60 / 8 * 1000
-
-    def get_seconds_to_tlv(self, irradiance: float, weights: dict) -> float:
-        """
-        Return seconds until TLV is reached at given irradiance (µW/cm²).
-        """
-        wavelengths = list(weights.keys())
-        values = list(weights.values())
-        w = log_interp(np.array(self.wavelengths), wavelengths, values)
-        ints = np.array(self.intensities)
-        i_new = ints * irradiance / self.sum()
-        weighted_irradiance = sum_spectrum(np.array(self.wavelengths), w * i_new)
-        return 3000 / weighted_irradiance
-
     # Serialization
 
     def to_dict(self, as_string: bool = False) -> dict:
@@ -255,7 +223,7 @@ class Spectrum:
         ax=None,
         figsize: tuple = (6.4, 4.8),
         yscale: str = "linear",
-        label=None,
+        label: str | None = None,
         weights: bool | str = False,
     ):
         """
@@ -280,13 +248,7 @@ class Spectrum:
                 ax = fig.axes[0]
 
         default_label = "Unweighted Relative Intensity"
-        if label:
-            if isinstance(label, str):
-                ax.plot(self.wavelengths, self.intensities, label=label)
-            else:
-                ax.plot(self.wavelengths, self.intensities, label=default_label)
-        else:
-            ax.plot(self.wavelengths, self.intensities)
+        ax.plot(self.wavelengths, self.intensities, label=label or default_label)
 
         if weights:
             if isinstance(weights, str):

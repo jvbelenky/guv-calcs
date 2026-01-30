@@ -909,6 +909,8 @@ class TestLampSpectrumManipulation:
 
     def test_spectrum_normalized_preserves_tlv_ratios(self):
         """Normalizing spectrum should not change TLV ratios (shape preserved)."""
+        from guv_calcs import get_tlvs, PhotStandard
+
         lamp = Lamp.from_keyword("aerolamp")
         if lamp.spectra is None:
             pytest.skip("Lamp has no spectra")
@@ -917,10 +919,11 @@ class TestLampSpectrumManipulation:
         normalized = original.normalized(100)
 
         # TLVs are based on spectral shape, so ratios should be preserved
-        tlv1 = original.get_tlv({220: 0.5, 250: 1.0})
-        tlv2 = normalized.get_tlv({220: 0.5, 250: 1.0})
+        skin1, eye1 = get_tlvs(original, PhotStandard.ACGIH)
+        skin2, eye2 = get_tlvs(normalized, PhotStandard.ACGIH)
         # Actual value changes but ratio to itself is preserved
-        assert tlv1 > 0 and tlv2 > 0  # Both should be valid
+        assert skin1 > 0 and skin2 > 0  # Both should be valid
+        assert eye1 > 0 and eye2 > 0
 
     def test_spectrum_immutable_preserves_original(self):
         """Spectrum.filtered() returns new instance, original unchanged."""
