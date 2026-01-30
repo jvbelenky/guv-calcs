@@ -11,6 +11,7 @@ from guv_calcs.safety import (
 )
 
 
+@pytest.mark.filterwarnings("ignore:ushio_b1 exceeds room boundaries")
 class TestCheckLampsErrors:
     """Tests for error conditions in check_lamps()."""
 

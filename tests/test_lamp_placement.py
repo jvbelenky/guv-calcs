@@ -3,7 +3,7 @@
 import pytest
 import numpy as np
 from guv_calcs.polygon import Polygon2D
-from guv_calcs.lamp_placement import (
+from guv_calcs.lamp.lamp_placement import (
     # Geometry utilities
     _point_to_segment_distance,
     _ray_polygon_intersection,
@@ -430,7 +430,7 @@ class TestIntegration:
 
 def _is_near_boundary(point, polygon, tolerance=0.1):
     """Check if point is near polygon boundary."""
-    from guv_calcs.lamp_placement import _distance_to_polygon_boundary
+    from guv_calcs.lamp.lamp_placement import _distance_to_polygon_boundary
     dist = _distance_to_polygon_boundary(np.array(point), polygon)
     return dist < tolerance
 
@@ -440,7 +440,7 @@ class TestLampPlacerAPI:
 
     def test_for_room_with_xy(self):
         """for_room creates placer from x/y dimensions."""
-        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.lamp.lamp_placement import LampPlacer
         placer = LampPlacer.for_room(x=4, y=3, z=2.5)
         assert placer.polygon is not None
         assert placer.z == 2.5
@@ -449,7 +449,7 @@ class TestLampPlacerAPI:
 
     def test_for_room_with_polygon(self):
         """for_room creates placer from polygon."""
-        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.lamp.lamp_placement import LampPlacer
         poly = Polygon2D.rectangle(5, 4)
         placer = LampPlacer.for_room(polygon=poly, z=3.0)
         assert placer.polygon is poly
@@ -457,13 +457,13 @@ class TestLampPlacerAPI:
 
     def test_for_room_requires_dimensions(self):
         """for_room raises error without x/y or polygon."""
-        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.lamp.lamp_placement import LampPlacer
         with pytest.raises(ValueError, match="Must provide either"):
             LampPlacer.for_room(z=3.0)
 
     def test_for_dims_rectangular(self):
         """for_dims works with rectangular RoomDimensions."""
-        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.lamp.lamp_placement import LampPlacer
         from guv_calcs.room_dims import RoomDimensions
         dims = RoomDimensions(x=6, y=4, z=2.7)
         placer = LampPlacer.for_dims(dims)
@@ -473,7 +473,7 @@ class TestLampPlacerAPI:
 
     def test_for_dims_polygon(self):
         """for_dims works with PolygonRoomDimensions."""
-        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.lamp.lamp_placement import LampPlacer
         from guv_calcs.room_dims import PolygonRoomDimensions
         poly = Polygon2D.rectangle(5, 5)
         dims = PolygonRoomDimensions(polygon=poly, z=3.0)
@@ -483,7 +483,7 @@ class TestLampPlacerAPI:
 
     def test_for_dims_with_existing(self):
         """for_dims tracks existing positions."""
-        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.lamp.lamp_placement import LampPlacer
         from guv_calcs.room_dims import RoomDimensions
         dims = RoomDimensions(x=6, y=4, z=2.7)
         existing = [(1.0, 1.0), (5.0, 3.0)]
@@ -492,7 +492,7 @@ class TestLampPlacerAPI:
 
     def test_place_returns_result(self):
         """place returns PlacementResult with position and aim."""
-        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.lamp.lamp_placement import LampPlacer
         placer = LampPlacer.for_room(x=4, y=4, z=3)
         result = placer.place("corner", lamp_idx=1)
         assert hasattr(result, "position")
@@ -502,7 +502,7 @@ class TestLampPlacerAPI:
 
     def test_place_different_modes(self):
         """place works with all modes."""
-        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.lamp.lamp_placement import LampPlacer
         placer = LampPlacer.for_room(x=4, y=4, z=3)
         for mode in ["downlight", "corner", "edge", "horizontal"]:
             result = placer.place(mode, lamp_idx=1)
@@ -516,7 +516,7 @@ class TestFixtureAwarePlacement:
     def test_ceiling_offset_from_housing_height(self):
         """Lamp with housing_height should be placed at least that far below ceiling."""
         from guv_calcs import Lamp
-        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.lamp.lamp_placement import LampPlacer
 
         # Create lamp with known housing dimensions
         lamp = Lamp.from_keyword(
@@ -536,7 +536,7 @@ class TestFixtureAwarePlacement:
     def test_wall_clearance_from_fixture_width(self):
         """Lamp with fixture dimensions should be offset based on 3D diagonal for rotation safety."""
         from guv_calcs import Lamp
-        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.lamp.lamp_placement import LampPlacer
 
         lamp = Lamp.from_keyword(
             "aerolamp",
@@ -557,7 +557,7 @@ class TestFixtureAwarePlacement:
     def test_default_clearance_no_fixture(self):
         """Lamp without fixture dimensions uses default clearances."""
         from guv_calcs import Lamp
-        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.lamp.lamp_placement import LampPlacer
 
         # Create lamp directly (not from keyword) without housing dimensions
         lamp = Lamp(lamp_id="test", filedata=None)
@@ -574,7 +574,7 @@ class TestFixtureAwarePlacement:
     def test_explicit_offset_overrides_fixture(self):
         """Explicit offset parameter should override fixture-derived value."""
         from guv_calcs import Lamp
-        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.lamp.lamp_placement import LampPlacer
 
         lamp = Lamp.from_keyword(
             "aerolamp",
@@ -590,7 +590,7 @@ class TestFixtureAwarePlacement:
     def test_explicit_wall_clearance_overrides(self):
         """Explicit wall_clearance parameter should override fixture-derived value."""
         from guv_calcs import Lamp
-        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.lamp.lamp_placement import LampPlacer
 
         lamp = Lamp.from_keyword(
             "aerolamp",
@@ -609,7 +609,7 @@ class TestFixtureAwarePlacement:
     def test_downlight_ceiling_offset(self):
         """Downlight mode should also use fixture housing_height for ceiling offset."""
         from guv_calcs import Lamp
-        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.lamp.lamp_placement import LampPlacer
 
         lamp = Lamp.from_keyword(
             "aerolamp",
@@ -625,7 +625,7 @@ class TestFixtureAwarePlacement:
     def test_edge_wall_clearance(self):
         """Edge placement should use fixture dimensions for wall offset."""
         from guv_calcs import Lamp
-        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.lamp.lamp_placement import LampPlacer
 
         lamp = Lamp.from_keyword(
             "aerolamp",
@@ -646,7 +646,7 @@ class TestFixtureAwarePlacement:
     def test_asymmetric_fixture(self):
         """Fixture with different width/length uses 3D diagonal for rotation-safe clearance."""
         from guv_calcs import Lamp
-        from guv_calcs.lamp_placement import LampPlacer
+        from guv_calcs.lamp.lamp_placement import LampPlacer
 
         lamp = Lamp.from_keyword(
             "aerolamp",

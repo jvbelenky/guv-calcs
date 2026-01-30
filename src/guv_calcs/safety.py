@@ -1,9 +1,9 @@
 from dataclasses import dataclass, field
 from enum import StrEnum
 import numpy as np
-from .spectrum import Spectrum, log_interp
+from .lamp.spectrum import Spectrum, log_interp
 from .io import get_spectral_weightings
-from .lamp_type import GUVType
+from .lamp.lamp_type import GUVType
 
 
 class PhotStandard(StrEnum):

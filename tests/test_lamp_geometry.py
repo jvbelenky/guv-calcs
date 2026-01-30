@@ -3,8 +3,8 @@
 import pytest
 import numpy as np
 from guv_calcs import Lamp
-from guv_calcs.fixture import Fixture
-from guv_calcs.lamp_geometry import LampGeometry
+from guv_calcs.lamp import Fixture
+from guv_calcs.lamp import LampGeometry
 
 
 class TestLampGeometryConstruction:

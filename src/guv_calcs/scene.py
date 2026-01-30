@@ -3,10 +3,9 @@ import copy
 import warnings
 from matplotlib import colormaps
 from .room_dims import RoomDimensions, PolygonRoomDimensions
-from .lamp import Lamp
+from .lamp import Lamp, LampPlacer
 from .calc_zone import CalcZone, CalcPlane, CalcVol
 from .reflectance import Surface, init_room_surfaces
-from .lamp_placement import LampPlacer
 from .safety import PhotStandard
 from .scene_registry import LampRegistry, ZoneRegistry, SurfaceRegistry
 from .units import LengthUnits, convert_length

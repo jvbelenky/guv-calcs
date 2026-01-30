@@ -6,6 +6,21 @@ import os
 from guv_calcs import Room, Lamp, CalcPlane, CalcVol, Polygon2D
 
 
+# ============== Warning Filters ==============
+# These warnings are expected in test scenarios with small rooms
+
+def pytest_configure(config):
+    """Configure pytest warning filters for expected warnings."""
+    config.addinivalue_line(
+        "filterwarnings",
+        "ignore:aerolamp exceeds room boundaries:UserWarning"
+    )
+    config.addinivalue_line(
+        "filterwarnings",
+        "ignore:ushio_b1 exceeds room boundaries:UserWarning"
+    )
+
+
 # ============== Room Fixtures ==============
 
 @pytest.fixture

@@ -320,14 +320,14 @@ class TestIntensityMap:
 
     def test_none_source_returns_none_original(self):
         """IntensityMap with None source should have None original."""
-        from guv_calcs.intensity_map import IntensityMap
+        from guv_calcs.lamp import IntensityMap
         im = IntensityMap(None)
         assert im.original is None
         assert im.normalized is None
 
     def test_array_source(self):
         """IntensityMap should accept numpy array."""
-        from guv_calcs.intensity_map import IntensityMap
+        from guv_calcs.lamp import IntensityMap
         data = np.array([[1, 2], [3, 4]])
         im = IntensityMap(data)
         assert im.original is not None
@@ -335,7 +335,7 @@ class TestIntensityMap:
 
     def test_list_source(self):
         """IntensityMap should accept list."""
-        from guv_calcs.intensity_map import IntensityMap
+        from guv_calcs.lamp import IntensityMap
         data = [[1, 2], [3, 4]]
         im = IntensityMap(data)
         assert im.original is not None
@@ -343,7 +343,7 @@ class TestIntensityMap:
 
     def test_normalized_property(self):
         """Normalized should divide by mean."""
-        from guv_calcs.intensity_map import IntensityMap
+        from guv_calcs.lamp import IntensityMap
         data = np.array([[1, 2], [3, 4]])  # mean = 2.5
         im = IntensityMap(data)
         expected = data / data.mean()
@@ -351,7 +351,7 @@ class TestIntensityMap:
 
     def test_resample_no_map_returns_ones(self):
         """Resample with no map should return array of ones."""
-        from guv_calcs.intensity_map import IntensityMap
+        from guv_calcs.lamp import IntensityMap
         im = IntensityMap(None)
 
         def points_gen(u, v):
@@ -363,7 +363,7 @@ class TestIntensityMap:
 
     def test_resample_same_shape_returns_normalized(self):
         """Resample with same shape should return normalized map."""
-        from guv_calcs.intensity_map import IntensityMap
+        from guv_calcs.lamp import IntensityMap
         data = np.array([[1, 2], [3, 4]])
         im = IntensityMap(data)
 
@@ -375,7 +375,7 @@ class TestIntensityMap:
 
     def test_nan_values_rejected(self):
         """IntensityMap should reject data with NaN values."""
-        from guv_calcs.intensity_map import IntensityMap
+        from guv_calcs.lamp import IntensityMap
         data = np.array([[1, np.nan], [3, 4]])
         with pytest.warns(UserWarning, match="invalid values"):
             im = IntensityMap(data)
@@ -383,7 +383,7 @@ class TestIntensityMap:
 
     def test_invalid_type_rejected(self):
         """IntensityMap should reject invalid types."""
-        from guv_calcs.intensity_map import IntensityMap
+        from guv_calcs.lamp import IntensityMap
         with pytest.warns(UserWarning, match="invalid"):
             im = IntensityMap(12345)
         assert im.original is None

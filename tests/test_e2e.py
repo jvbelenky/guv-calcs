@@ -225,6 +225,7 @@ class TestEmptyAndMinimalStates:
         assert len(room.lamps) == 0
         assert len(room.calc_zones) == 0
 
+    @pytest.mark.filterwarnings("ignore:No lamps are present in the room")
     def test_room_with_zones_but_no_lamps(self):
         """Room with zones but no lamps should calculate to zero fluence."""
         room = Room(x=6, y=4, z=2.7)
@@ -307,6 +308,8 @@ class TestModifyAfterCalculation:
         new_mean = room.calc_zones["WholeRoomFluence"].values.mean()
         assert new_mean < original_mean
 
+    @pytest.mark.filterwarnings("ignore:No lamps are present in the room")
+    @pytest.mark.filterwarnings("ignore:aerolamp exceeds room boundaries")
     def test_remove_all_lamps_after_calculation(self):
         """Removing all lamps after calculation should result in zero fluence."""
         room = (
@@ -726,6 +729,9 @@ class TestCopyWorkflow:
 class TestRoomSizeEdgeCases:
     """Tests for unusual room sizes."""
 
+    @pytest.mark.filterwarnings("ignore:Eye Dose .* exceeds room boundaries")
+    @pytest.mark.filterwarnings("ignore:Skin Dose .* exceeds room boundaries")
+    @pytest.mark.filterwarnings("ignore:aerolamp exceeds room boundaries")
     def test_small_room(self):
         """Very small room should work."""
         room = Room(x=1, y=1, z=1)
@@ -1128,6 +1134,7 @@ class TestLampSaveLoadWithModifications:
         assert loaded_lamp.length == 0.3
 
 
+@pytest.mark.filterwarnings("ignore:No valid lamps are present in the room")
 class TestLampDisabledState:
     """Tests for enabling/disabling lamps."""
 

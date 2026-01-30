@@ -1,7 +1,7 @@
 """Tests for the Fixture class."""
 
 import pytest
-from guv_calcs.fixture import Fixture, FixtureShape
+from guv_calcs.lamp import Fixture, FixtureShape
 
 
 class TestFixtureConstruction:

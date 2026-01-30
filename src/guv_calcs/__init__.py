@@ -1,15 +1,12 @@
 from .room import Room
-from .lamp import Lamp
-from .lamp_type import LampType, GUVType
+from .lamp import Lamp, LampType, GUVType, LampPlacer, Spectrum, sum_spectrum
 from .calc_zone import CalcVol, CalcPlane
 from .polygon import Polygon2D
-from .spectrum import Spectrum, sum_spectrum
 from .trigonometry import to_polar, to_cartesian, attitude
 from .io import get_spectral_weightings
 from .efficacy import Data
 from .safety import PhotStandard, get_tlvs
 from .units import convert_units, convert_length, convert_time
-from .lamp_placement import LampPlacer, new_lamp_position, get_lamp_positions
 from ._read import read_export_file, file_to_zone
 from ._version import __version__
 
@@ -18,11 +15,12 @@ __all__ = [
     "Lamp",
     "LampType",
     "GUVType",
+    "LampPlacer",
+    "Spectrum",
+    "sum_spectrum",
     "CalcVol",
     "CalcPlane",
     "Polygon2D",
-    "Spectrum",
-    "sum_spectrum",
     "to_polar",
     "to_cartesian",
     "attitude",
@@ -33,7 +31,6 @@ __all__ = [
     "convert_units",
     "convert_length",
     "convert_time",
-    "LampPlacer",
     "read_export_file",
     "file_to_zone",
 ]

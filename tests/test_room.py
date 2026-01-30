@@ -77,6 +77,7 @@ class TestRoomUnits:
         assert basic_room.z == 3.5
 
 
+@pytest.mark.filterwarnings("ignore:aerolamp exceeds room boundaries")
 class TestRoomLampManagement:
     """Tests for lamp management in Room."""
 
@@ -105,6 +106,7 @@ class TestRoomLampManagement:
         assert len(room_with_lamp.lamps) == 0
 
 
+@pytest.mark.filterwarnings("ignore:aerolamp exceeds room boundaries")
 class TestLampPlacementModes:
     """Tests for lamp placement modes (downlight, corner, edge, horizontal)."""
 
@@ -162,7 +164,7 @@ class TestLampPlacementModes:
         basic_room.place_lamp("aerolamp", mode="corner", tilt=30.0)
         lamp = list(basic_room.lamps.values())[0]
         # Calculate actual tilt
-        from guv_calcs.lamp_placement import calculate_tilt
+        from guv_calcs.lamp.lamp_placement import calculate_tilt
         actual_tilt = calculate_tilt(
             lamp.position[2],
             (lamp.position[0], lamp.position[1]),
@@ -174,7 +176,7 @@ class TestLampPlacementModes:
         """Max_tilt parameter limits tilt angle."""
         basic_room.place_lamp("aerolamp", mode="corner", max_tilt=20.0)
         lamp = list(basic_room.lamps.values())[0]
-        from guv_calcs.lamp_placement import calculate_tilt
+        from guv_calcs.lamp.lamp_placement import calculate_tilt
         actual_tilt = calculate_tilt(
             lamp.position[2],
             (lamp.position[0], lamp.position[1]),
@@ -195,6 +197,7 @@ class TestLampPlacementModes:
         assert lamp.position[2] == pytest.approx(lamp.aimz, abs=0.001)
 
 
+@pytest.mark.filterwarnings("ignore:aerolamp exceeds room boundaries")
 class TestPolygonRoomPlacement:
     """Tests for lamp placement in polygon rooms."""
 
@@ -232,7 +235,7 @@ class TestPolygonRoomPlacement:
             x, y = lamp.position[:2]
             inside = l_shape.contains_point(x, y)
             # Or very close to boundary (offset)
-            from guv_calcs.lamp_placement import _distance_to_polygon_boundary
+            from guv_calcs.lamp.lamp_placement import _distance_to_polygon_boundary
             import numpy as np
             near_boundary = _distance_to_polygon_boundary(np.array([x, y]), l_shape) < 0.2
             assert inside or near_boundary
