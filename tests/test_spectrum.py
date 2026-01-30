@@ -69,43 +69,53 @@ class TestSpectrumProperties:
         spec = Spectrum([200, 220, 240, 260], [0.1, 0.5, 1.0, 0.3])
         assert spec.peak_wavelength == 240
 
-    def test_raw_values_preserved(self):
-        """raw_wavelengths and raw_intensities should preserve original values."""
+    def test_immutable_values(self):
+        """Spectrum should be immutable - wavelengths and intensities are tuples."""
         wavelengths = [200, 220, 240]
         intensities = [0.1, 0.5, 1.0]
         spec = Spectrum(wavelengths, intensities)
-        assert np.array_equal(spec.raw_wavelengths, np.array([200, 220, 240]))
-        assert np.array_equal(spec.raw_intensities, np.array([0.1, 0.5, 1.0]))
+        assert spec.wavelengths == (200.0, 220.0, 240.0)
+        assert spec.intensities == (0.1, 0.5, 1.0)
+        # Verify frozen dataclass raises on mutation
+        import pytest
+        with pytest.raises(AttributeError):
+            spec.wavelengths = (1, 2, 3)
 
 
 class TestSpectrumOperations:
-    """Tests for Spectrum operations."""
+    """Tests for Spectrum operations (immutable - return new instances)."""
 
-    def test_normalize(self):
-        """normalize should scale max intensity to specified value."""
+    def test_normalized(self):
+        """normalized() should return new Spectrum with max intensity scaled."""
         spec = Spectrum([200, 220, 240], [0.1, 0.5, 1.0])
-        spec.normalize(100)
-        assert max(spec.intensities) == 100
+        normalized = spec.normalized(100)
+        assert max(normalized.intensities) == 100
+        # Original unchanged
+        assert max(spec.intensities) == 1.0
 
-    def test_normalize_default(self):
-        """normalize default should scale max to 1."""
+    def test_normalized_default(self):
+        """normalized() default should scale max to 1."""
         spec = Spectrum([200, 220, 240], [0.1, 0.5, 2.0])
-        spec.normalize()
-        assert max(spec.intensities) == 1
+        normalized = spec.normalized()
+        assert max(normalized.intensities) == 1
 
-    def test_filter_range(self):
-        """filter should limit wavelengths to specified range."""
+    def test_filtered_range(self):
+        """filtered() should return new Spectrum limited to wavelength range."""
         spec = Spectrum([200, 220, 240, 260, 280], [0.1, 0.3, 0.5, 0.3, 0.1])
-        spec.filter(minval=210, maxval=270)
-        assert min(spec.wavelengths) >= 210
-        assert max(spec.wavelengths) <= 270
+        filtered = spec.filtered(minval=210, maxval=270)
+        assert min(filtered.wavelengths) >= 210
+        assert max(filtered.wavelengths) <= 270
+        # Original unchanged
+        assert len(spec.wavelengths) == 5
 
-    def test_revert(self):
-        """revert should restore original wavelengths and intensities."""
-        spec = Spectrum([200, 220, 240, 260], [0.1, 0.3, 0.5, 0.3])
-        spec.filter(minval=210, maxval=250)
-        spec.revert()
-        assert len(spec.wavelengths) == 4
+    def test_immutable_no_revert_needed(self):
+        """With immutable API, original is preserved - no revert needed."""
+        original = Spectrum([200, 220, 240, 260], [0.1, 0.3, 0.5, 0.3])
+        filtered = original.filtered(minval=210, maxval=250)
+        # Original unchanged
+        assert len(original.wavelengths) == 4
+        # Filtered has fewer points
+        assert len(filtered.wavelengths) < 4
 
     def test_sum(self):
         """sum should integrate spectrum."""
@@ -113,13 +123,15 @@ class TestSpectrumOperations:
         total = spec.sum()
         assert total > 0
 
-    def test_scale(self):
-        """scale should adjust total spectral power."""
+    def test_scaled(self):
+        """scaled() should return new Spectrum with adjusted total power."""
         spec = Spectrum([200, 220, 240], [0.1, 0.5, 1.0])
         original_sum = spec.sum()
         target = original_sum * 2
-        spec.scale(target)
-        assert np.isclose(spec.sum(), target, rtol=0.01)
+        scaled = spec.scaled(target)
+        assert np.isclose(scaled.sum(), target, rtol=0.01)
+        # Original unchanged
+        assert np.isclose(spec.sum(), original_sum, rtol=0.01)
 
 
 class TestSpectrumSerialization:
