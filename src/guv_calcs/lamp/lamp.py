@@ -46,8 +46,8 @@ class Lamp:
     wavelength: float
         Optional label for principle GUV wavelength. Set from guv_type if guv_type
         is not "Other".
-    spectra_source: Path or bytes, default=None
-        Optional. Data source for spectra.
+    spectrum_source: Path or bytes, default=None
+        Optional. Data source for spectrum.
     width, length, height: floats, default=None
         x, y, and z axes of luminous opening. If not provided, read from IES file.
     units: str or int in [1, 2] or None
@@ -83,7 +83,7 @@ class Lamp:
         intensity_units=None,
         guv_type=None,
         wavelength: int | float | None = None,
-        spectra_source=None,
+        spectrum_source=None,
         width: float | None = None,
         length: float | None = None,
         height: float | None = None,
@@ -158,9 +158,9 @@ class Lamp:
             )
 
         # Spectral data
-        self.spectra_source = spectra_source
+        self.spectrum_source = spectrum_source
         self.lamp_type = LampType(
-            spectrum=Spectrum.from_source(spectra_source),
+            spectrum=Spectrum.from_source(spectrum_source),
             _guv_type=GUVType.from_any(guv_type),
             _wavelength=wavelength,
         )
@@ -280,12 +280,12 @@ class Lamp:
         filedata = self.save_ies(original=True)
         data["filedata"] = filedata.decode() if filedata is not None else None
 
-        if self.spectra is not None:
-            spectra_dict = self.spectra.to_dict(as_string=True)
-            keys = list(spectra_dict.keys())[0:2]  # keep the first two keys only
-            data["spectra"] = {key: spectra_dict[key] for key in keys}
+        if self.spectrum is not None:
+            spectrum_dict = self.spectrum.to_dict(as_string=True)
+            keys = list(spectrum_dict.keys())[0:2]  # keep the first two keys only
+            data["spectrum"] = {key: spectrum_dict[key] for key in keys}
         else:
-            data["spectra"] = None
+            data["spectrum"] = None
         return data
 
     @classmethod
@@ -293,15 +293,16 @@ class Lamp:
         """Initialize lamp from dict, with migration support for old formats."""
         keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
 
-        # Handle spectra
-        if data.get("spectra") is not None:
-            data["spectra_source"] = {}
-            for k, v in data["spectra"].items():
+        # Handle spectrum (with backwards compatibility for "spectra")
+        spectrum_data = data.get("spectrum") or data.get("spectra")
+        if spectrum_data is not None:
+            data["spectrum_source"] = {}
+            for k, v in spectrum_data.items():
                 if isinstance(v, str):
                     lst = list(map(float, v.split(", ")))
                 elif isinstance(v, list):
                     lst = v
-                data["spectra_source"][k] = np.array(lst)
+                data["spectrum_source"][k] = np.array(lst)
 
         # --- Migration: handle old 'depth' field ---
         if "depth" in data and "fixture" not in data and "height" not in data:
@@ -348,12 +349,30 @@ class Lamp:
 
         path = resources.files("guv_calcs.data.lamp_data")
         kwargs.setdefault("filedata", path.joinpath(config["ies_file"]))
-        if config.get("spectra_file"):
-            kwargs.setdefault("spectra_source", path.joinpath(config["spectra_file"]))
+
+        # Check if user-provided wavelength/guv_type conflicts with config's spectrum
+        config_peak = config.get("peak_wavelength")
+        should_load_spectrum = config.get("spectrum_file") is not None
+
+        if config_peak is not None and should_load_spectrum:
+            user_wv = kwargs.get("wavelength")
+            user_type = kwargs.get("guv_type")
+
+            # Convert guv_type to wavelength for comparison
+            if user_type is not None and user_wv is None:
+                user_type_obj = GUVType.from_any(user_type)
+                user_wv = user_type_obj.default_wavelength if user_type_obj else None
+
+            # If user's explicit wavelength doesn't match config, skip spectrum
+            if user_wv is not None and round(user_wv) != round(config_peak):
+                should_load_spectrum = False
+
+        if should_load_spectrum:
+            kwargs.setdefault("spectrum_source", path.joinpath(config["spectrum_file"]))
 
         # Apply guv_type default from config only if no spectrum file
         # (spectrum will determine guv_type when present)
-        if config.get("guv_type") and not config.get("spectra_file"):
+        if config.get("guv_type") and not config.get("spectrum_file"):
             kwargs.setdefault("guv_type", config["guv_type"])
 
         # Apply fixture defaults from config (user kwargs override)
@@ -671,8 +690,8 @@ class Lamp:
             [`ANSI IES RP 27.1-22`, `IEC 62471-6:2022`]
         Or an integer corresponding to the index of the desired standard.
         """
-        if self.spectra is not None:
-            skin_tlv, eye_tlv = get_tlvs(self.spectra, standard)
+        if self.spectrum is not None:
+            skin_tlv, eye_tlv = get_tlvs(self.spectrum, standard)
         elif self.wavelength is not None:
             skin_tlv, eye_tlv = get_tlvs(self.wavelength, standard)
         else:
@@ -753,17 +772,17 @@ class Lamp:
         """update scaling factor based on the last scaling operation"""
         self._scaling_factor = self.ies.center() / self._base_ies.center()
 
-    # ---------------------- Spectra / Lamp type ---------------
+    # ---------------------- Spectrum / Lamp type ---------------
 
-    def load_spectra(self, spectra_source):
-        """external method for loading spectra after lamp object has been instantiated"""
-        new_spectra = Spectrum.from_source(spectra_source)
-        self.lamp_type = self.lamp_type.update(spectrum=new_spectra)
+    def load_spectrum(self, spectrum_source):
+        """Load spectrum after lamp object has been instantiated."""
+        new_spectrum = Spectrum.from_source(spectrum_source)
+        self.lamp_type = self.lamp_type.update(spectrum=new_spectrum)
         return self
 
-    def set_guv_type(self, guv_type, spectra=None):
+    def set_guv_type(self, guv_type):
         guv_type = GUVType.from_any(guv_type)
-        if guv_type is not None and self.wavelength == guv_type.default_wavelength:
+        if guv_type is not None and self.guv_type == guv_type:
             return self  # no changes, don't accidentally override spectra
         self.lamp_type = LampType(_guv_type=guv_type)
         return self
@@ -775,7 +794,7 @@ class Lamp:
         return self
 
     @property
-    def spectra(self):
+    def spectrum(self):
         return self.lamp_type.spectrum
 
     @property
@@ -867,9 +886,9 @@ class Lamp:
         """see LampPlotter.plot_3d"""
         return self.plotter.plot_3d(**kwargs)
 
-    def plot_spectra(self, **kwargs):
-        """see LampPlotter.plot_spectra and Spectrum.plot"""
-        return self.plotter.plot_spectra(**kwargs)
+    def plot_spectrum(self, **kwargs):
+        """See LampPlotter.plot_spectrum and Spectrum.plot."""
+        return self.plotter.plot_spectrum(**kwargs)
 
     def plot_surface(self, **kwargs):
         """see LampSurface.plot_surface"""

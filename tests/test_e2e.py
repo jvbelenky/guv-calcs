@@ -862,8 +862,8 @@ class TestLampSpectrumManipulation:
         """Changing wavelength should change TLV calculations."""
         lamp = Lamp.from_keyword("aerolamp")
 
-        # Clear spectra and set single wavelength
-        lamp.load_spectra(None)
+        # Clear spectrum and set single wavelength
+        lamp.load_spectrum(None)
         lamp.set_wavelength(254)
         skin_254, eye_254 = lamp.get_tlvs(PhotStandard.ACGIH)
 
@@ -873,15 +873,15 @@ class TestLampSpectrumManipulation:
         # 222nm has higher TLVs than 254nm (less hazardous)
         assert skin_222 > skin_254
 
-    def test_load_spectra_none_clears_spectrum(self):
+    def test_load_spectrum_none_clears_spectrum(self):
         """Loading None should clear the spectrum."""
         lamp = Lamp.from_keyword("aerolamp")
-        assert lamp.spectra is not None
+        assert lamp.spectrum is not None
 
-        lamp.load_spectra(None)
-        assert lamp.spectra is None
+        lamp.load_spectrum(None)
+        assert lamp.spectrum is None
 
-    def test_load_spectra_from_spectrum_object(self):
+    def test_load_spectrum_from_spectrum_object(self):
         """Loading a Spectrum object should work."""
         lamp = Lamp.from_keyword("aerolamp")
 
@@ -890,12 +890,12 @@ class TestLampSpectrumManipulation:
             wavelengths=[200, 210, 220, 230, 240],
             intensities=[0.1, 0.5, 1.0, 0.5, 0.1]
         )
-        lamp.load_spectra(custom_spectrum)
+        lamp.load_spectrum(custom_spectrum)
 
-        assert lamp.spectra is not None
-        assert lamp.spectra.peak_wavelength == 220
+        assert lamp.spectrum is not None
+        assert lamp.spectrum.peak_wavelength == 220
 
-    def test_load_spectra_from_dict(self):
+    def test_load_spectrum_from_dict(self):
         """Loading spectrum from dict should work."""
         lamp = Lamp.from_keyword("aerolamp")
 
@@ -903,19 +903,19 @@ class TestLampSpectrumManipulation:
             "wavelength": [200, 220, 240],
             "intensity": [0.1, 1.0, 0.1]
         }
-        lamp.load_spectra(spectrum_dict)
+        lamp.load_spectrum(spectrum_dict)
 
-        assert lamp.spectra is not None
+        assert lamp.spectrum is not None
 
     def test_spectrum_normalized_preserves_tlv_ratios(self):
         """Normalizing spectrum should not change TLV ratios (shape preserved)."""
         from guv_calcs import get_tlvs, PhotStandard
 
         lamp = Lamp.from_keyword("aerolamp")
-        if lamp.spectra is None:
-            pytest.skip("Lamp has no spectra")
+        if lamp.spectrum is None:
+            pytest.skip("Lamp has no spectrum")
 
-        original = lamp.spectra
+        original = lamp.spectrum
         normalized = original.normalized(100)
 
         # TLVs are based on spectral shape, so ratios should be preserved
@@ -928,10 +928,10 @@ class TestLampSpectrumManipulation:
     def test_spectrum_immutable_preserves_original(self):
         """Spectrum.filtered() returns new instance, original unchanged."""
         lamp = Lamp.from_keyword("aerolamp")
-        if lamp.spectra is None:
-            pytest.skip("Lamp has no spectra")
+        if lamp.spectrum is None:
+            pytest.skip("Lamp has no spectrum")
 
-        original = lamp.spectra
+        original = lamp.spectrum
         original_len = len(original.wavelengths)
 
         # Filter to narrow range - returns NEW spectrum
@@ -947,7 +947,7 @@ class TestLampSpectrumManipulation:
         """Changing wavelength after calculation should affect TLV-related results."""
         room = Room(x=6, y=4, z=2.7)
         lamp = Lamp.from_keyword("aerolamp").move(3, 2, 2.7).aim(3, 2, 0)
-        lamp.load_spectra(None)
+        lamp.load_spectrum(None)
         lamp.set_wavelength(254)
 
         room.add_lamp(lamp)
@@ -1103,7 +1103,7 @@ class TestLampSaveLoadWithModifications:
         """Custom wavelength should be preserved after save/load."""
         room = Room(x=6, y=4, z=2.7)
         lamp = Lamp.from_keyword("aerolamp").move(3, 2, 2.7).aim(3, 2, 0)
-        lamp.load_spectra(None)
+        lamp.load_spectrum(None)
         lamp.set_wavelength(222)
 
         room.add_lamp(lamp)

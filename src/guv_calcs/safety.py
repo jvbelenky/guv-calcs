@@ -342,7 +342,7 @@ def check_lamps(room) -> SafetyCheckResult:
             # Check for missing spectrum on non-LPHG lamps
             missing_spectrum = (
                 lamp.guv_type != GUVType.LPHG
-                and lamp.spectra is None
+                and lamp.spectrum is None
                 and lamp.ies is not None
             )
 

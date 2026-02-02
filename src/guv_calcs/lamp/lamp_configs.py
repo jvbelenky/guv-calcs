@@ -5,9 +5,10 @@ import re
 LAMP_CONFIGS = {
     "aerolamp": {
         "ies_file": "aerolamp.ies",
-        "spectra_file": "aerolamp.csv",
+        "spectrum_file": "aerolamp.csv",
         "aliases": ["aerolamp devkit", "devkit", "aerolamp devkit v1"],
         "guv_type": "krcl",
+        "peak_wavelength": 222,
         "placement": {
             "mode": "edge",
         },
@@ -19,9 +20,10 @@ LAMP_CONFIGS = {
     },
     "beacon": {
         "ies_file": "beacon.ies",
-        "spectra_file": "beacon.csv",
+        "spectrum_file": "beacon.csv",
         "aliases": [],
         "guv_type": "krcl",
+        "peak_wavelength": 222,
         "placement": {
             "mode": "edge",
             # "max_tilt": 45,
@@ -34,9 +36,10 @@ LAMP_CONFIGS = {
     },
     "lumenizer_zone": {
         "ies_file": "lumenizer_zone.ies",
-        "spectra_file": "lumenizer_zone.csv",
+        "spectrum_file": "lumenizer_zone.csv",
         "aliases": ["lumenizer"],
         # "guv_type": "krcl",
+        "peak_wavelength": 222,
         "placement": {
             "mode": "downlight",
             "max_tilt": 45,
@@ -49,9 +52,10 @@ LAMP_CONFIGS = {
     },
     "nukit_lantern": {
         "ies_file": "nukit_lantern.ies",
-        "spectra_file": "nukit_lantern.csv",
+        "spectrum_file": "nukit_lantern.csv",
         "aliases": ["lantern"],
         # "guv_type": "krcl",
+        "peak_wavelength": 222,
         "placement": {
             "mode": "edge",
         },
@@ -63,9 +67,10 @@ LAMP_CONFIGS = {
     },
     "nukit_torch": {
         "ies_file": "nukit_torch.ies",
-        "spectra_file": "nukit_torch.csv",
+        "spectrum_file": "nukit_torch.csv",
         "aliases": ["torch"],
         # "guv_type": "krcl",
+        "peak_wavelength": 222,
         "placement": {
             # "mode": "corner",
             # "max_tilt": 45,
@@ -78,9 +83,10 @@ LAMP_CONFIGS = {
     },
     "sterilray": {
         "ies_file": "sterilray.ies",
-        "spectra_file": "sterilray.csv",
+        "spectrum_file": "sterilray.csv",
         "aliases": ["sabre","germbuster_sabre","sterilray_germbuster","sterilray_germbuster_sabre"],
         # "guv_type": "krcl",
+        "peak_wavelength": 222,
         "placement": {
             "mode": "horizontal",
         },
@@ -92,9 +98,10 @@ LAMP_CONFIGS = {
     },
     "ushio_b1": {
         "ies_file": "ushio_b1.ies",
-        "spectra_file": "ushio_b1.csv",
+        "spectrum_file": "ushio_b1.csv",
         "aliases": ["ushio_diffused", "b1"],
         "guv_type": "krcl",
+        "peak_wavelength": 222,
         "placement": {
             "mode": "corner",
             "max_tilt": 45,
@@ -107,9 +114,10 @@ LAMP_CONFIGS = {
     },
     "ushio_b1.5": {
         "ies_file": "ushio_b1.5.ies",
-        "spectra_file": "ushio_b1.5.csv",
+        "spectrum_file": "ushio_b1.5.csv",
         "aliases": ["ushio_diffused" "b1.5","b15"],
         "guv_type": "krcl",
+        "peak_wavelength": 222,
         "placement": {
             "mode": "corner",
             "max_tilt": 45,
@@ -122,9 +130,10 @@ LAMP_CONFIGS = {
     },
     "uvpro222_b1": {
         "ies_file": "uvpro222_b1.ies",
-        "spectra_file": "uvpro222_b1.csv",
+        "spectrum_file": "uvpro222_b1.csv",
         "aliases": ["uvpro_b1", "bioabundance_b1"],
         "guv_type": "krcl",
+        "peak_wavelength": 222,
         "placement": {
             "mode": "corner",
             # "max_tilt": 45,
@@ -137,9 +146,10 @@ LAMP_CONFIGS = {
     },
     "uvpro222_b2": {
         "ies_file": "uvpro222_b2.ies",
-        "spectra_file": "uvpro222_b2.csv",
+        "spectrum_file": "uvpro222_b2.csv",
         "aliases": ["uvpro_b2", "bioabundance_b2"],
         "guv_type": "krcl",
+        "peak_wavelength": 222,
         "placement": {
             "mode": "edge",
             # "max_tilt": 45,
@@ -152,9 +162,10 @@ LAMP_CONFIGS = {
     },
     "visium": {
         "ies_file": "visium.ies",
-        "spectra_file": "visium.csv",
+        "spectrum_file": "visium.csv",
         "aliases": ["visium_diffused"],
         "guv_type": "krcl",
+        "peak_wavelength": 222,
         "placement": {
             "mode": "downlight",
         },

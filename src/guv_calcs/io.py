@@ -133,12 +133,12 @@ def export_room_zip(
                 img_bytes = fig_to_bytes(ies_fig)
                 if img_bytes is not None:
                     data_dict[lamp.name + "_ies.png"] = img_bytes
-        if lamp.spectra is not None:
+        if lamp.spectrum is not None:
             if include_lamp_plots:
-                linfig, _ = lamp.spectra.plot(
+                linfig, _ = lamp.spectrum.plot(
                     title=lamp.name, yscale="linear", weights=True, label=True
                 )
-                logfig, _ = lamp.spectra.plot(
+                logfig, _ = lamp.spectrum.plot(
                     title=lamp.name, yscale="log", weights=True, label=True
                 )
                 linkey = lamp.name + "_spectra_linear.png"

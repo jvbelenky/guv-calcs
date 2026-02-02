@@ -11,7 +11,7 @@ class LampPlotter:
 
     def __init__(self, lamp):
         self.lamp = lamp
-        self.spectra = self.lamp.spectra
+        self.spectrum = self.lamp.spectrum
 
     def plot_ies(self, title=""):
         """standard polar plot of an ies file"""
@@ -101,7 +101,7 @@ class LampPlotter:
         ax.set_zlabel("z")
         return fig, ax
 
-    def plot_spectra(
+    def plot_spectrum(
         self,
         title="",
         fig=None,
@@ -111,11 +111,7 @@ class LampPlotter:
         label=None,
         weights=False,
     ):
-
-        """
-        see Spectrum.plot for details
-        Some code is duplicated to maintain api compatibility
-        """
+        """See Spectrum.plot for details."""
         if fig is None:
             if ax is None:
                 fig, ax = plt.subplots()
@@ -125,8 +121,8 @@ class LampPlotter:
             if ax is None:
                 ax = fig.axes[0]
 
-        if self.spectra is not None:
-            fig, ax = self.spectra.plot(
+        if self.spectrum is not None:
+            fig, ax = self.spectrum.plot(
                 title=title,
                 fig=fig,
                 ax=ax,

@@ -173,9 +173,9 @@ class TestLampScaling:
 class TestLampSpectrum:
     """Tests for lamp spectrum handling."""
 
-    def test_spectra_loaded(self, basic_lamp):
-        """Lamp loaded from keyword should have spectra."""
-        assert basic_lamp.spectra is not None
+    def test_spectrum_loaded(self, basic_lamp):
+        """Lamp loaded from keyword should have spectrum."""
+        assert basic_lamp.spectrum is not None
 
     def test_wavelength_property(self, basic_lamp):
         """wavelength property should return a value."""
@@ -183,7 +183,7 @@ class TestLampSpectrum:
 
     def test_set_wavelength(self, basic_lamp):
         """set_wavelength() should update wavelength."""
-        basic_lamp.load_spectra(None).set_wavelength(254)
+        basic_lamp.load_spectrum(None).set_wavelength(254)
         assert basic_lamp.wavelength == 254
 
     def test_get_tlvs(self, basic_lamp):
@@ -191,8 +191,8 @@ class TestLampSpectrum:
         from guv_calcs import PhotStandard
         # get_tlvs expects a PhotStandard enum object
         skin_tlv, eye_tlv = basic_lamp.get_tlvs(PhotStandard.ACGIH)
-        assert skin_tlv is not None or basic_lamp.spectra is None
-        assert eye_tlv is not None or basic_lamp.spectra is None
+        assert skin_tlv is not None or basic_lamp.spectrum is None
+        assert eye_tlv is not None or basic_lamp.spectrum is None
 
 
 class TestLampSerialization:
