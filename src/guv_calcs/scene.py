@@ -215,6 +215,7 @@ class Scene:
         WholeRoomFluence to the scene
         """
         flags = standard.flags(self.dim.units)
+        spacing = convert_length("meters", self.dim.units, 0.1, 0.1)
         standard_zones = [
             CalcVol.from_dims(
                 dims=self.dim,
@@ -234,7 +235,7 @@ class Scene:
                 use_normal=False,
                 vert=flags["eye_vert"],
                 fov_vert=flags["fov_vert"],
-                spacing=(0.1, 0.1),
+                spacing=spacing,
             ),
             CalcPlane.from_face(
                 dims=self.dim,
@@ -246,7 +247,7 @@ class Scene:
                 hours=8,
                 use_normal=False,
                 horiz=flags["skin_horiz"],
-                spacing=(0.1, 0.1),
+                spacing=spacing,
             ),
         ]
 
