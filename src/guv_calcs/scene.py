@@ -96,7 +96,17 @@ class Scene:
         self.update_standard_surfaces()
 
     def update_units(self, units):
-        self.dim = self.dim.with_(units=LengthUnits.from_any(units))
+        old_units = self.dim.units
+        new_units = LengthUnits.from_any(units)
+        self.dim = self.dim.with_(units=new_units)
+        # convert zone spacings to new units
+        for zone in self.calc_zones.values():
+            if zone.geometry is not None:
+                old_spacing = zone.geometry.spacing
+                new_spacing = convert_length(old_units, new_units, *old_spacing)
+                if not isinstance(new_spacing, tuple):
+                    new_spacing = (new_spacing,)
+                zone.set_spacing(*new_spacing)
         self.lamps.validate()  # update lamp units...but this should really not be happening
 
     def set_colormap(self, colormap: str):
