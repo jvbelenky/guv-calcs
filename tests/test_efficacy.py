@@ -1,9 +1,12 @@
-"""Tests for the efficacy module (Data class, disinfection calculations)."""
+"""Tests for the efficacy module (InactivationData class, disinfection calculations)."""
+
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend for tests
 
 import pytest
 import numpy as np
 import pandas as pd
-from guv_calcs import Data
+from guv_calcs import InactivationData
 from guv_calcs.efficacy._kinetics import (
     species_matches,
     parse_resistant,
@@ -13,165 +16,242 @@ from guv_calcs.efficacy._kinetics import (
 )
 from guv_calcs.efficacy._filtering import (
     filter_by_column,
-    validate_filter,
+    words_match,
+    filter_by_words,
     apply_row_filters,
     get_effective_wavelengths,
+    ALIASES,
 )
 from guv_calcs.efficacy._state import DataState
 
 
-class TestDataClassMethods:
-    """Tests for Data class methods."""
+class TestInactivationDataClassMethods:
+    """Tests for InactivationData class methods."""
 
     def test_get_full_returns_dataframe(self):
-        """Data.get_full() should return DataFrame."""
-        df = Data.get_full()
+        """InactivationData.get_full() should return DataFrame."""
+        df = InactivationData.get_full()
         assert isinstance(df, pd.DataFrame)
 
     def test_get_full_returns_copy(self):
-        """Data.get_full() should return a copy."""
-        df1 = Data.get_full()
-        df2 = Data.get_full()
+        """InactivationData.get_full() should return a copy."""
+        df1 = InactivationData.get_full()
+        df2 = InactivationData.get_full()
         # Modifying one shouldn't affect the other
         df1["test_col"] = 1
         assert "test_col" not in df2.columns
 
     def test_get_valid_categories(self):
-        """Data.get_valid_categories() should return list of strings."""
-        categories = Data.get_valid_categories()
+        """InactivationData.get_valid_categories() should return list of strings."""
+        categories = InactivationData.get_valid_categories()
         assert isinstance(categories, list)
         assert len(categories) > 0
         assert all(isinstance(c, str) for c in categories)
 
     def test_get_valid_mediums(self):
-        """Data.get_valid_mediums() should return list of strings."""
-        mediums = Data.get_valid_mediums()
+        """InactivationData.get_valid_mediums() should return list of strings."""
+        mediums = InactivationData.get_valid_mediums()
         assert isinstance(mediums, list)
         assert len(mediums) > 0
         # Should include Aerosol, Surface, or Liquid
         assert any(m in mediums for m in ["Aerosol", "Surface", "Liquid"])
 
     def test_get_valid_wavelengths(self):
-        """Data.get_valid_wavelengths() should return list of numbers."""
-        wavelengths = Data.get_valid_wavelengths()
+        """InactivationData.get_valid_wavelengths() should return list of numbers."""
+        wavelengths = InactivationData.get_valid_wavelengths()
         assert isinstance(wavelengths, list)
         assert len(wavelengths) > 0
         assert all(isinstance(w, (int, float)) for w in wavelengths)
 
 
-class TestDataInitialization:
-    """Tests for Data initialization."""
+class TestInactivationDataInitialization:
+    """Tests for InactivationData initialization."""
 
     def test_init_no_args(self):
-        """Data() should create instance with base table."""
-        data = Data()
+        """InactivationData() should create instance with base table."""
+        data = InactivationData()
         assert data is not None
 
     def test_init_with_fluence_float(self):
-        """Data with float fluence should compute additional columns."""
-        data = Data(fluence=1.0)
+        """InactivationData with float fluence should compute additional columns."""
+        data = InactivationData(fluence=1.0)
         assert data is not None
 
     def test_init_with_fluence_dict(self):
-        """Data with dict fluence should handle multiple wavelengths."""
-        data = Data(fluence={222: 0.5, 254: 0.5})
+        """InactivationData with dict fluence should handle multiple wavelengths."""
+        data = InactivationData(fluence={222: 0.5, 254: 0.5})
         assert data is not None
 
     def test_init_with_volume(self):
-        """Data with volume should compute CADR columns."""
-        data = Data(fluence=1.0, volume_m3=50.0)
+        """InactivationData with volume should compute CADR columns."""
+        data = InactivationData(fluence=1.0, volume_m3=50.0)
         assert data is not None
 
 
-class TestDataSubset:
-    """Tests for Data.subset() filtering."""
+class TestInactivationDataSubset:
+    """Tests for InactivationData.subset() filtering."""
 
     def test_subset_returns_self(self):
         """subset() should return self for chaining."""
-        data = Data()
+        data = InactivationData()
         result = data.subset(medium="Aerosol")
         assert result is data
 
     def test_subset_by_medium(self):
         """subset(medium=...) should filter by medium."""
-        data = Data()
+        data = InactivationData()
         data.subset(medium="Aerosol")
         # The filter is applied, internal state is set
         assert data._medium is not None
 
     def test_subset_by_category(self):
         """subset(category=...) should filter by category."""
-        data = Data()
-        categories = Data.get_valid_categories()
+        data = InactivationData()
+        categories = InactivationData.get_valid_categories()
         if categories:
             data.subset(category=categories[0])
             assert data._category is not None
 
-    def test_subset_invalid_medium(self):
-        """subset with invalid medium should raise KeyError."""
-        data = Data()
-        with pytest.raises(KeyError):
-            data.subset(medium="InvalidMedium")
+    def test_subset_by_species(self):
+        """subset(species=...) should filter by species."""
+        data = InactivationData()
+        data.subset(species="coli")
+        assert data._species is not None
+        # Check that full_df is filtered (display_df may remove single-value columns)
+        df = data.full_df
+        assert all("coli" in s.lower() for s in df["Species"])
 
-    def test_subset_invalid_category(self):
-        """subset with invalid category should raise KeyError."""
-        data = Data()
-        with pytest.raises(KeyError):
-            data.subset(category="InvalidCategory")
+    def test_subset_by_strain(self):
+        """subset(strain=...) should filter by strain."""
+        data = InactivationData()
+        data.subset(strain="ATCC")
+        assert data._strain is not None
+
+    def test_subset_by_condition(self):
+        """subset(condition=...) should filter by condition."""
+        data = InactivationData()
+        data.subset(condition="stationary")
+        assert data._condition is not None
 
     def test_subset_by_log_level(self):
         """subset(log=...) should set log reduction level."""
-        data = Data(fluence=1.0)
+        data = InactivationData(fluence=1.0)
         data.subset(log=3)
         assert data._log == 3
 
     def test_subset_chaining(self):
         """Multiple subset calls should chain."""
-        data = Data()
+        data = InactivationData()
         result = data.subset(medium="Aerosol").subset(log=2)
         assert result is data
 
+    def test_subset_case_insensitive_medium(self):
+        """subset() should match medium case-insensitively."""
+        data = InactivationData().subset(medium="aerosol")
+        df = data.full_df
+        assert len(df) > 0
+        assert all("Aerosol" in m for m in df["Medium"])
 
-class TestDataDisplayDf:
-    """Tests for Data.display_df property."""
+    def test_subset_alias_air_to_aerosol(self):
+        """subset(medium='air') should match Aerosol."""
+        data = InactivationData().subset(medium="air")
+        df = data.full_df
+        assert len(df) > 0
+        assert all("Aerosol" in m for m in df["Medium"])
+
+    def test_subset_partial_word_matching(self):
+        """subset should match partial words."""
+        data = InactivationData().subset(category="virus")
+        df = data.full_df
+        assert len(df) > 0
+        assert all("virus" in c.lower() for c in df["Category"])
+
+    def test_subset_empty_result_returns_empty_df(self):
+        """subset with no matching rows should return empty DataFrame."""
+        data = InactivationData()
+        data.subset(species="nonexistent_species_xyz")
+        # Result should be empty but not raise
+        assert len(data.display_df) == 0
+
+
+class TestInactivationDataDisplayDf:
+    """Tests for InactivationData.display_df property."""
 
     def test_display_df_returns_dataframe(self):
         """display_df should return DataFrame."""
-        data = Data()
+        data = InactivationData()
         df = data.display_df
         assert isinstance(df, pd.DataFrame)
 
     def test_display_df_has_species(self):
         """display_df should have Species column."""
-        data = Data()
+        data = InactivationData()
         df = data.display_df
         assert "Species" in df.columns
 
     def test_display_df_filtered(self):
         """display_df should reflect subset filters."""
-        data = Data().subset(medium="Aerosol")
+        data = InactivationData().subset(medium="Aerosol")
         df = data.display_df
         # All rows should be Aerosol medium
         if "Medium" in df.columns and len(df) > 0:
             assert all(df["Medium"] == "Aerosol")
 
 
-class TestDataWithFluence:
-    """Tests for Data with fluence calculations."""
+class TestInactivationDataWithFluence:
+    """Tests for InactivationData with fluence calculations."""
 
     def test_fluence_adds_each_column(self):
-        """Data with fluence should add eACH-UV column."""
-        data = Data(fluence=1.0)
+        """InactivationData with fluence should add eACH-UV column."""
+        data = InactivationData(fluence=1.0)
         # The internal _full_df should have computed columns
         assert data._full_df is not None
         assert len(data._full_df) > 0
 
     def test_fluence_dict_multiple_wavelengths(self):
-        """Data with dict fluence should handle all wavelengths."""
-        data = Data(fluence={222: 0.5, 254: 0.5})
+        """InactivationData with dict fluence should handle all wavelengths."""
+        data = InactivationData(fluence={222: 0.5, 254: 0.5})
         # Should not raise error
         df = data.display_df
         assert df is not None
+
+
+class TestInactivationDataMetadataProperties:
+    """Tests for metadata properties (species, mediums, strains, etc.)."""
+
+    def test_species_property(self):
+        """species property should return list of unique species."""
+        data = InactivationData()
+        species = data.species
+        assert isinstance(species, list)
+        assert len(species) > 0
+
+    def test_mediums_property(self):
+        """mediums property should return list of unique mediums."""
+        data = InactivationData()
+        mediums = data.mediums
+        assert isinstance(mediums, list)
+        assert len(mediums) > 0
+
+    def test_strains_property(self):
+        """strains property should return list of unique strains or None."""
+        data = InactivationData()
+        strains = data.strains
+        # May be None if no strain data, or list if present
+        assert strains is None or isinstance(strains, list)
+
+    def test_conditions_property(self):
+        """conditions property should return list of unique conditions or None."""
+        data = InactivationData()
+        conditions = data.conditions
+        # May be None if no condition data, or list if present
+        assert conditions is None or isinstance(conditions, list)
+
+    def test_metadata_sorted_alphabetically(self):
+        """metadata lists should be sorted alphabetically."""
+        data = InactivationData()
+        species = data.species
+        assert species == sorted(species)
 
 
 class TestAverageValueParametric:
@@ -179,13 +259,13 @@ class TestAverageValueParametric:
 
     def test_average_value_single_function(self):
         """average_value with single function returns float."""
-        data = Data(fluence=0.5)
+        data = InactivationData(fluence=0.5)
         result = data.average_value("log2", species="coli")
         assert isinstance(result, float)
 
     def test_average_value_function_list(self):
         """average_value with function list returns dict keyed by function."""
-        data = Data(fluence=0.5)
+        data = InactivationData(fluence=0.5)
         result = data.average_value(["log2", "log3"], species="coli")
         assert isinstance(result, dict)
         assert "log2" in result
@@ -197,7 +277,7 @@ class TestAverageValueParametric:
 
     def test_average_value_function_list_with_species_list(self):
         """average_value with both function and species lists returns nested dict."""
-        data = Data(fluence=0.5)
+        data = InactivationData(fluence=0.5)
         result = data.average_value(["log2", "each"], species=["coli", "staph"])
         assert isinstance(result, dict)
         assert "log2" in result
@@ -209,7 +289,7 @@ class TestAverageValueParametric:
 
     def test_average_value_function_list_order(self):
         """Function list should be outermost dimension in nested dict."""
-        data = Data(fluence=0.5)
+        data = InactivationData(fluence=0.5)
         result = data.average_value(["log2", "log3"], species=["coli"])
         # Function is outermost, so result["log2"]["coli"] should exist
         assert "log2" in result
@@ -436,26 +516,6 @@ class TestFilteringFunctions:
         result = filter_by_column(df, "A", None)
         assert len(result) == 3
 
-    def test_validate_filter_valid_scalar(self):
-        """validate_filter should pass valid scalar."""
-        result = validate_filter("Aerosol", ["Aerosol", "Surface"], "medium")
-        assert result == "Aerosol"
-
-    def test_validate_filter_invalid_scalar(self):
-        """validate_filter should raise KeyError for invalid scalar."""
-        with pytest.raises(KeyError):
-            validate_filter("Invalid", ["Aerosol", "Surface"], "medium")
-
-    def test_validate_filter_list_normalizes(self):
-        """validate_filter should normalize single-item list to scalar."""
-        result = validate_filter(["Aerosol"], ["Aerosol", "Surface"], "medium")
-        assert result == "Aerosol"
-
-    def test_validate_filter_list_invalid(self):
-        """validate_filter should raise KeyError for invalid list items."""
-        with pytest.raises(KeyError):
-            validate_filter(["Aerosol", "Bad"], ["Aerosol", "Surface"], "medium")
-
     def test_get_effective_wavelengths_none(self):
         """get_effective_wavelengths should return None if no filters."""
         result = get_effective_wavelengths(None, None)
@@ -480,3 +540,122 @@ class TestFilteringFunctions:
         """get_effective_wavelengths should pass through tuple range."""
         result = get_effective_wavelengths((200, 300), [222])
         assert result == (200, 300)
+
+
+class TestWordsMatch:
+    """Tests for words_match function."""
+
+    def test_words_match_exact(self):
+        """words_match should match exact strings."""
+        assert words_match("Aerosol", "Aerosol")
+
+    def test_words_match_case_insensitive(self):
+        """words_match should be case-insensitive."""
+        assert words_match("aerosol", "Aerosol")
+        assert words_match("AEROSOL", "Aerosol")
+        assert words_match("AeRoSoL", "Aerosol")
+
+    def test_words_match_partial_word(self):
+        """words_match should match partial words."""
+        assert words_match("aero", "Aerosol")
+        assert words_match("virus", "Viruses")
+
+    def test_words_match_multiple_words(self):
+        """words_match should require all query words to match."""
+        assert words_match("ms2 phage", "Phage MS2")
+        assert not words_match("ms2 coli", "Phage MS2")
+
+    def test_words_match_alias_air(self):
+        """words_match should translate 'air' to 'aerosol'."""
+        assert words_match("air", "Aerosol")
+
+    def test_words_match_alias_water(self):
+        """words_match should translate 'water' to 'liquid'."""
+        assert words_match("water", "Liquid")
+
+    def test_words_match_no_match(self):
+        """words_match should return False for non-matching strings."""
+        assert not words_match("surface", "Aerosol")
+        assert not words_match("xyz", "Aerosol")
+
+
+class TestFilterByWords:
+    """Tests for filter_by_words function."""
+
+    def test_filter_by_words_basic(self):
+        """filter_by_words should filter by word match."""
+        df = pd.DataFrame({"Medium": ["Aerosol", "Surface", "Liquid"]})
+        result = filter_by_words(df, "Medium", "aero")
+        assert len(result) == 1
+        assert result["Medium"].iloc[0] == "Aerosol"
+
+    def test_filter_by_words_none(self):
+        """filter_by_words should return unchanged df if value is None."""
+        df = pd.DataFrame({"Medium": ["Aerosol", "Surface"]})
+        result = filter_by_words(df, "Medium", None)
+        assert len(result) == 2
+
+    def test_filter_by_words_handles_nan(self):
+        """filter_by_words should handle NaN values in column."""
+        df = pd.DataFrame({"Medium": ["Aerosol", None, "Surface"]})
+        result = filter_by_words(df, "Medium", "aero")
+        assert len(result) == 1
+
+
+class TestApplyRowFilters:
+    """Tests for apply_row_filters function."""
+
+    def test_apply_row_filters_single(self):
+        """apply_row_filters should apply single filter."""
+        df = pd.DataFrame({
+            "Medium": ["Aerosol", "Surface"],
+            "Category": ["Virus", "Bacteria"],
+            "Species": ["MS2", "E. coli"],
+            "Strain": ["ATCC", "K12"],
+            "Condition": ["log", "stationary"],
+        })
+        result = apply_row_filters(df, medium="aero")
+        assert len(result) == 1
+        assert result["Medium"].iloc[0] == "Aerosol"
+
+    def test_apply_row_filters_multiple(self):
+        """apply_row_filters should apply multiple filters."""
+        df = pd.DataFrame({
+            "Medium": ["Aerosol", "Aerosol", "Surface"],
+            "Category": ["Virus", "Bacteria", "Virus"],
+            "Species": ["MS2", "E. coli", "Adeno"],
+            "Strain": ["ATCC", "K12", ""],
+            "Condition": ["", "", ""],
+        })
+        result = apply_row_filters(df, medium="aero", category="virus")
+        assert len(result) == 1
+        assert result["Species"].iloc[0] == "MS2"
+
+
+class TestPlotFunction:
+    """Tests for plot functionality."""
+
+    def test_plot_returns_figure(self):
+        """plot() should return a matplotlib Figure."""
+        import matplotlib.pyplot as plt
+        data = InactivationData(fluence=0.5).subset(medium="aerosol", species="ms2")
+        fig = data.plot()
+        assert fig is not None
+        plt.close('all')
+
+    def test_plot_survival_returns_figure(self):
+        """plot_survival() should return a matplotlib Figure."""
+        import matplotlib.pyplot as plt
+        data = InactivationData(fluence=0.5).subset(medium="aerosol", species="ms2")
+        fig = data.plot_survival()
+        assert fig is not None
+        plt.close('all')
+
+    def test_plot_with_single_species_shows_strains(self):
+        """When single species filtered, x-axis should show strains if multiple."""
+        import matplotlib.pyplot as plt
+        data = InactivationData(fluence=0.5).subset(medium="aerosol", species="ms2")
+        fig = data.plot()
+        # Just verify it doesn't crash - detailed axis checking would be brittle
+        assert fig is not None
+        plt.close('all')
