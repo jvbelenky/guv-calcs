@@ -12,6 +12,17 @@ ALIASES = {
     "water": "liquid",
 }
 
+# Exact matches for ambiguous terms (lowercase query -> exact target value)
+# These take priority over word matching to avoid "bacteria" matching "bacterial spores"
+EXACT_MATCHES = {
+    "bacteria": "Bacteria",
+    "virus": "Viruses",
+    "viruses": "Viruses",
+    "fungi": "Fungi",
+    "spores": "Bacterial spores",
+    "bacterial spores": "Bacterial spores",
+}
+
 
 def filter_by_column(df: pd.DataFrame, col: str, value) -> pd.DataFrame:
     """Filter df by column value. Handles scalar, list, or tuple (min, max) range."""
@@ -27,9 +38,16 @@ def filter_by_column(df: pd.DataFrame, col: str, value) -> pd.DataFrame:
 
 
 def words_match(query: str, target: str) -> bool:
-    """Check if all words in query appear in target (case-insensitive). Supports aliases."""
-    query_words = re.findall(r"\w+", query.lower())
+    """Check if all words in query appear in target (case-insensitive). Supports aliases and exact matches."""
+    query_lower = query.lower().strip()
     target_lower = target.lower()
+
+    # Check for exact match first (handles ambiguous cases like "bacteria" vs "bacterial spores")
+    if query_lower in EXACT_MATCHES:
+        return target == EXACT_MATCHES[query_lower]
+
+    # Fall back to word matching
+    query_words = re.findall(r"\w+", query_lower)
     for word in query_words:
         # Check direct match or alias match
         alias = ALIASES.get(word, word)
