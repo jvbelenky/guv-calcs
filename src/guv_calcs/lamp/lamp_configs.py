@@ -60,9 +60,9 @@ LAMP_CONFIGS = {
             "mode": "edge",
         },
         "fixture": {
-            "housing_width": 0.10,
-            "housing_length": 0.10,
-            "housing_height": 0.15,
+            "housing_width": 0.086,
+            "housing_length": 0.140,
+            "housing_height": 0.045,
         },
     },
     "nukit_torch": {
@@ -76,9 +76,9 @@ LAMP_CONFIGS = {
             # "max_tilt": 45,
         },
         "fixture": {
-            "housing_width": 0.08,
-            "housing_length": 0.08,
-            "housing_height": 0.20,
+            "housing_width": 0.042,
+            "housing_length": 0.154,
+            "housing_height": 0.05,
         },
     },
     "sterilray": {
