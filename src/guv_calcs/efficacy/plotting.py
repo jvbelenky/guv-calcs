@@ -12,6 +12,8 @@ from .constants import (
     MEDIUM_ORDER,
     COL_CATEGORY,
     COL_SPECIES,
+    COL_STRAIN,
+    COL_CONDITION,
     COL_WAVELENGTH,
     COL_MEDIUM,
     COL_K1,
@@ -88,10 +90,13 @@ def plot_swarm(
     # Build plotting DataFrame
     df = _build_plot_df(data)
 
-    # Dynamic figsize based on number of species
+    # Determine x-axis column based on data granularity
+    # Hierarchy: Species → Strain → Condition
+    x_col, n_groups = _determine_x_axis(df)
+
+    # Dynamic figsize based on number of groups
     if figsize is None:
-        n_species = df[COL_SPECIES].nunique()
-        width = max(8, n_species * 0.25)
+        width = max(8, n_groups * 0.25)
         figsize = (width, 5)
 
     # Determine columns to plot
@@ -118,14 +123,19 @@ def plot_swarm(
     # Check if category is not filtered (for separators)
     has_category = COL_CATEGORY in df.columns and len(df[COL_CATEGORY].unique()) > 1
 
+    # Sort x-axis alphabetically
+    x_order = sorted(df[x_col].dropna().unique())
+    df = df.sort_values(x_col)
+
     # Create figure
     fig, ax1 = plt.subplots(figsize=figsize)
 
     # Build violin plot kwargs
     violin_kwargs = dict(
         data=df,
-        x=COL_SPECIES,
+        x=x_col,
         y=left_label,
+        order=x_order,
         inner=None,
         ax=ax1,
         alpha=0.4,
@@ -144,7 +154,7 @@ def plot_swarm(
     # Build scatter plot kwargs
     scatter_kwargs = dict(
         data=df,
-        x=COL_SPECIES,
+        x=x_col,
         y=left_label,
         ax=ax1,
         s=80,
@@ -230,8 +240,8 @@ def plot_swarm(
             transform=ax1.get_yaxis_transform(),
         )
 
-    # Add category separators if category is not filtered
-    if has_category:
+    # Add category separators if showing species and category is not filtered
+    if has_category and x_col == COL_SPECIES:
         species_order = [t.get_text() for t in ax1.get_xticklabels()]
         _add_category_separators(ax1, fig, df, species_order)
 
@@ -244,6 +254,7 @@ def plot_swarm(
         ax1,
         fig,
         df,
+        x_col,
         left_label,
         yscale,
         show_legend,
@@ -282,6 +293,39 @@ def _build_plot_df(data):
     # Use full_df with all columns, apply row and wavelength filters
     df = data._apply_row_filters(data._full_df.copy())
     return data._apply_wavelength_filter(df)
+
+
+def _determine_x_axis(df):
+    """
+    Determine the x-axis column based on data granularity.
+
+    Returns (x_col, n_groups) where x_col is the column to use and n_groups
+    is the number of unique values in that column.
+
+    Hierarchy: Species → Strain → Condition
+    - Multiple species: use Species
+    - Single species, multiple strains: use Strain
+    - Single species, single strain, multiple conditions: use Condition
+    """
+    n_species = df[COL_SPECIES].nunique()
+
+    if n_species > 1:
+        return COL_SPECIES, n_species
+
+    # Single species - try strain
+    if COL_STRAIN in df.columns:
+        n_strains = df[COL_STRAIN].nunique()
+        if n_strains > 1:
+            return COL_STRAIN, n_strains
+
+    # Single species and strain - try condition
+    if COL_CONDITION in df.columns:
+        n_conditions = df[COL_CONDITION].nunique()
+        if n_conditions > 1:
+            return COL_CONDITION, n_conditions
+
+    # Fall back to species even if single
+    return COL_SPECIES, n_species
 
 
 def _determine_plot_columns(
@@ -568,12 +612,29 @@ def _generate_title(data, left_label, right_label, use_time_mode, log_level):
         else:
             fluence = data.fluence
 
+    # Get actual values from data for title
+    # Show value(s) if filtered (fewer than all possible values)
+    all_species = data.get_full()[COL_SPECIES].unique()
+    all_categories = data.get_full()[COL_CATEGORY].unique()
+
+    species_list = data.species or []
+    species_val = species_list[0] if len(species_list) == 1 else None
+
+    categories = data.categories or []
+    # Only show category if it's been filtered down
+    category_val = categories[0] if len(categories) == 1 and len(categories) < len(all_categories) else None
+
+    strains = data.strains or []
+    strain_val = strains[0] if len(strains) == 1 else None
+
     return _build_title(
         data,
         stem,
         fluence=fluence,
         fluence_dict=data._fluence if isinstance(data._fluence, dict) else None,
-        category=data.category,
+        category=category_val,
+        species=species_val,
+        strain=strain_val,
     )
 
 
@@ -619,44 +680,24 @@ def _build_title(
     suffix="",
     fluence_label="at",
     category=None,
+    species=None,
+    strain=None,
 ):
     """
     Build plot title with pattern:
-    - Single wavelength: {stem} {medium} by {wavelength} {fluence_label} {fluence} {category} {suffix}
-    - Multi-wavelength: {stem} {medium} by {wavelengths}\\nwith {rate_term} {fluences} {category} {suffix}
-
-    Parameters
-    ----------
-    data : Data
-        Data instance for medium/wavelength info.
-    stem : str
-        Title stem, e.g. "Estimated reduction" or "eACH-UV".
-    fluence : float, optional
-        Fluence value to display (for single-wavelength).
-    fluence_dict : dict, optional
-        Multi-wavelength fluence dict {wavelength: fluence}.
-    suffix : str, optional
-        Suffix like "(95% CI)".
-    fluence_label : str, optional
-        Word before fluence for single-wavelength, e.g. "at".
-    category : str or list, optional
-        Category filter to display (e.g. "Bacteria", ["Bacteria", "Viruses"]).
-
-    Returns
-    -------
-    str
-        Formatted title string.
+    - Single wavelength: {stem} {medium} by {wavelength} {fluence_label} {fluence} for {filters} {suffix}
+    - Multi-wavelength: {stem} {medium} by {wavelengths}\\nwith {rate_term} {fluences} for {filters} {suffix}
     """
     parts = [stem]
 
-    # Medium: "in Aerosol" or "on Surface"
-    if data.medium:
-        if isinstance(data.medium, list):
-            parts.append(f"in {', '.join(data.medium)}")
-        elif data.medium == "Surface":
+    # Medium: "in Aerosol" or "on Surface" - use actual data values
+    mediums = data.mediums
+    if mediums and len(mediums) == 1:
+        medium = mediums[0]
+        if medium == "Surface":
             parts.append("on Surface")
         else:
-            parts.append(f"in {data.medium}")
+            parts.append(f"in {medium}")
 
     # Check if multi-wavelength
     is_multi_wavelength = (fluence_dict and len(fluence_dict) > 1) or (
@@ -673,13 +714,14 @@ def _build_title(
         # Multi-wavelength: newline then "with fluence rates [5, 3] µW/cm²"
         fd = fluence_dict if fluence_dict else data._fluence
         fluence_values = [round(v, 2) for v in fd.values()]
-        rate_term = "irradiances" if data.medium == "Surface" else "fluence rates"
+        is_surface = mediums and len(mediums) == 1 and mediums[0] == "Surface"
+        rate_term = "irradiances" if is_surface else "fluence rates"
         # Join first part, then add newline, then fluence + rest
         first_line = " ".join(parts)
         second_line_parts = [f"with {rate_term} {fluence_values} µW/cm²"]
-        if category is not None:
-            cat_str = ", ".join(category) if isinstance(category, list) else category
-            second_line_parts.append(f"for {cat_str}")
+        filter_str = _build_filter_str(category, species, strain)
+        if filter_str:
+            second_line_parts.append(f"for {filter_str}")
         if suffix:
             second_line_parts.append(suffix)
         return first_line + "\n" + " ".join(second_line_parts)
@@ -688,16 +730,29 @@ def _build_title(
         if fluence is not None:
             parts.append(f"{fluence_label} {round(fluence, 2)} µW/cm²")
 
-        # Category: "for Bacteria"
-        if category is not None:
-            cat_str = ", ".join(category) if isinstance(category, list) else category
-            parts.append(f"for {cat_str}")
+        # Filters: "for Bacteria", "for E. coli", etc.
+        filter_str = _build_filter_str(category, species, strain)
+        if filter_str:
+            parts.append(f"for {filter_str}")
 
         # Suffix: "(95% CI)"
         if suffix:
             parts.append(suffix)
 
         return " ".join(parts)
+
+
+def _build_filter_str(category=None, species=None, strain=None):
+    """Build filter description string for title."""
+    parts = []
+    if species is not None:
+        parts.append(species)
+    elif category is not None:
+        cat_str = ", ".join(category) if isinstance(category, list) else category
+        parts.append(cat_str)
+    if strain is not None:
+        parts.append(f"({strain})")
+    return " ".join(parts)
 
 
 def _wrap_title(title, fig, chars_per_inch=12):
@@ -785,16 +840,16 @@ def _add_category_separators(ax, fig, df, species_order):
 
 
 def _position_legend(
-    ax, fig, df, left_label, yscale, show_legend, has_right_axis, wv_col, style, hue_col
+    ax, fig, df, x_col, left_label, yscale, show_legend, has_right_axis, wv_col, style, hue_col
 ):
     """Position legend based on data distribution."""
-    # Get species order from x-axis
-    species_order = df[COL_SPECIES].unique()
-    n_species = len(species_order)
+    # Get x-axis group order
+    x_order = df[x_col].unique()
+    n_groups = len(x_order)
 
-    # Get data for the rightmost ~25% of species
-    right_species = species_order[-(max(1, n_species // 4)) :]
-    right_data = df[df[COL_SPECIES].isin(right_species)][left_label].dropna()
+    # Get data for the rightmost ~25% of groups
+    right_groups = x_order[-(max(1, n_groups // 4)) :]
+    right_data = df[df[x_col].isin(right_groups)][left_label].dropna()
 
     y_min, y_max = ax.get_ylim()
     if yscale == "log" and y_min > 0:

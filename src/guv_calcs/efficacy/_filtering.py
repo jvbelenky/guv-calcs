@@ -6,6 +6,12 @@ import pandas as pd
 
 from .constants import COL_CATEGORY, COL_MEDIUM, COL_SPECIES, COL_STRAIN, COL_CONDITION, COL_WAVELENGTH
 
+# Aliases for terms that can't be matched by substring (lowercase -> canonical)
+ALIASES = {
+    "air": "aerosol",
+    "water": "liquid",
+}
+
 
 def filter_by_column(df: pd.DataFrame, col: str, value) -> pd.DataFrame:
     """Filter df by column value. Handles scalar, list, or tuple (min, max) range."""
@@ -21,10 +27,15 @@ def filter_by_column(df: pd.DataFrame, col: str, value) -> pd.DataFrame:
 
 
 def words_match(query: str, target: str) -> bool:
-    """Check if all words in query appear in target (case-insensitive)."""
+    """Check if all words in query appear in target (case-insensitive). Supports aliases."""
     query_words = re.findall(r"\w+", query.lower())
     target_lower = target.lower()
-    return all(word in target_lower for word in query_words)
+    for word in query_words:
+        # Check direct match or alias match
+        alias = ALIASES.get(word, word)
+        if word not in target_lower and alias not in target_lower:
+            return False
+    return True
 
 
 def filter_by_words(df: pd.DataFrame, col: str, value: str | None) -> pd.DataFrame:

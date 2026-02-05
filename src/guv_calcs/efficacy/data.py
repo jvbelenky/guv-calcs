@@ -327,7 +327,11 @@ class Data:
         df = self._apply_row_filters(self._full_df.copy())
         df = self._apply_wavelength_filter(df)
         df = self._select_display_columns(df)
-        return df.sort_values(COL_SPECIES)
+        # Sort by first available grouping column
+        for col in [COL_SPECIES, COL_STRAIN, COL_CONDITION]:
+            if col in df.columns:
+                return df.sort_values(col)
+        return df
 
     @property
     def base_df(self) -> pd.DataFrame:
@@ -403,38 +407,43 @@ class Data:
 
     @property
     def categories(self):
-        df = self.display_df
+        df = self.full_df
         if COL_CATEGORY not in df.columns:
             return None
-        return sorted(df[COL_CATEGORY].unique())
+        values = df[COL_CATEGORY].dropna().unique()
+        return sorted(values) if len(values) > 0 else None
 
     @property
     def species(self):
-        df = self.display_df
+        df = self.full_df
         if COL_SPECIES not in df.columns:
             return None
-        return sorted(df[COL_SPECIES].unique())
-        
+        values = df[COL_SPECIES].dropna().unique()
+        return sorted(values) if len(values) > 0 else None
+
     @property
     def strains(self):
-        df = self.display_df
+        df = self.full_df
         if COL_STRAIN not in df.columns:
             return None
-        return sorted(df[COL_STRAIN].unique())
+        values = df[COL_STRAIN].dropna().unique()
+        return sorted(values) if len(values) > 0 else None
 
     @property
     def mediums(self):
-        df = self.display_df
+        df = self.full_df
         if COL_MEDIUM not in df.columns:
             return None
-        return sorted(df[COL_MEDIUM].unique())
-        
+        values = df[COL_MEDIUM].dropna().unique()
+        return sorted(values) if len(values) > 0 else None
+
     @property
     def conditions(self):
-        df = self.display_df
+        df = self.full_df
         if COL_CONDITION not in df.columns:
             return None
-        return sorted(df[COL_CONDITION].unique())
+        values = df[COL_CONDITION].dropna().unique()
+        return sorted(values) if len(values) > 0 else None
 
     @property
     def wavelengths(self):
@@ -533,7 +542,8 @@ class Data:
 
         for col in BASE_DISPLAY_COLS:
             if col in df.columns:
-                if col in (COL_MEDIUM, COL_CATEGORY, COL_WAVELENGTH) and len(df[col].unique()) == 1:
+                # Skip columns with single value (uninformative for display)
+                if len(df[col].unique()) == 1:
                     continue
                 display_cols.append(col)
 
