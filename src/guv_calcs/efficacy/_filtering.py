@@ -1,4 +1,4 @@
-"""Filtering utilities for the Data class."""
+"""Filtering utilities for the InactivationData class."""
 
 import re
 

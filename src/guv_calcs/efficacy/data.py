@@ -77,7 +77,7 @@ FUNCTION_MAP = {
 }
 
 
-class Data:
+class InactivationData:
     """
     UV disinfection efficacy data handler.
 
@@ -119,7 +119,7 @@ class Data:
         volume_m3: float | None = None,
     ):
         """
-        Initialize Data with optional fluence and volume for CADR computation.
+        Initialize with optional fluence and volume for CADR computation.
 
         fluence : float or dict, optional
             Fluence value(s) for computing time/eACH columns.
@@ -171,7 +171,7 @@ class Data:
         wavelength: int | float | list | tuple | None = None,
         log: int | None = None,
         use_metric: bool | None = None,
-    ) -> "Data":
+    ) -> "InactivationData":
         """
         Set filters for display. Returns self for chaining.
 

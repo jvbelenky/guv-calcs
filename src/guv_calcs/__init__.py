@@ -4,7 +4,7 @@ from .calc_zone import CalcVol, CalcPlane
 from .polygon import Polygon2D
 from .trigonometry import to_polar, to_cartesian, attitude
 from .io import get_spectral_weightings
-from .efficacy import Data
+from .efficacy import InactivationData
 from .safety import PhotStandard, get_tlvs, get_max_irradiance, get_seconds_to_tlv
 from .units import convert_units, convert_length, convert_time
 from ._read import read_export_file, file_to_zone
@@ -25,7 +25,7 @@ __all__ = [
     "to_cartesian",
     "attitude",
     "get_spectral_weightings",
-    "Data",
+    "InactivationData",
     "PhotStandard",
     "get_tlvs",
     "get_max_irradiance",

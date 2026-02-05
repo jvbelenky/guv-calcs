@@ -57,7 +57,7 @@ def plot_swarm(
 
     Parameters
     ----------
-    data : Data
+    data : InactivationData
         Data instance to plot.
     title : str, optional
         Plot title. Auto-generated if not provided.
@@ -644,7 +644,7 @@ def _get_wavelength_str(data, fluence_dict=None):
 
     Parameters
     ----------
-    data : Data
+    data : InactivationData
         Data instance for wavelength info.
     fluence_dict : dict, optional
         Multi-wavelength fluence dict (for wavelength extraction).
@@ -922,7 +922,7 @@ def plot_survival(
 
     Parameters
     ----------
-    data : Data
+    data : InactivationData
         Data instance to plot from.
     fluence : float or list of float, optional
         Irradiance value(s) in µW/cm². If not provided, uses data's fluence.
@@ -969,7 +969,7 @@ def plot_survival(
     if fluence is None:
         if data._fluence is None:
             raise ValueError(
-                "fluence must be provided either to Data() or to plot_survival()"
+                "fluence must be provided either to InactivationData() or to plot_survival()"
             )
         fluence = data._fluence
 

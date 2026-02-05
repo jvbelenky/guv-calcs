@@ -1,4 +1,4 @@
-from .data import Data
+from .data import InactivationData
 from .math import (
     eACH_UV,
     log1,
@@ -13,7 +13,7 @@ from .math import (
 
 
 __all__ = [
-    "Data",
+    "InactivationData",
     "eACH_UV",
     "log1",
     "log2",

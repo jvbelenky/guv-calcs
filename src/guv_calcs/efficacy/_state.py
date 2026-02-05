@@ -1,11 +1,11 @@
-"""DataState dataclass for Data instance variables."""
+"""DataState dataclass for InactivationData instance variables."""
 
 from dataclasses import dataclass, field
 
 
 @dataclass
 class DataState:
-    """Consolidated state for the Data class."""
+    """Consolidated state for the InactivationData class."""
 
     fluence: float | dict | None = None
     volume_m3: float | None = None

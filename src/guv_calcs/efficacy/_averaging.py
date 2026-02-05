@@ -1,4 +1,4 @@
-"""Average value computation utilities for the Data class."""
+"""Average value computation utilities for the InactivationData class."""
 
 from collections.abc import Callable
 

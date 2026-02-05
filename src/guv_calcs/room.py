@@ -13,7 +13,7 @@ from packaging.version import Version
 from pathlib import Path
 from .safety import PhotStandard, check_lamps, SafetyCheckResult
 from .units import LengthUnits, convert_length
-from .efficacy import Data
+from .efficacy import InactivationData
 
 DEFAULT_DIMS = {}
 for member in list(LengthUnits):
@@ -574,7 +574,7 @@ class Room:
 
     # ------------------- Data and Plotting ----------------------
 
-    def get_efficacy_data(self, zone_id: str = "WholeRoomFluence", **kwargs) -> Data:
+    def get_efficacy_data(self, zone_id: str = "WholeRoomFluence", **kwargs) -> InactivationData:
         """
         Create Data instance from this room's fluence values.=
         """
@@ -585,9 +585,9 @@ class Room:
                 fluence_dict[v] = fluence_dict[v] + zone.lamp_cache[k].values.mean()
         if len(fluence_dict) == 0:
             warnings.warn("Fluence not available; returning base table.", stacklevel=2)
-            data = Data()
+            data = InactivationData()
         else:
-            data = Data(fluence=fluence_dict, volume_m3=self.dim.cubic_meters)
+            data = InactivationData(fluence=fluence_dict, volume_m3=self.dim.cubic_meters)
         use_metric = self.dim.units in [LengthUnits.METERS, LengthUnits.CENTIMETERS]
 
         if zone.calctype == "Plane" and zone.horiz:

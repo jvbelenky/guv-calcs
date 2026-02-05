@@ -1,4 +1,4 @@
-"""Column computation utilities for the Data class."""
+"""Column computation utilities for the InactivationData class."""
 
 from itertools import product
 
