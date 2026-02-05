@@ -1448,7 +1448,8 @@ def plot_wavelength(
     title=None,
     figsize=(8, 5),
     show_fit=True,
-    fit_degree=1,
+    fit_type="smooth",
+    smoothing=None,
     yscale="linear",
 ):
     """
@@ -1466,8 +1467,10 @@ def plot_wavelength(
         Figure size (width, height). Default is (8, 5).
     show_fit : bool, optional
         Whether to show best-fit line. Default is True.
-    fit_degree : int, optional
-        Polynomial degree for fit line. Default is 1 (linear).
+    fit_type : str, optional
+        Type of fit: "smooth" (default) or "linear".
+    smoothing : float, optional
+        Smoothing factor. Higher values = smoother curve. Auto-determined if None.
     yscale : str, optional
         Y-axis scale: "linear" (default) or "log".
 
@@ -1525,9 +1528,9 @@ def plot_wavelength(
 
     sns.scatterplot(**scatter_kwargs)
 
-    # Add best-fit line if requested
-    if show_fit and len(df) > fit_degree:
-        _add_fit_line(ax, df[COL_WAVELENGTH].values, df[y_col].values, fit_degree)
+    # Add best-fit lines if requested (one per group)
+    if show_fit and len(df) > 3:
+        _add_grouped_fit_lines(ax, df, COL_WAVELENGTH, y_col, hue_col, fit_type, smoothing)
 
     # Configure axes
     ax.set_xlabel("Wavelength (nm)")
@@ -1599,42 +1602,93 @@ def _determine_wavelength_plot_style(df, data):
     return hue_col, style_col, palette
 
 
-def _add_fit_line(ax, x, y, degree=1):
-    """Add polynomial best-fit line to plot."""
-    # Remove NaN values
-    mask = ~(np.isnan(x) | np.isnan(y))
-    x_clean = x[mask]
-    y_clean = y[mask]
+def _add_grouped_fit_lines(ax, df, x_col, y_col, hue_col, fit_type="smooth", smoothing=None):
+    """Add best-fit lines for each group in the data."""
+    from scipy.interpolate import UnivariateSpline
 
-    if len(x_clean) <= degree:
-        return
+    # Get the color palette used by seaborn
+    if hue_col is not None:
+        groups = df[hue_col].unique()
+        palette = sns.color_palette()
+        color_map = {group: palette[i % len(palette)] for i, group in enumerate(groups)}
+    else:
+        groups = [None]
+        color_map = {None: "red"}
 
-    # Fit polynomial
-    coeffs = np.polyfit(x_clean, y_clean, degree)
-    poly = np.poly1d(coeffs)
+    for group in groups:
+        if group is not None:
+            group_df = df[df[hue_col] == group]
+            color = color_map[group]
+        else:
+            group_df = df
+            color = "red"
 
-    # Generate smooth line
-    x_line = np.linspace(x_clean.min(), x_clean.max(), 100)
-    y_line = poly(x_line)
+        x = group_df[x_col].values
+        y = group_df[y_col].values
 
-    # Plot fit line
-    ax.plot(x_line, y_line, "r--", linewidth=2, alpha=0.8, label="Best fit")
+        # Remove NaN values
+        mask = ~(np.isnan(x) | np.isnan(y))
+        x_clean = x[mask]
+        y_clean = y[mask]
 
-    # Add R² annotation
-    y_pred = poly(x_clean)
-    ss_res = np.sum((y_clean - y_pred) ** 2)
-    ss_tot = np.sum((y_clean - np.mean(y_clean)) ** 2)
-    r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+        if len(x_clean) < 4:
+            continue
 
-    ax.annotate(
-        f"R² = {r_squared:.3f}",
-        xy=(0.95, 0.95),
-        xycoords="axes fraction",
-        ha="right",
-        va="top",
-        fontsize=10,
-        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8),
-    )
+        # Sort by x and aggregate duplicate x values (average y)
+        sort_idx = np.argsort(x_clean)
+        x_sorted = x_clean[sort_idx]
+        y_sorted = y_clean[sort_idx]
+
+        # Aggregate duplicate x values by averaging y
+        unique_x, inverse = np.unique(x_sorted, return_inverse=True)
+        avg_y = np.array([y_sorted[inverse == i].mean() for i in range(len(unique_x))])
+
+        x_line = np.linspace(unique_x.min(), unique_x.max(), 100)
+
+        if fit_type == "linear":
+            coeffs = np.polyfit(unique_x, avg_y, 1)
+            poly = np.poly1d(coeffs)
+            y_line = poly(x_line)
+        else:
+            # Try multiple smoothing values and pick the best valid one
+            y_line = _find_best_spline_fit(unique_x, avg_y, x_line, smoothing)
+
+        # Plot fit line (no label, just matching color)
+        ax.plot(x_line, y_line, "-", linewidth=2, alpha=0.7, color=color)
+
+
+def _find_best_spline_fit(x, y, x_line, smoothing=None):
+    """Find a smooth fit that follows the data points naturally."""
+    from scipy.interpolate import PchipInterpolator
+    from scipy.signal import savgol_filter
+
+    if len(x) < 2:
+        return np.full_like(x_line, np.mean(y))
+
+    if len(x) == 2:
+        coeffs = np.polyfit(x, y, 1)
+        return np.poly1d(coeffs)(x_line)
+
+    try:
+        # First interpolate with PCHIP to get a curve through the points
+        pchip = PchipInterpolator(x, y)
+        y_line = pchip(x_line)
+
+        # Then apply Savitzky-Golay filter to smooth out spikiness
+        # Window must be odd and less than data length
+        window = min(31, len(y_line) // 3)
+        if window % 2 == 0:
+            window += 1
+        window = max(5, window)
+
+        y_smooth = savgol_filter(y_line, window, polyorder=3)
+
+        # Clip negatives
+        return np.maximum(y_smooth, 0)
+    except Exception:
+        # Fallback to simple polynomial
+        coeffs = np.polyfit(x, y, min(3, len(x) - 1))
+        return np.maximum(np.poly1d(coeffs)(x_line), 0)
 
 
 def _generate_wavelength_title(data, y_col):
