@@ -659,3 +659,43 @@ class TestPlotFunction:
         # Just verify it doesn't crash - detailed axis checking would be brittle
         assert fig is not None
         plt.close('all')
+
+    def test_plot_wavelength_returns_figure(self):
+        """plot_wavelength() should return a matplotlib Figure."""
+        import matplotlib.pyplot as plt
+        data = InactivationData().subset(medium="aerosol")
+        fig = data.plot_wavelength()
+        assert fig is not None
+        plt.close('all')
+
+    def test_plot_wavelength_with_species_filter(self):
+        """plot_wavelength() should work with species filter."""
+        import matplotlib.pyplot as plt
+        data = InactivationData().subset(species="coli")
+        fig = data.plot_wavelength()
+        assert fig is not None
+        plt.close('all')
+
+    def test_plot_wavelength_k2(self):
+        """plot_wavelength(y='k2') should plot k2 values."""
+        import matplotlib.pyplot as plt
+        data = InactivationData()
+        fig = data.plot_wavelength(y="k2")
+        assert fig is not None
+        plt.close('all')
+
+    def test_plot_wavelength_log_scale(self):
+        """plot_wavelength() should support log scale."""
+        import matplotlib.pyplot as plt
+        data = InactivationData()
+        fig = data.plot_wavelength(yscale="log")
+        assert fig is not None
+        plt.close('all')
+
+    def test_plot_wavelength_no_fit(self):
+        """plot_wavelength(show_fit=False) should work without fit line."""
+        import matplotlib.pyplot as plt
+        data = InactivationData()
+        fig = data.plot_wavelength(show_fit=False)
+        assert fig is not None
+        plt.close('all')

@@ -34,6 +34,8 @@ from .utils import (
 )
 from .math import seconds_to_S
 
+__all__ = ["plot_swarm", "plot_survival", "plot_wavelength"]
+
 
 # =============================================================================
 # Main plot function
@@ -1433,3 +1435,230 @@ def _generate_survival_title(
     return _build_title(
         data, stem, fluence=fluence_value, fluence_dict=fluence_dict, suffix=suffix
     )
+
+
+# =============================================================================
+# Wavelength vs K-value plot
+# =============================================================================
+
+
+def plot_wavelength(
+    data,
+    y="k1",
+    title=None,
+    figsize=(8, 5),
+    show_fit=True,
+    fit_degree=1,
+    yscale="linear",
+):
+    """
+    Plot wavelength vs k-values (susceptibility constants).
+
+    Parameters
+    ----------
+    data : InactivationData
+        Data instance to plot.
+    y : str, optional
+        Which k-value to plot: "k1" (default) or "k2".
+    title : str, optional
+        Plot title. Auto-generated if not provided.
+    figsize : tuple, optional
+        Figure size (width, height). Default is (8, 5).
+    show_fit : bool, optional
+        Whether to show best-fit line. Default is True.
+    fit_degree : int, optional
+        Polynomial degree for fit line. Default is 1 (linear).
+    yscale : str, optional
+        Y-axis scale: "linear" (default) or "log".
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure.
+
+    Notes
+    -----
+    Marker colors and shapes are determined dynamically:
+    - Multiple mediums: color by medium
+    - Multiple categories: color by category
+    - Multiple species: color by species (if few), shape by species (if many)
+    - Single filter applied: single color, shape varies by remaining dimension
+    """
+    # Build plotting DataFrame
+    df = data._apply_row_filters(data._full_df.copy())
+
+    # Determine y column
+    y_col = COL_K1 if y.lower() == "k1" else COL_K2 if y.lower() == "k2" else y
+    if y_col not in df.columns:
+        raise ValueError(f"Column '{y_col}' not found in data")
+
+    # Filter out rows with NaN in wavelength or y column
+    df = df[[COL_WAVELENGTH, y_col, COL_SPECIES, COL_MEDIUM, COL_CATEGORY]].dropna(
+        subset=[COL_WAVELENGTH, y_col]
+    )
+
+    if len(df) == 0:
+        raise ValueError("No data available for plotting")
+
+    # Determine hue and style based on data dimensions
+    hue_col, style_col, palette = _determine_wavelength_plot_style(df, data)
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Build scatter kwargs
+    scatter_kwargs = dict(
+        data=df,
+        x=COL_WAVELENGTH,
+        y=y_col,
+        ax=ax,
+        s=80,
+        alpha=0.7,
+    )
+
+    if hue_col is not None:
+        scatter_kwargs["hue"] = hue_col
+        if palette is not None:
+            scatter_kwargs["palette"] = palette
+
+    if style_col is not None:
+        scatter_kwargs["style"] = style_col
+
+    sns.scatterplot(**scatter_kwargs)
+
+    # Add best-fit line if requested
+    if show_fit and len(df) > fit_degree:
+        _add_fit_line(ax, df[COL_WAVELENGTH].values, df[y_col].values, fit_degree)
+
+    # Configure axes
+    ax.set_xlabel("Wavelength (nm)")
+    ax.set_ylabel(y_col)
+    ax.set_yscale(yscale)
+    ax.grid(True, linestyle="--", alpha=0.7)
+
+    # Position legend
+    if hue_col is not None or style_col is not None:
+        handles, labels = ax.get_legend_handles_labels()
+        if len(labels) <= 10:
+            ax.legend(loc="best")
+        else:
+            fig.subplots_adjust(right=0.75)
+            ax.legend(bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
+
+    # Set title
+    if title is None:
+        title = _generate_wavelength_title(data, y_col)
+    title = _wrap_title(title, fig)
+    ax.set_title(title)
+
+    fig.tight_layout()
+
+    return fig
+
+
+def _determine_wavelength_plot_style(df, data):
+    """
+    Determine hue and style columns for wavelength plot.
+
+    Returns (hue_col, style_col, palette).
+    """
+    n_mediums = df[COL_MEDIUM].nunique()
+    n_categories = df[COL_CATEGORY].nunique()
+    n_species = df[COL_SPECIES].nunique()
+
+    # Priority: medium > category > species for hue
+    # Use style for secondary dimension
+
+    if n_mediums > 1:
+        # Color by medium, shape by category if multiple
+        hue_col = COL_MEDIUM
+        style_col = COL_CATEGORY if n_categories > 1 else None
+        palette = None  # Use seaborn defaults
+    elif n_categories > 1:
+        # Color by category, shape by species if many
+        hue_col = COL_CATEGORY
+        hue_order = [cat for cat in CATEGORY_ORDER if cat in df[COL_CATEGORY].unique()]
+        style_col = COL_SPECIES if n_species > 1 and n_species <= 6 else None
+        palette = None
+    elif n_species > 1:
+        # Single medium and category, multiple species
+        if n_species <= 10:
+            hue_col = COL_SPECIES
+            style_col = None
+            palette = None
+        else:
+            # Too many species for colors, use shapes
+            hue_col = None
+            style_col = COL_SPECIES
+            palette = None
+    else:
+        # Single everything
+        hue_col = None
+        style_col = None
+        palette = None
+
+    return hue_col, style_col, palette
+
+
+def _add_fit_line(ax, x, y, degree=1):
+    """Add polynomial best-fit line to plot."""
+    # Remove NaN values
+    mask = ~(np.isnan(x) | np.isnan(y))
+    x_clean = x[mask]
+    y_clean = y[mask]
+
+    if len(x_clean) <= degree:
+        return
+
+    # Fit polynomial
+    coeffs = np.polyfit(x_clean, y_clean, degree)
+    poly = np.poly1d(coeffs)
+
+    # Generate smooth line
+    x_line = np.linspace(x_clean.min(), x_clean.max(), 100)
+    y_line = poly(x_line)
+
+    # Plot fit line
+    ax.plot(x_line, y_line, "r--", linewidth=2, alpha=0.8, label="Best fit")
+
+    # Add R² annotation
+    y_pred = poly(x_clean)
+    ss_res = np.sum((y_clean - y_pred) ** 2)
+    ss_tot = np.sum((y_clean - np.mean(y_clean)) ** 2)
+    r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+
+    ax.annotate(
+        f"R² = {r_squared:.3f}",
+        xy=(0.95, 0.95),
+        xycoords="axes fraction",
+        ha="right",
+        va="top",
+        fontsize=10,
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8),
+    )
+
+
+def _generate_wavelength_title(data, y_col):
+    """Generate title for wavelength plot."""
+    stem = f"{y_col} vs Wavelength"
+
+    # Get actual filter values from data
+    mediums = data.mediums
+    categories = data.categories
+    species_list = data.species
+
+    parts = [stem]
+
+    # Add filter info
+    if mediums and len(mediums) == 1:
+        medium = mediums[0]
+        if medium == "Surface":
+            parts.append("on Surface")
+        else:
+            parts.append(f"in {medium}")
+
+    if categories and len(categories) == 1:
+        parts.append(f"for {categories[0]}")
+    elif species_list and len(species_list) == 1:
+        parts.append(f"for {species_list[0]}")
+
+    return " ".join(parts)

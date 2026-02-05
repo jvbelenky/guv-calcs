@@ -22,7 +22,7 @@ from .constants import (
     BASE_DISPLAY_COLS,
 )
 from .math import CADR_CFM, CADR_LPS, eACH_UV, log1, log2, log3, log4, log5
-from .plotting import plot_swarm, plot_survival
+from .plotting import plot_swarm, plot_survival, plot_wavelength
 from .utils import auto_select_time_columns
 from ._kinetics import (
     species_matches,
@@ -254,6 +254,10 @@ class InactivationData:
         if "fluence" not in kwargs and self.fluence is not None:
             kwargs["fluence"] = self.fluence
         return plot_survival(self, **kwargs)
+
+    def plot_wavelength(self, **kwargs):
+        """Plot wavelength vs k-values. See plotting.plot_wavelength for full documentation."""
+        return plot_wavelength(self, **kwargs)
 
     def save(self, filepath: str, **kwargs) -> None:
         """
@@ -492,10 +496,6 @@ class InactivationData:
     def _filter_by_column(self, df: pd.DataFrame, col: str, value) -> pd.DataFrame:
         """Filter df by column value."""
         return filter_by_column(df, col, value)
-
-    def _validate_filter(self, value, valid_values: list, name: str):
-        """Validate filter value against valid_values."""
-        return validate_filter(value, valid_values, name)
 
     def _apply_row_filters(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply all row-level filters (medium, category, species, strain, condition)."""
