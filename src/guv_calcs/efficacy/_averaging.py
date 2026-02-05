@@ -5,7 +5,8 @@ from collections.abc import Callable
 import pandas as pd
 
 from .constants import COL_SPECIES, COL_STRAIN, COL_CONDITION, COL_K1, COL_K2, COL_RESISTANT, COL_WAVELENGTH
-from ._kinetics import species_matches, parse_resistant
+from ._kinetics import parse_resistant
+from ._filtering import filter_by_words
 
 
 def collect_parametric_inputs(function, species, strain, medium, condition) -> list:
@@ -80,17 +81,9 @@ def filter_for_average(
     **kwargs,
 ) -> pd.DataFrame:
     """Apply species/strain/condition filters for average_value."""
-    if species is not None:
-        mask = df[COL_SPECIES].apply(lambda x: species_matches(species, x))
-        df = df[mask]
-
-    if strain is not None:
-        strain_lower = strain.lower()
-        df = df[df[COL_STRAIN].fillna("").str.lower().str.contains(strain_lower)]
-
-    if condition is not None:
-        condition_lower = condition.lower()
-        df = df[df[COL_CONDITION].fillna("").str.lower().str.contains(condition_lower)]
+    df = filter_by_words(df, COL_SPECIES, species)
+    df = filter_by_words(df, COL_STRAIN, strain)
+    df = filter_by_words(df, COL_CONDITION, condition)
 
     for col, value in kwargs.items():
         if col in df.columns:

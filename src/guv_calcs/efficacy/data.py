@@ -33,7 +33,6 @@ from ._kinetics import (
 )
 from ._filtering import (
     filter_by_column,
-    validate_filter,
     apply_row_filters,
     apply_wavelength_filter,
     get_effective_wavelengths,
@@ -135,6 +134,9 @@ class Data:
         # Filter/display state (set by subset())
         self._medium = None
         self._category = None
+        self._species = None
+        self._strain = None
+        self._condition = None
         self._wavelength = None  # User-specified wavelength filter
         self._log = 2  # Log reduction level for time column display (1-5)
         self._use_metric_units = True  # For CADR display (lps vs cfm)
@@ -163,6 +165,9 @@ class Data:
         self,
         medium: str | list | None = None,
         category: str | list | None = None,
+        species: str | None = None,
+        strain: str | None = None,
+        condition: str | None = None,
         wavelength: int | float | list | tuple | None = None,
         log: int | None = None,
         use_metric: bool | None = None,
@@ -171,9 +176,17 @@ class Data:
         Set filters for display. Returns self for chaining.
 
         medium : str or list, optional
-            Filter by medium ("Aerosol", "Surface", "Liquid").
+            Filter by medium ("Aerosol", "Surface", "Liquid"). Case-insensitive,
+            accepts aliases: "air" for Aerosol, "water" for Liquid.
         category : str or list, optional
-            Filter by category ("Virus", "Bacteria", etc.).
+            Filter by category ("Virus", "Bacteria", etc.). Case-insensitive,
+            accepts aliases: "virus" for Viruses, "spores" for Bacterial spores.
+        species : str, optional
+            Filter by species name. Partial matching (all words must appear).
+        strain : str, optional
+            Filter by strain. Substring matching.
+        condition : str, optional
+            Filter by condition. Substring matching.
         wavelength : int, float, list, or tuple, optional
             Filter by wavelength. Tuple (min, max) for range.
         log : int, optional
@@ -182,17 +195,17 @@ class Data:
         use_metric : bool, optional
             If True, display CADR in lps; if False, display in cfm. Default True.
         """
-        # Validate and set medium filter
+        # Set row filters (all use case-insensitive substring matching)
         if medium is not None:
-            self._medium = self._validate_filter(
-                medium, self.get_valid_mediums(), "medium"
-            )
-
-        # Validate and set category filter
+            self._medium = medium
         if category is not None:
-            self._category = self._validate_filter(
-                category, self.get_valid_categories(), "category"
-            )
+            self._category = category
+        if species is not None:
+            self._species = species
+        if strain is not None:
+            self._strain = strain
+        if condition is not None:
+            self._condition = condition
 
         # Validate and set wavelength filter
         # When fluence is a dict, user-specified wavelengths are ADDED to the fluence
@@ -323,7 +336,7 @@ class Data:
 
     @property
     def full_df(self) -> pd.DataFrame:
-        """Return all computed columns (when fluence provided), filtered by medium/category."""
+        """Return all computed columns (when fluence provided), filtered."""
         df = self._apply_row_filters(self._full_df.copy())
         return self._apply_wavelength_filter(df)
 
@@ -476,8 +489,10 @@ class Data:
         return validate_filter(value, valid_values, name)
 
     def _apply_row_filters(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Apply medium/category filters to df."""
-        return apply_row_filters(df, self._medium, self._category)
+        """Apply all row-level filters (medium, category, species, strain, condition)."""
+        return apply_row_filters(
+            df, self._medium, self._category, self._species, self._strain, self._condition
+        )
 
     def _apply_wavelength_filter(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply wavelength filter based on effective wavelengths."""
@@ -495,8 +510,14 @@ class Data:
         """Select columns to display based on context."""
         display_cols = []
 
-        show_each = self._medium == "Aerosol" and COL_EACH in df.columns
-        show_cadr = self._medium == "Aerosol" and COL_CADR_LPS in df.columns
+        # Show eACH/CADR only when data is exclusively Aerosol
+        is_aerosol_only = (
+            COL_MEDIUM in df.columns
+            and len(df) > 0
+            and (df[COL_MEDIUM] == "Aerosol").all()
+        )
+        show_each = is_aerosol_only and COL_EACH in df.columns
+        show_cadr = is_aerosol_only and COL_CADR_LPS in df.columns
 
         if show_cadr:
             display_cols.append(COL_CADR_LPS if self._use_metric_units else COL_CADR_CFM)

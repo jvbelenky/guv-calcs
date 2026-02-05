@@ -355,8 +355,8 @@ def _determine_plot_columns(
         mode = "time"
 
     # Check what columns are available
-    # eACH and CADR only make sense for Aerosol medium
-    is_aerosol = data._medium == "Aerosol"
+    # eACH and CADR only make sense when data is exclusively Aerosol
+    is_aerosol = COL_MEDIUM in df.columns and len(df) > 0 and (df[COL_MEDIUM] == "Aerosol").all()
     has_each = is_aerosol and COL_EACH in df.columns and df[COL_EACH].notna().any()
     cadr_col = COL_CADR_LPS if use_metric else COL_CADR_CFM
     has_cadr = is_aerosol and cadr_col in df.columns and df[cadr_col].notna().any()

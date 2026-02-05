@@ -1,8 +1,10 @@
 """Filtering utilities for the Data class."""
 
+import re
+
 import pandas as pd
 
-from .constants import COL_CATEGORY, COL_MEDIUM, COL_WAVELENGTH
+from .constants import COL_CATEGORY, COL_MEDIUM, COL_SPECIES, COL_STRAIN, COL_CONDITION, COL_WAVELENGTH
 
 
 def filter_by_column(df: pd.DataFrame, col: str, value) -> pd.DataFrame:
@@ -18,26 +20,35 @@ def filter_by_column(df: pd.DataFrame, col: str, value) -> pd.DataFrame:
     return df
 
 
-def validate_filter(value, valid_values: list, name: str):
-    """Validate filter value against valid_values. Normalizes single-item lists to scalars."""
+def words_match(query: str, target: str) -> bool:
+    """Check if all words in query appear in target (case-insensitive)."""
+    query_words = re.findall(r"\w+", query.lower())
+    target_lower = target.lower()
+    return all(word in target_lower for word in query_words)
+
+
+def filter_by_words(df: pd.DataFrame, col: str, value: str | None) -> pd.DataFrame:
+    """Filter df where all words in value appear in column (case-insensitive)."""
     if value is None:
-        return None
-    if isinstance(value, (str, int, float)):
-        if value not in valid_values:
-            raise KeyError(f"{value} is not a valid {name}; must be in {valid_values}")
-    elif isinstance(value, list):
-        invalid = [v for v in value if v not in valid_values]
-        if invalid:
-            raise KeyError(f"Invalid {name}(s) {invalid}; must be in {valid_values}")
-        if len(value) == 1:
-            value = value[0]
-    return value
+        return df
+    mask = df[col].fillna("").apply(lambda x: words_match(value, x))
+    return df[mask]
 
 
-def apply_row_filters(df: pd.DataFrame, medium, category) -> pd.DataFrame:
-    """Apply medium/category filters to df. Does NOT apply wavelength filter."""
-    df = filter_by_column(df, COL_MEDIUM, medium)
-    df = filter_by_column(df, COL_CATEGORY, category)
+def apply_row_filters(
+    df: pd.DataFrame,
+    medium=None,
+    category=None,
+    species=None,
+    strain=None,
+    condition=None,
+) -> pd.DataFrame:
+    """Apply all row-level filters. All words in query must appear in target (case-insensitive)."""
+    df = filter_by_words(df, COL_MEDIUM, medium)
+    df = filter_by_words(df, COL_CATEGORY, category)
+    df = filter_by_words(df, COL_SPECIES, species)
+    df = filter_by_words(df, COL_STRAIN, strain)
+    df = filter_by_words(df, COL_CONDITION, condition)
     return df
 
 
