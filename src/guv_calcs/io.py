@@ -478,3 +478,112 @@ def get_version(path) -> dict:
     with open(path) as f:
         exec(f.read(), version)
     return version["__version__"]
+
+
+# -------------- Project IO -------------------
+
+
+def _make_envelope(format_key=None):
+    """Build the common save envelope (version + timestamp)."""
+    savedata = {}
+    savedata["guv-calcs_version"] = get_version(Path(__file__).parent / "_version.py")
+    now = datetime.datetime.now()
+    now_local = datetime.datetime.now(now.astimezone().tzinfo)
+    savedata["timestamp"] = now_local.strftime("%Y-%m-%d %H:%M:%S %Z%z")
+    if format_key:
+        savedata["format"] = format_key
+    return savedata
+
+
+def save_project_data(project, fname):
+    """Save a Project to a .guv file (or return JSON string if fname is None)."""
+    savedata = _make_envelope("project")
+    savedata["data"] = project.to_dict()
+    if fname is not None:
+        filename = _check_savefile(fname, ".guv")
+        with open(filename, "w") as f:
+            json.dump(savedata, f, indent=4)
+    else:
+        return json.dumps(savedata, indent=4)
+
+
+def load_project(cls, filedata):
+    """Load a Project from a .guv file, JSON string, bytes, or dict.
+
+    If the file is a legacy single-room format (no "format" key),
+    wraps it in a one-room Project.
+    """
+    from .room import Room
+
+    load_data = parse_guv_file(filedata)
+
+    saved_version = load_data.get("guv-calcs_version", "0.0.0")
+    current_version = get_version(Path(__file__).parent / "_version.py")
+    if saved_version != current_version:
+        warnings.warn(
+            f"File was saved with guv-calcs {saved_version}, "
+            f"current version is {current_version}"
+        )
+
+    fmt = load_data.get("format")
+    data = load_data.get("data", load_data)
+
+    if fmt == "project":
+        return cls.from_dict(dict(data))
+
+    # Legacy single-room format
+    room = Room.load(filedata)
+    project = cls(
+        standard=room.standard,
+        units=room.units,
+        precision=room.precision,
+        colormap=room.scene.colormap,
+        enable_reflectance=room.ref_manager.enabled,
+        reflectance_max_num_passes=room.ref_manager.max_num_passes,
+        reflectance_threshold=room.ref_manager.threshold,
+    )
+    project.rooms.add(room, on_collision="overwrite")
+    return project
+
+
+def export_project_zip(project, fname=None, **kwargs):
+    """Export a Project as a zip with per-room subdirectories."""
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Project-level .guv
+        project_json = project.save()
+        zf.writestr("project.guv", project_json.encode("utf-8"))
+
+        for room_id, room in project.rooms.items():
+            room_zip_bytes = export_room_zip(room, **kwargs)
+            # Nest room zip contents under room_id/ prefix
+            with zipfile.ZipFile(io.BytesIO(room_zip_bytes), "r") as room_zf:
+                for name in room_zf.namelist():
+                    zf.writestr(f"{room_id}/{name}", room_zf.read(name))
+
+    zip_bytes = zip_buffer.getvalue()
+    if fname is not None:
+        with open(fname, "wb") as f:
+            f.write(zip_bytes)
+    else:
+        return zip_bytes
+
+
+def generate_project_report(project, fname=None):
+    """Generate a combined CSV report across all rooms."""
+    all_rows = []
+    for room_id, room in project.rooms.items():
+        all_rows.append([f"=== Room: {room_id} ({room.name}) ==="])
+        room_bytes = generate_report(room)
+        if room_bytes:
+            room_text = room_bytes.decode("cp1252")
+            for line in room_text.splitlines():
+                all_rows.append(line.split(","))
+        all_rows.append([""])
+
+    csv_bytes = rows_to_bytes(all_rows)
+    if fname is not None:
+        with open(fname, "wb") as f:
+            f.write(csv_bytes)
+    else:
+        return csv_bytes

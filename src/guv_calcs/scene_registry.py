@@ -207,3 +207,13 @@ class SurfaceRegistry(Registry["Surface"]):
 
     def _extract_dimensions(self, surface):
         return surface.plane.coords
+
+
+@dataclass
+class RoomRegistry(Registry["Room"]):
+    """Registry for Room objects within a Project."""
+    base_id = "Room"
+    expected_type: type | None = None  # set lazily to avoid circular import
+
+    def _extract_dimensions(self, obj):
+        raise NotImplementedError

@@ -32,6 +32,8 @@ class Room:
 
     def __init__(
         self,
+        room_id: str = None,
+        name: str = None,
         x: float = None,
         y: float = None,
         z: float = None,
@@ -47,6 +49,10 @@ class Room:
         colormap: str = "plasma",
         on_collision: str = "increment",  # error | increment | overwrite
     ):
+
+        ### Identity
+        self._room_id = room_id or "Room"
+        self.name = str(self._room_id) if name is None else str(name)
 
         ### Dimensions
         units = LengthUnits.from_any(units)
@@ -123,12 +129,24 @@ class Room:
         else:
             dim_str = f"x={self.dim.x}, y={self.dim.y}, z={self.dim.z}"
         return (
-            f"Room({dim_str}, "
+            f"Room(room_id='{self._room_id}', {dim_str}, "
             f"units='{self.units}', lamps={[k for k,v in self.lamps.items()]}, "
             f"calc_zones={[k for k,v in self.calc_zones.items()]}), "
             f"enable_reflectance={self.ref_manager.enabled}, "
             f"reflectances={self.ref_manager.reflectances}"
         )
+
+    @property
+    def room_id(self) -> str:
+        return self._room_id
+
+    @property
+    def id(self) -> str:
+        return self._room_id
+
+    def _assign_id(self, value: str) -> None:
+        """Used by RoomRegistry to set the resolved ID."""
+        self._room_id = value
 
     def copy(self):
         return copy.deepcopy(self)
@@ -139,6 +157,8 @@ class Room:
 
     def to_dict(self):
         data = {}
+        data["room_id"] = self._room_id
+        data["name"] = self.name
         if self.is_polygon:
             data["polygon"] = self.polygon.to_dict()
         else:

@@ -1,4 +1,5 @@
 from .room import Room
+from .project import Project
 from .lamp import Lamp, LampType, GUVType, LampPlacer, Spectrum, sum_spectrum
 from .calc_zone import CalcVol, CalcPlane
 from .polygon import Polygon2D
@@ -12,6 +13,7 @@ from ._version import __version__
 
 __all__ = [
     "Room",
+    "Project",
     "Lamp",
     "LampType",
     "GUVType",
