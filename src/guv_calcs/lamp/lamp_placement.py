@@ -1,5 +1,6 @@
 """Lamp placement algorithms for various room geometries and placement modes."""
 
+import warnings
 from dataclasses import dataclass
 from math import atan, degrees, hypot
 import numpy as np
@@ -83,12 +84,8 @@ class LampPlacer:
 
     @classmethod
     def for_dims(cls, dims, existing: list[tuple[float, float]] = None) -> "LampPlacer":
-        """Create placer from a RoomDimensions or PolygonRoomDimensions object."""
-        if dims.is_polygon:
-            polygon = dims.polygon
-        else:
-            polygon = Polygon2D.rectangle(dims.x, dims.y)
-        return cls(polygon, z=dims.z, existing_positions=existing)
+        """Create placer from a RoomDimensions object."""
+        return cls(dims.polygon, z=dims.z, existing_positions=existing)
 
     def place(self, mode: str, lamp_idx: int, **kwargs) -> PlacementResult:
         """
@@ -193,12 +190,11 @@ class LampPlacer:
         if wall_clearance is None:
             fixture = getattr(lamp, "fixture", None)
             if fixture is not None and fixture.has_dimensions:
-                # When tilted, housing_height contributes to horizontal extent
-                # Use 3D diagonal plus safety margin for axis-aligned bounding box expansion
+                # 2D footprint diagonal plus housing height for tilt contribution.
+                # Post-placement nudge corrects any remaining overshoot.
                 w, l, h = fixture.housing_width, fixture.housing_length, fixture.housing_height
-                diagonal_3d = (w**2 + l**2 + h**2) ** 0.5
-                # Half-diagonal * 1.1 for AABB safety; * sqrt(2) for corner bisector offset
-                wall_clearance = diagonal_3d / 2 * 1.1 * 1.42
+                diagonal_2d = (w**2 + l**2) ** 0.5
+                wall_clearance = diagonal_2d / 2 + h / 2
                 wall_clearance = max(wall_clearance, 0.05)
             else:
                 wall_clearance = 0.05  # Default when no fixture dimensions
@@ -223,7 +219,8 @@ class LampPlacer:
             aim_xy = result.aim
 
         lamp.aim(aim_xy[0], aim_xy[1], aim_z)
-        self.record(*result.position)
+        self._nudge_into_bounds(lamp)
+        self.record(lamp.x, lamp.y)
         return lamp
 
     def _get_beam_angle(self, lamp, default: float = 30.0) -> float:
@@ -248,6 +245,63 @@ class LampPlacer:
         elif max_tilt is not None:
             return clamp_aim_to_max_tilt(lamp_pos, aim_point, max_tilt, self.polygon)
         return aim_point
+
+    def _nudge_into_bounds(self, lamp, max_iterations: int = 3):
+        """Nudge lamp so its bounding box stays within the room polygon and z bounds."""
+        fixture = getattr(lamp, "fixture", None)
+        if fixture is None or not fixture.has_dimensions:
+            return
+
+        margin = 1e-4
+        for _ in range(max_iterations):
+            corners = lamp.geometry.get_bounding_box_corners()  # (8, 3)
+            dx = 0.0
+            dy = 0.0
+            dz = 0.0
+
+            for corner in corners:
+                cx, cy, cz = corner
+                # XY check
+                if not self.polygon.contains_point_inclusive(cx, cy):
+                    nearest = _nearest_point_on_polygon_boundary((cx, cy), self.polygon)
+                    nudge_x = nearest[0] - cx
+                    nudge_y = nearest[1] - cy
+                    # Keep the largest-magnitude nudge per axis
+                    if abs(nudge_x) > abs(dx):
+                        dx = nudge_x
+                    if abs(nudge_y) > abs(dy):
+                        dy = nudge_y
+                # Z check
+                if cz > self.z:
+                    shift = self.z - cz
+                    if shift < dz:
+                        dz = shift
+                if cz < 0:
+                    shift = -cz
+                    if shift > dz:
+                        dz = shift
+
+            if abs(dx) < 1e-9 and abs(dy) < 1e-9 and abs(dz) < 1e-9:
+                return  # Already in bounds
+
+            # Apply nudge with small inward margin
+            if dx != 0:
+                dx += margin if dx > 0 else -margin
+            if dy != 0:
+                dy += margin if dy > 0 else -margin
+            if dz != 0:
+                dz += margin if dz > 0 else -margin
+            lamp.move(lamp.x + dx, lamp.y + dy, lamp.z + dz)
+
+        # After max iterations, warn if still out of bounds
+        corners = lamp.geometry.get_bounding_box_corners()
+        for corner in corners:
+            cx, cy, cz = corner
+            if not self.polygon.contains_point_inclusive(cx, cy) or cz > self.z or cz < 0:
+                warnings.warn(
+                    "Fixture bounding box still extends past room boundaries after nudging"
+                )
+                return
 
 
 # =============================================================================
@@ -350,6 +404,31 @@ def _distance_to_polygon_boundary(point: np.ndarray, polygon: "Polygon2D") -> fl
         min_dist = min(min_dist, dist)
 
     return min_dist
+
+
+def _nearest_point_on_polygon_boundary(
+    point: tuple[float, float], polygon: "Polygon2D"
+) -> tuple[float, float]:
+    """Return the closest point on the polygon boundary to the given point."""
+    px, py = point
+    best_dist = float("inf")
+    best_point = (px, py)
+
+    for (x1, y1), (x2, y2) in polygon.edges:
+        dx, dy = x2 - x1, y2 - y1
+        length_sq = dx * dx + dy * dy
+        if length_sq == 0:
+            proj_x, proj_y = x1, y1
+        else:
+            t = max(0, min(1, ((px - x1) * dx + (py - y1) * dy) / length_sq))
+            proj_x = x1 + t * dx
+            proj_y = y1 + t * dy
+        dist = hypot(px - proj_x, py - proj_y)
+        if dist < best_dist:
+            best_dist = dist
+            best_point = (proj_x, proj_y)
+
+    return best_point
 
 
 def _ray_polygon_intersection(

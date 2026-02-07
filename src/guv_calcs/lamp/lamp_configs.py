@@ -60,8 +60,8 @@ LAMP_CONFIGS = {
             "mode": "edge",
         },
         "fixture": {
-            "housing_width": 0.086,
-            "housing_length": 0.140,
+            "housing_width": 0.140,
+            "housing_length": 0.086,
             "housing_height": 0.045,
         },
     },
@@ -76,8 +76,8 @@ LAMP_CONFIGS = {
             # "max_tilt": 45,
         },
         "fixture": {
-            "housing_width": 0.042,
-            "housing_length": 0.154,
+            "housing_width": 0.154,
+            "housing_length": 0.042,
             "housing_height": 0.05,
         },
     },
@@ -91,8 +91,8 @@ LAMP_CONFIGS = {
             "mode": "horizontal",
         },
         "fixture": {
-            "housing_width": 0.60,
-            "housing_length": 0.10,
+            "housing_width": 0.10,
+            "housing_length": 0.60,
             "housing_height": 0.08,
         },
     },
