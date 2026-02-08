@@ -67,10 +67,11 @@ class RoomPlotter:
             x_span = x_max - x_min
             y_span = y_max - y_min
         else:
-            x_range = [0, self.room.dim.x]
-            y_range = [0, self.room.dim.y]
-            x_span = self.room.dim.x
-            y_span = self.room.dim.y
+            x_min, y_min, x_max, y_max = self.room.dim.polygon.bounding_box
+            x_range = [x_min, x_max]
+            y_range = [y_min, y_max]
+            x_span = x_max - x_min
+            y_span = y_max - y_min
 
         z = self.room.dim.z
 
@@ -343,7 +344,7 @@ class RoomPlotter:
                 j=simplices[:, 1],
                 k=simplices[:, 2],
                 intensity=values,
-                colorscale=self.room.scene.colormap,
+                colorscale=self.room.colormap,
                 showscale=False,
                 showlegend=True,
                 name=zone.name,
@@ -357,7 +358,7 @@ class RoomPlotter:
                 y=y,
                 z=z,
                 surfacecolor=zone.values,
-                colorscale=self.room.scene.colormap,
+                colorscale=self.room.colormap,
                 showscale=False,
                 showlegend=True,
                 name=zone.name,
@@ -469,7 +470,7 @@ class RoomPlotter:
                         opacity=0.25,
                         showscale=False,
                         colorbar=None,
-                        colorscale=self.room.scene.colormap,
+                        colorscale=self.room.colormap,
                         caps=dict(x_show=False, y_show=False, z_show=False),
                         name=zone.name + " Values",
                         customdata=["zone_" + zone.zone_id + "_values"],
@@ -499,7 +500,7 @@ class RoomPlotter:
                         opacity=0.25,
                         showscale=False,
                         colorbar=None,
-                        colorscale=self.room.scene.colormap,
+                        colorscale=self.room.colormap,
                         name=zone.name + " Values",
                         customdata=["zone_" + zone.zone_id + "_values"],
                         showlegend=True,

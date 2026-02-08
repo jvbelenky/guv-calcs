@@ -103,7 +103,7 @@ def export_room_zip(
     data_dict = {"room.guv": room.save()}
 
     # save all results
-    for zone_id, zone in room.scene.calc_zones.items():
+    for zone_id, zone in room.calc_zones.items():
         data_dict[zone.name + ".csv"] = zone.export()
         if include_plots:
             if zone.dose:
@@ -124,7 +124,7 @@ def export_room_zip(
                     data_dict[zone.name + ".png"] = img_bytes
 
     # save lamp files if indicated to
-    for lamp_id, lamp in room.scene.lamps.items():
+    for lamp_id, lamp in room.lamps.items():
         if lamp.ies is not None:
             if include_lamp_files:
                 data_dict[lamp.name + ".ies"] = lamp.save_ies()
@@ -199,7 +199,7 @@ def generate_report(self, fname=None):
     rows += [[""]]
 
     # ───  Luminaires  ───────────────────────────────────
-    if self.scene.lamps:
+    if self.lamps:
         rows += [["Luminaires"]]
         rows += [["", "", "", "Surface Position", "", "", "Aim"]]
         rows += [
@@ -220,7 +220,7 @@ def generate_report(self, fname=None):
                 "Scaling factor",
             ]
         ]
-        for lamp in self.scene.lamps.values():
+        for lamp in self.lamps.values():
             rows += [
                 [
                     "",
@@ -242,7 +242,7 @@ def generate_report(self, fname=None):
         rows += [[""]]
 
     # ----- Calc zones ------------------------
-    zones = [z for z in self.scene.calc_zones.values() if z.values is not None]
+    zones = [z for z in self.calc_zones.values() if z.values is not None]
 
     # ----- Calc planes -----------------------
     planes = [z for z in zones if z.calctype == "Plane"]
@@ -537,7 +537,7 @@ def load_project(cls, filedata):
         standard=room.standard,
         units=room.units,
         precision=room.precision,
-        colormap=room.scene.colormap,
+        colormap=room.colormap,
         enable_reflectance=room.ref_manager.enabled,
         reflectance_max_num_passes=room.ref_manager.max_num_passes,
         reflectance_threshold=room.ref_manager.threshold,

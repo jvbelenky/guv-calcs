@@ -440,9 +440,10 @@ class CalcVol(CalcZone):
                 offset=offset,
             )
         else:
+            x_min, y_min, x_max, y_max = dims.polygon.bounding_box
             geometry = VolGrid.from_legacy(
-                mins=(0, 0, 0),
-                maxs=(dims.x, dims.y, dims.z),
+                mins=(x_min, y_min, 0),
+                maxs=(x_max, y_max, dims.z),
                 spacing_init=spacing,
                 num_points_init=num_points,
                 offset=offset,

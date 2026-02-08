@@ -1,110 +1,54 @@
-from dataclasses import dataclass, replace, field
+from dataclasses import dataclass, field
 import numpy as np
 from .units import LengthUnits, convert_length
 from .polygon import Polygon2D
 
 
-@dataclass(frozen=True, slots=True)
-class RoomDimensions:
-    x: float
-    y: float
-    z: float
-    origin: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    units: "LengthUnits" = LengthUnits.METERS
-
-    @property
-    def dimensions(self) -> np.ndarray:
-        return np.array([self.x, self.y, self.z])
-
-    @property
-    def volume(self) -> float:
-        return self.x * self.y * self.z
-
-    @property
-    def cubic_meters(self) -> float:
-        x, y, z = convert_length(self.units, LengthUnits.METERS, self.dimensions)
-        return x * y * z
-
-    @property
-    def cubic_feet(self) -> float:
-        x, y, z = convert_length(self.units, LengthUnits.FEET, self.dimensions)
-        return x * y * z
-
-    @property
-    def faces(self) -> dict:
-        # x1, x2, y1, y2, height, ref_surface, direction
-        return {
-            "floor": (0, self.x, 0, self.y, 0, "xy", 1),
-            "ceiling": (0, self.x, 0, self.y, self.z, "xy", -1),
-            "south": (0, self.x, 0, self.z, 0, "xz", 1),
-            "north": (0, self.x, 0, self.z, self.y, "xz", -1),
-            "west": (0, self.y, 0, self.z, 0, "yz", 1),
-            "east": (0, self.y, 0, self.z, self.x, "yz", -1),
-        }
-
-    def with_(self, *, x=None, y=None, z=None, units=None):
-        return replace(
-            self,
-            x=self.x if x is None else x,
-            y=self.y if y is None else y,
-            z=self.z if z is None else z,
-            units=self.units if units is None else LengthUnits.from_any(units),
-        )
-
-    @property
-    def is_polygon(self) -> bool:
-        return False
-
-
 @dataclass(frozen=True)
-class PolygonRoomDimensions:
-    """
-    Room dimensions defined by a 2D polygon floor plan with uniform ceiling height.
+class RoomDimensions:
+    """Room dimensions defined by a 2D polygon floor plan with uniform ceiling height.
 
-    Walls are automatically generated from polygon edges.
+    All rooms use polygon representation internally. Rectangular rooms are
+    stored as 4-vertex polygons. Use the ``x``, ``y``, ``z`` constructor
+    kwargs on Room for convenience; they create a rectangle polygon.
     """
 
     polygon: Polygon2D
     z: float
-    origin: tuple[float, float, float] = (0.0, 0.0, 0.0)
     units: LengthUnits = LengthUnits.METERS
     _cache: dict = field(default_factory=dict, repr=False, compare=False)
 
     def __post_init__(self):
         if not isinstance(self.polygon, Polygon2D):
-            # Allow list/tuple of vertices as input
             poly = Polygon2D(vertices=tuple(tuple(v) for v in self.polygon))
             object.__setattr__(self, "polygon", poly)
 
     @property
     def is_polygon(self) -> bool:
-        return True
+        """True if this room has a non-rectangular floor plan."""
+        return self.polygon.n_vertices != 4 or not self._is_axis_aligned_rect()
 
     @property
     def x(self) -> float:
-        """Bounding box x dimension."""
+        """Bounding box width."""
         return self.polygon.x
 
     @property
     def y(self) -> float:
-        """Bounding box y dimension."""
+        """Bounding box height."""
         return self.polygon.y
 
     @property
     def dimensions(self) -> np.ndarray:
-        """Bounding box dimensions."""
         return np.array([self.x, self.y, self.z])
 
     @property
     def volume(self) -> float:
-        """Volume based on polygon area times height."""
         return self.polygon.area * self.z
 
     @property
     def cubic_meters(self) -> float:
-        # Convert polygon area and height to meters
         dims = convert_length(self.units, LengthUnits.METERS, self.x, self.y, self.z)
-        # Calculate the scale factor squared for area
         scale = dims[0] / self.x if self.x != 0 else 1.0
         area_m2 = self.polygon.area * scale * scale
         return area_m2 * dims[2]
@@ -118,64 +62,96 @@ class PolygonRoomDimensions:
 
     @property
     def faces(self) -> dict:
-        """
-        Returns face definitions for floor, ceiling, and numbered walls.
+        """Face definitions for floor, ceiling, and walls.
 
-        Each wall is defined by:
-            (edge_start, edge_end, height, outward_normal_2d)
-
-        Floor and ceiling use the same format as RoomDimensions for compatibility
-        with axis-aligned operations, but also include polygon reference.
+        Non-rectangular rooms get numbered walls (wall_0, wall_1, ...).
+        Rectangular rooms get cardinal walls (south, north, west, east) for
+        backward compatibility.
         """
         if "faces" in self._cache:
             return self._cache["faces"]
 
         x_min, y_min, x_max, y_max = self.polygon.bounding_box
 
-        result = {
-            # Floor and ceiling use bounding box for backward compatibility
-            # but actual geometry should use polygon
-            "floor": (x_min, x_max, y_min, y_max, 0, "xy", 1, self.polygon),
-            "ceiling": (x_min, x_max, y_min, y_max, self.z, "xy", -1, self.polygon),
-        }
-
-        # Add numbered walls from polygon edges
-        for i, ((x1, y1), (x2, y2)) in enumerate(self.polygon.edges):
-            edge_length = self.polygon.edge_lengths[i]
-            normal_2d = self.polygon.edge_normals[i]
-            # Wall definition: (x1, y1, x2, y2, edge_length, z_height, normal_2d)
-            result[f"wall_{i}"] = (x1, y1, x2, y2, edge_length, self.z, normal_2d)
+        if self.is_polygon:
+            result = {
+                "floor": (x_min, x_max, y_min, y_max, 0, "xy", 1, self.polygon),
+                "ceiling": (x_min, x_max, y_min, y_max, self.z, "xy", -1, self.polygon),
+            }
+            for i, ((x1, y1), (x2, y2)) in enumerate(self.polygon.edges):
+                edge_length = self.polygon.edge_lengths[i]
+                normal_2d = self.polygon.edge_normals[i]
+                result[f"wall_{i}"] = (x1, y1, x2, y2, edge_length, self.z, normal_2d)
+        else:
+            # Axis-aligned rectangle: use actual bounding box values
+            result = {
+                "floor": (x_min, x_max, y_min, y_max, 0, "xy", 1),
+                "ceiling": (x_min, x_max, y_min, y_max, self.z, "xy", -1),
+                "south": (x_min, x_max, 0, self.z, y_min, "xz", 1),
+                "north": (x_min, x_max, 0, self.z, y_max, "xz", -1),
+                "west": (y_min, y_max, 0, self.z, x_min, "yz", 1),
+                "east": (y_min, y_max, 0, self.z, x_max, "yz", -1),
+            }
 
         self._cache["faces"] = result
         return result
 
     @property
     def wall_ids(self) -> list[str]:
-        """List of wall IDs (wall_0, wall_1, etc.)."""
-        return [f"wall_{i}" for i in range(len(self.polygon.edges))]
+        """List of wall IDs."""
+        if self.is_polygon:
+            return [f"wall_{i}" for i in range(len(self.polygon.edges))]
+        return ["south", "north", "west", "east"]
 
-    def with_(self, *, z=None, units=None, polygon=None):
-        return PolygonRoomDimensions(
-            polygon=self.polygon if polygon is None else polygon,
-            z=self.z if z is None else z,
-            origin=self.origin,
-            units=self.units if units is None else LengthUnits.from_any(units),
+    def contains_point(self, x: float, y: float) -> bool:
+        """Check if (x, y) is within the floor polygon."""
+        return self.polygon.contains_point_inclusive(x, y)
+
+    def with_(self, *, x=None, y=None, z=None, units=None, polygon=None):
+        """Return a new RoomDimensions with updated values."""
+        new_units = self.units if units is None else LengthUnits.from_any(units)
+        new_z = self.z if z is None else z
+
+        if polygon is not None:
+            new_polygon = polygon
+        elif (x is not None or y is not None) and not self.is_polygon:
+            bb = self.polygon.bounding_box  # (x_min, y_min, x_max, y_max)
+
+            if isinstance(x, (tuple, list)):
+                new_x_min, new_x_max = float(x[0]), float(x[1])
+            elif x is not None:
+                new_x_min, new_x_max = bb[0], bb[0] + float(x)
+            else:
+                new_x_min, new_x_max = bb[0], bb[2]
+
+            if isinstance(y, (tuple, list)):
+                new_y_min, new_y_max = float(y[0]), float(y[1])
+            elif y is not None:
+                new_y_min, new_y_max = bb[1], bb[1] + float(y)
+            else:
+                new_y_min, new_y_max = bb[1], bb[3]
+
+            new_polygon = Polygon2D(vertices=(
+                (new_x_min, new_y_min), (new_x_max, new_y_min),
+                (new_x_max, new_y_max), (new_x_min, new_y_max)
+            ))
+        else:
+            new_polygon = self.polygon
+
+        return RoomDimensions(
+            polygon=new_polygon,
+            z=new_z,
+            units=new_units,
         )
 
-    def to_dict(self) -> dict:
-        return {
-            "polygon": self.polygon.to_dict(),
-            "z": self.z,
-            "origin": list(self.origin),
-            "units": str(self.units.value),
-        }
+    def _is_axis_aligned_rect(self) -> bool:
+        """Check if this is an axis-aligned rectangle."""
+        if self.polygon.n_vertices != 4:
+            return False
+        xs = sorted(set(v[0] for v in self.polygon.vertices))
+        ys = sorted(set(v[1] for v in self.polygon.vertices))
+        return len(xs) == 2 and len(ys) == 2
 
-    @classmethod
-    def from_dict(cls, data: dict) -> "PolygonRoomDimensions":
-        polygon = Polygon2D.from_dict(data["polygon"])
-        return cls(
-            polygon=polygon,
-            z=data["z"],
-            origin=tuple(data.get("origin", (0.0, 0.0, 0.0))),
-            units=LengthUnits.from_any(data.get("units", "meters")),
-        )
+
+# Backward compatibility alias
+PolygonRoomDimensions = RoomDimensions

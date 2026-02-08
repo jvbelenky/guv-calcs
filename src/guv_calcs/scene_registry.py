@@ -86,24 +86,14 @@ class Registry(Generic[T], MutableMapping[str, T]):
         """Check if all bounding box corners are within room boundaries."""
         room_dims = self.dims()
         for x, y, z in corners:
-            if room_dims.is_polygon:
-                # Use inclusive check to accept points on the boundary
-                if not room_dims.polygon.contains_point_inclusive(x, y):
-                    msg = f"{obj.name} exceeds room boundaries!"
-                    warnings.warn(msg, stacklevel=2)
-                    return msg
-                if z < 0 or z > room_dims.z:
-                    msg = f"{obj.name} exceeds room boundaries!"
-                    warnings.warn(msg, stacklevel=2)
-                    return msg
-            else:
-                origin, dims = room_dims.origin, room_dims.dimensions
-                if not (origin[0] <= x <= dims[0] and
-                        origin[1] <= y <= dims[1] and
-                        origin[2] <= z <= dims[2]):
-                    msg = f"{obj.name} exceeds room boundaries!"
-                    warnings.warn(msg, stacklevel=2)
-                    return msg
+            if not room_dims.contains_point(x, y):
+                msg = f"{obj.name} exceeds room boundaries!"
+                warnings.warn(msg, stacklevel=2)
+                return msg
+            if z < 0 or z > room_dims.z:
+                msg = f"{obj.name} exceeds room boundaries!"
+                warnings.warn(msg, stacklevel=2)
+                return msg
         return None
 
     def _extract_dimensions(self, obj: T) -> np.ndarray:

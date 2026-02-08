@@ -217,7 +217,7 @@ class TestPolygonRoomPlacement:
         room.place_lamp("aerolamp", mode="edge")
         lamp = list(room.lamps.values())[0]
         # Should be inside room
-        assert room.scene.dim.polygon.contains_point(lamp.position[0], lamp.position[1])
+        assert room.dim.polygon.contains_point(lamp.position[0], lamp.position[1])
 
     def test_l_shaped_room_corner_mode(self):
         """Corner mode works with L-shaped polygon rooms."""

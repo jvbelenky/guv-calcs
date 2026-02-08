@@ -104,7 +104,7 @@ class TestBulkOperations:
         r1 = project.create_room(room_id="r1", x=6, y=4, z=2.7)
         project.set_colormap("viridis")
         assert project.colormap == "viridis"
-        assert r1.scene.colormap == "viridis"
+        assert r1.colormap == "viridis"
 
     def test_check_lamps(self):
         project = Project()

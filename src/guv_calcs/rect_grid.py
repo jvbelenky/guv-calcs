@@ -399,13 +399,13 @@ class PlaneGrid(RectGrid):
                 u_vec = (1, 0, 0)
                 v_vec = (0, 1, 0)
             else:
-                origin = (mins[1], maxs[1], height)
+                origin = (mins[0], maxs[1], height)
                 u_vec = (1, 0, 0)
                 v_vec = (0, -1, 0)
 
         elif ref_surface == "xz":
             if direction == 1:
-                origin = (mins[1], height, maxs[1])
+                origin = (mins[0], height, maxs[1])
                 u_vec = (1, 0, 0)
                 v_vec = (0, 0, -1)
             else:
@@ -419,7 +419,7 @@ class PlaneGrid(RectGrid):
                 u_vec = (0, 1, 0)
                 v_vec = (0, 0, 1)
             else:
-                origin = (height, mins[1], maxs[1])
+                origin = (height, mins[0], maxs[1])
                 u_vec = (0, 1, 0)
                 v_vec = (0, 0, -1)
 
