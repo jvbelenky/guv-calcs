@@ -115,7 +115,7 @@ LAMP_CONFIGS = {
     "ushio_b1.5": {
         "ies_file": "ushio_b1.5.ies",
         "spectrum_file": "ushio_b1.5.csv",
-        "aliases": ["ushio_diffused" "b1.5","b15"],
+        "aliases": ["ushio_diffused", "b1.5","b15"],
         "guv_type": "krcl",
         "peak_wavelength": 222,
         "placement": {

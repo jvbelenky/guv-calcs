@@ -234,6 +234,35 @@ class TestEdgePlacement:
             on_short_edge = (pos[0] < 0.5 or pos[0] > 5.5)
             assert on_short_edge, f"Expected lamp on short edge, got pos={pos}"
 
+    def test_u_shape_edge_outer_walls_face_each_other(self):
+        """After top wing walls, lamps 3-4 should go on outer walls facing each other.
+
+        Outer walls have midpoint sightline=1m (same as other remaining edges),
+        but best-position sightline=4m, so they should win the tiebreak.
+        """
+        u_shape = Polygon2D(vertices=[
+            (0, 0), (4, 0), (4, 3), (3, 3), (3, 1), (1, 1), (1, 3), (0, 3)
+        ])
+        positions = []
+        # Lamps 1-2: top wing walls
+        for _ in range(2):
+            pos, _ = new_lamp_position_edge(len(positions) + 1, u_shape, positions)
+            positions.append(pos)
+
+        # Lamps 3-4 should land on the outer walls (x near 0 or 4) with long sightlines
+        pos3, aim3 = new_lamp_position_edge(3, u_shape, positions)
+        positions.append(pos3)
+        pos4, aim4 = new_lamp_position_edge(4, u_shape, positions)
+
+        for pos, aim in [(pos3, aim3), (pos4, aim4)]:
+            on_outer_wall = pos[0] < 0.2 or pos[0] > 3.8
+            assert on_outer_wall, f"Expected lamp on outer wall, got pos={pos}"
+            sightline = np.hypot(aim[0] - pos[0], aim[1] - pos[1])
+            assert sightline > 3.5, f"Expected sightline > 3.5m, got {sightline:.2f}m"
+
+        # They should be on opposite walls
+        assert (pos3[0] < 0.2) != (pos4[0] < 0.2), "Lamps 3-4 should be on opposite walls"
+
 
 class TestVisibilityAndAiming:
     def test_farthest_visible_point_rectangle(self):
@@ -465,7 +494,7 @@ class TestLampPlacerAPI:
         """for_dims works with rectangular RoomDimensions."""
         from guv_calcs.lamp.lamp_placement import LampPlacer
         from guv_calcs.room_dims import RoomDimensions
-        dims = RoomDimensions(x=6, y=4, z=2.7)
+        dims = RoomDimensions(polygon=Polygon2D.rectangle(6, 4), z=2.7)
         placer = LampPlacer.for_dims(dims)
         assert placer.polygon.x == 6
         assert placer.polygon.y == 4
@@ -485,7 +514,7 @@ class TestLampPlacerAPI:
         """for_dims tracks existing positions."""
         from guv_calcs.lamp.lamp_placement import LampPlacer
         from guv_calcs.room_dims import RoomDimensions
-        dims = RoomDimensions(x=6, y=4, z=2.7)
+        dims = RoomDimensions(polygon=Polygon2D.rectangle(6, 4), z=2.7)
         existing = [(1.0, 1.0), (5.0, 3.0)]
         placer = LampPlacer.for_dims(dims, existing=existing)
         assert len(placer._existing) == 2
@@ -534,7 +563,7 @@ class TestFixtureAwarePlacement:
         assert lamp.z <= expected_max_z + 0.001
 
     def test_wall_clearance_from_fixture_width(self):
-        """Lamp with fixture dimensions should be offset based on 3D diagonal for rotation safety."""
+        """Lamp with fixture dimensions should have bbox inside room after placement."""
         from guv_calcs import Lamp
         from guv_calcs.lamp.lamp_placement import LampPlacer
 
@@ -547,12 +576,12 @@ class TestFixtureAwarePlacement:
         placer = LampPlacer.for_room(x=5, y=5, z=3)
         placer.place_lamp(lamp, mode="corner")
 
-        # 3D diagonal = sqrt(0.3² + 0.2² + 0.1²) ≈ 0.374
-        # wall_clearance = 0.374/2 * 1.1 * 1.42 ≈ 0.29
-        x, y = lamp.x, lamp.y
-        corners = [(0, 0), (5, 0), (5, 5), (0, 5)]
-        min_dist = min(np.hypot(x - cx, y - cy) for cx, cy in corners)
-        assert min_dist >= 0.28
+        # All bounding box corners must be inside the room polygon
+        bbox_corners = lamp.geometry.get_bounding_box_corners()
+        for corner in bbox_corners:
+            assert placer.polygon.contains_point_inclusive(corner[0], corner[1]), (
+                f"bbox corner ({corner[0]:.4f}, {corner[1]:.4f}) outside polygon"
+            )
 
     def test_default_clearance_no_fixture(self):
         """Lamp without fixture dimensions uses default clearances."""
@@ -623,7 +652,7 @@ class TestFixtureAwarePlacement:
         assert lamp.z <= expected_max_z + 0.001
 
     def test_edge_wall_clearance(self):
-        """Edge placement should use fixture dimensions for wall offset."""
+        """Edge placement should have bbox inside room after placement."""
         from guv_calcs import Lamp
         from guv_calcs.lamp.lamp_placement import LampPlacer
 
@@ -636,15 +665,15 @@ class TestFixtureAwarePlacement:
         placer = LampPlacer.for_room(x=5, y=5, z=3)
         placer.place_lamp(lamp, mode="edge")
 
-        # 3D diagonal = sqrt(0.2² + 0.2² + 0.1²) ≈ 0.3
-        # wall_clearance = 0.3/2 * 1.1 * 1.42 ≈ 0.23
-        x, y = lamp.x, lamp.y
-        # Position should be at least 0.22 from any edge
-        assert x >= 0.22 and x <= 4.78
-        assert y >= 0.22 and y <= 4.78
+        # All bounding box corners must be inside the room polygon
+        bbox_corners = lamp.geometry.get_bounding_box_corners()
+        for corner in bbox_corners:
+            assert placer.polygon.contains_point_inclusive(corner[0], corner[1]), (
+                f"bbox corner ({corner[0]:.4f}, {corner[1]:.4f}) outside polygon"
+            )
 
     def test_asymmetric_fixture(self):
-        """Fixture with different width/length uses 3D diagonal for rotation-safe clearance."""
+        """Asymmetric fixture should have bbox inside room after placement."""
         from guv_calcs import Lamp
         from guv_calcs.lamp.lamp_placement import LampPlacer
 
@@ -657,9 +686,88 @@ class TestFixtureAwarePlacement:
         placer = LampPlacer.for_room(x=5, y=5, z=3)
         placer.place_lamp(lamp, mode="corner")
 
-        # 3D diagonal = sqrt(0.4² + 0.2² + 0.1²) ≈ 0.458
-        # wall_clearance = 0.458/2 * 1.1 * 1.42 ≈ 0.358
-        x, y = lamp.x, lamp.y
-        corners = [(0, 0), (5, 0), (5, 5), (0, 5)]
-        min_dist = min(np.hypot(x - cx, y - cy) for cx, cy in corners)
-        assert min_dist >= 0.35
+        # All bounding box corners must be inside the room polygon
+        bbox_corners = lamp.geometry.get_bounding_box_corners()
+        for corner in bbox_corners:
+            assert placer.polygon.contains_point_inclusive(corner[0], corner[1]), (
+                f"bbox corner ({corner[0]:.4f}, {corner[1]:.4f}) outside polygon"
+            )
+
+
+def _assert_bbox_inside(lamp, placer):
+    """Assert all bbox corners are inside polygon and z bounds."""
+    corners = lamp.geometry.get_bounding_box_corners()
+    for c in corners:
+        assert placer.polygon.contains_point_inclusive(c[0], c[1]), (
+            f"bbox corner ({c[0]:.4f}, {c[1]:.4f}) outside polygon"
+        )
+        assert c[2] <= placer.z + 1e-3, f"bbox corner z={c[2]:.4f} above ceiling z={placer.z}"
+        assert c[2] >= -1e-3, f"bbox corner z={c[2]:.4f} below floor"
+
+
+class TestBoundingBoxNudge:
+    """Tests that post-placement nudge keeps fixture bbox within room bounds."""
+
+    def test_corner_bbox_inside(self):
+        """Fixture at corner has all bbox corners inside polygon and z-bounds."""
+        from guv_calcs import Lamp
+        from guv_calcs.lamp.lamp_placement import LampPlacer
+
+        lamp = Lamp.from_keyword(
+            "aerolamp",
+            housing_width=0.3,
+            housing_length=0.2,
+            housing_height=0.1,
+        )
+        placer = LampPlacer.for_room(x=6, y=4, z=2.7)
+        placer.place_lamp(lamp, mode="corner")
+        _assert_bbox_inside(lamp, placer)
+
+    def test_edge_bbox_inside(self):
+        """Fixture at edge has all bbox corners inside polygon and z-bounds."""
+        from guv_calcs import Lamp
+        from guv_calcs.lamp.lamp_placement import LampPlacer
+
+        lamp = Lamp.from_keyword(
+            "aerolamp",
+            housing_width=0.3,
+            housing_length=0.2,
+            housing_height=0.1,
+        )
+        placer = LampPlacer.for_room(x=6, y=4, z=2.7)
+        placer.place_lamp(lamp, mode="edge")
+        _assert_bbox_inside(lamp, placer)
+
+    def test_offset_room_bbox_inside(self):
+        """Fixture in offset-origin room stays inside polygon."""
+        from guv_calcs import Lamp
+        from guv_calcs.lamp.lamp_placement import LampPlacer
+
+        lamp = Lamp.from_keyword(
+            "aerolamp",
+            housing_width=0.3,
+            housing_length=0.2,
+            housing_height=0.1,
+        )
+        poly = Polygon2D(vertices=((2, 1), (10, 1), (10, 8), (2, 8)))
+        placer = LampPlacer(poly, z=3.0)
+        placer.place_lamp(lamp, mode="corner")
+        _assert_bbox_inside(lamp, placer)
+
+    def test_polygon_room_bbox_inside(self):
+        """Fixture in L-shaped room stays inside polygon."""
+        from guv_calcs import Lamp
+        from guv_calcs.lamp.lamp_placement import LampPlacer
+
+        lamp = Lamp.from_keyword(
+            "aerolamp",
+            housing_width=0.3,
+            housing_length=0.2,
+            housing_height=0.1,
+        )
+        l_shape = Polygon2D(vertices=(
+            (0, 0), (6, 0), (6, 3), (3, 3), (3, 5), (0, 5)
+        ))
+        placer = LampPlacer(l_shape, z=2.7)
+        placer.place_lamp(lamp, mode="corner")
+        _assert_bbox_inside(lamp, placer)
