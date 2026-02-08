@@ -815,6 +815,39 @@ def _calculate_sightline_distance(
     return hypot(aim[0] - position[0], aim[1] - position[1])
 
 
+def _best_position_on_edge(
+    edge_idx: int,
+    polygon: Polygon2D,
+    num_samples: int = 11,
+) -> tuple[tuple[float, float], float]:
+    """Find the position on an edge with the longest perpendicular sightline.
+
+    Samples evenly-spaced points along the edge, finds the best sightline,
+    then returns the midpoint of the region that achieves it.
+
+    Returns:
+        (best_position, best_sightline)
+    """
+    (x1, y1), (x2, y2) = polygon.edges[edge_idx]
+
+    # Sample sightlines along the edge
+    t_values = [i / (num_samples - 1) for i in range(num_samples)]
+    sightlines = []
+    for t in t_values:
+        px = x1 + t * (x2 - x1)
+        py = y1 + t * (y2 - y1)
+        sightlines.append(_calculate_sightline_distance((px, py), edge_idx, polygon))
+
+    best_sightline = max(sightlines)
+
+    # Collect all t values that achieve the best sightline, pick their center
+    best_ts = [t for t, s in zip(t_values, sightlines) if abs(s - best_sightline) <= 1e-6]
+    center_t = (min(best_ts) + max(best_ts)) / 2
+
+    best_pos = (x1 + center_t * (x2 - x1), y1 + center_t * (y2 - y1))
+    return best_pos, best_sightline
+
+
 def new_lamp_position_edge(
     lamp_idx: int,
     polygon: Polygon2D,
@@ -841,36 +874,46 @@ def new_lamp_position_edge(
 
     edge_centers = get_edge_centers(polygon)
 
-    # Find available edge centers (not already occupied)
-    occupied_centers = set()
+    # Find available edges (not already occupied by a nearby lamp)
+    occupied_edges = set()
     for ex, ey in existing_positions:
-        for i, (mx, my, _) in enumerate(edge_centers):
-            if hypot(ex - mx, ey - my) < 0.2:
-                occupied_centers.add(i)
+        for i, (_, _, edge_idx) in enumerate(edge_centers):
+            (x1, y1), (x2, y2) = polygon.edges[edge_idx]
+            if _point_to_segment_distance(ex, ey, x1, y1, x2, y2) < 0.2:
+                occupied_edges.add(i)
 
-    available = [i for i in range(len(edge_centers)) if i not in occupied_centers]
+    available = [i for i in range(len(edge_centers)) if i not in occupied_edges]
 
     if available:
-        # Score each available center by sightline distance (longer = better)
-        best_idx = None
-        best_score = -1.0
+        # Score each edge: midpoint sightline primary, best-position sightline tiebreaker.
+        # Midpoint sightline preserves ranking for simple rooms; the tiebreaker ensures
+        # edges with good non-midpoint positions (e.g. outer walls of concave rooms)
+        # rank above edges where every position is poor.
+        best_center_idx = None
+        best_mid_score = -1.0
+        best_edge_score = -1.0
 
         for i in available:
             mx, my, edge_idx = edge_centers[i]
+            mid_sightline = _calculate_sightline_distance((mx, my), edge_idx, polygon)
+            _, edge_sightline = _best_position_on_edge(edge_idx, polygon)
 
-            # Calculate sightline distance (how far the lamp can see perpendicular to wall)
-            sightline = _calculate_sightline_distance((mx, my), edge_idx, polygon)
-            score = sightline
+            if (mid_sightline > best_mid_score + 1e-6) or (
+                abs(mid_sightline - best_mid_score) <= 1e-6
+                and edge_sightline > best_edge_score + 1e-6
+            ):
+                best_mid_score = mid_sightline
+                best_edge_score = edge_sightline
+                best_center_idx = i
 
-            if score > best_score:
-                best_score = score
-                best_idx = i
+        _, _, edge_idx = edge_centers[best_center_idx]
 
-        mx, my, edge_idx = edge_centers[best_idx]
+        # Find best position on the chosen edge (may differ from midpoint in concave rooms)
+        best_pos, _ = _best_position_on_edge(edge_idx, polygon)
 
         # Offset slightly inward from edge
         inward = (-polygon.edge_normals[edge_idx][0], -polygon.edge_normals[edge_idx][1])
-        position = _offset_inward((mx, my), inward, offset=wall_offset)
+        position = _offset_inward(best_pos, inward, offset=wall_offset)
 
         aim = _calculate_edge_perpendicular_aim(position, edge_idx, polygon)
         return position, aim

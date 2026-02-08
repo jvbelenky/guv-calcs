@@ -60,8 +60,8 @@ LAMP_CONFIGS = {
             "mode": "edge",
         },
         "fixture": {
-            "housing_width": 0.140,
-            "housing_length": 0.086,
+            "housing_width": 0.086,
+            "housing_length": 0.140,
             "housing_height": 0.045,
         },
     },
@@ -91,8 +91,8 @@ LAMP_CONFIGS = {
             "mode": "horizontal",
         },
         "fixture": {
-            "housing_width": 0.10,
-            "housing_length": 0.60,
+            "housing_width": 0.60,
+            "housing_length": 0.10,
             "housing_height": 0.08,
         },
     },
