@@ -141,6 +141,7 @@ class LampPlacer:
         max_tilt: float = None,
         offset: float = None,
         wall_clearance: float = None,
+        angle: float = None,
     ):
         """
         Position and aim a lamp, returning it for chaining.
@@ -165,7 +166,8 @@ class LampPlacer:
             raise ValueError("z must be set to use place_lamp (use for_room or for_dims)")
 
         # Get placement defaults from lamp config if available
-        if mode is None or max_tilt is None:
+        config_angle = 0
+        if mode is None or max_tilt is None or angle is None:
             try:
                 _, config = resolve_keyword(lamp.lamp_id)
                 placement = config.get("placement", {})
@@ -173,9 +175,11 @@ class LampPlacer:
                     mode = placement.get("mode", "downlight")
                 if max_tilt is None:
                     max_tilt = placement.get("max_tilt")
+                config_angle = placement.get("angle", 0)
             except KeyError:
                 if mode is None:
                     mode = "downlight"
+        fixture_angle = angle if angle is not None else config_angle
 
         # Calculate ceiling offset from fixture if not specified
         if offset is None:
@@ -219,6 +223,8 @@ class LampPlacer:
             aim_xy = result.aim
 
         lamp.aim(aim_xy[0], aim_xy[1], aim_z)
+        if fixture_angle:
+            lamp.rotate(fixture_angle)
         self._nudge_into_bounds(lamp)
         self.record(lamp.x, lamp.y)
         return lamp
@@ -875,11 +881,13 @@ def new_lamp_position_edge(
     edge_centers = get_edge_centers(polygon)
 
     # Find available edges (not already occupied by a nearby lamp)
+    # Tolerance must exceed wall_offset since lamps are offset inward from the edge
+    tolerance = max(0.2, wall_offset + 0.1)
     occupied_edges = set()
     for ex, ey in existing_positions:
         for i, (_, _, edge_idx) in enumerate(edge_centers):
             (x1, y1), (x2, y2) = polygon.edges[edge_idx]
-            if _point_to_segment_distance(ex, ey, x1, y1, x2, y2) < 0.2:
+            if _point_to_segment_distance(ex, ey, x1, y1, x2, y2) < tolerance:
                 occupied_edges.add(i)
 
     available = [i for i in range(len(edge_centers)) if i not in occupied_edges]

@@ -705,6 +705,50 @@ def _assert_bbox_inside(lamp, placer):
         assert c[2] >= -1e-3, f"bbox corner z={c[2]:.4f} below floor"
 
 
+class TestFixtureAngle:
+    """Tests for explicit fixture angle in lamp placement."""
+
+    def test_config_angle_90_applied(self):
+        """Lamp with config angle=90 gets rotated after placement."""
+        from guv_calcs import Lamp
+        from guv_calcs.lamp.lamp_placement import LampPlacer
+
+        lamp = Lamp.from_keyword("nukit_torch")  # config angle=90
+        placer = LampPlacer.for_room(x=5, y=5, z=3)
+        placer.place_lamp(lamp)
+        assert lamp.angle == 90
+
+    def test_config_angle_0_applied(self):
+        """Lamp with config angle=0 keeps angle=0 after placement."""
+        from guv_calcs import Lamp
+        from guv_calcs.lamp.lamp_placement import LampPlacer
+
+        lamp = Lamp.from_keyword("aerolamp")  # config angle=0
+        placer = LampPlacer.for_room(x=5, y=5, z=3)
+        placer.place_lamp(lamp)
+        assert lamp.angle == 0
+
+    def test_explicit_angle_overrides_config(self):
+        """Explicit angle parameter overrides config value."""
+        from guv_calcs import Lamp
+        from guv_calcs.lamp.lamp_placement import LampPlacer
+
+        lamp = Lamp.from_keyword("nukit_torch")  # config angle=90
+        placer = LampPlacer.for_room(x=5, y=5, z=3)
+        placer.place_lamp(lamp, angle=45)
+        assert lamp.angle == 45
+
+    def test_unknown_lamp_defaults_to_zero(self):
+        """Lamp without a config defaults to angle=0."""
+        from guv_calcs import Lamp
+        from guv_calcs.lamp.lamp_placement import LampPlacer
+
+        lamp = Lamp(lamp_id="unknown_fixture", filedata=None)
+        placer = LampPlacer.for_room(x=5, y=5, z=3)
+        placer.place_lamp(lamp, mode="downlight")
+        assert lamp.angle == 0
+
+
 class TestBoundingBoxNudge:
     """Tests that post-placement nudge keeps fixture bbox within room bounds."""
 

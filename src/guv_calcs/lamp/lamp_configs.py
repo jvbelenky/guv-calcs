@@ -11,6 +11,7 @@ LAMP_CONFIGS = {
         "peak_wavelength": 222,
         "placement": {
             "mode": "edge",
+            "angle": 0,
         },
         "fixture": {
             "housing_width": 0.1,
@@ -26,6 +27,7 @@ LAMP_CONFIGS = {
         "peak_wavelength": 222,
         "placement": {
             "mode": "edge",
+            "angle": 0,
             # "max_tilt": 45,
         },
         "fixture": {
@@ -43,6 +45,7 @@ LAMP_CONFIGS = {
         "placement": {
             "mode": "downlight",
             "max_tilt": 45,
+            "angle": 0,
         },
         "fixture": {
             "housing_width": 0.2,
@@ -58,6 +61,7 @@ LAMP_CONFIGS = {
         "peak_wavelength": 222,
         "placement": {
             "mode": "edge",
+            "angle": 90,
         },
         "fixture": {
             "housing_width": 0.086,
@@ -74,6 +78,7 @@ LAMP_CONFIGS = {
         "placement": {
             # "mode": "corner",
             # "max_tilt": 45,
+            "angle": 90,
         },
         "fixture": {
             "housing_width": 0.154,
@@ -89,6 +94,7 @@ LAMP_CONFIGS = {
         "peak_wavelength": 222,
         "placement": {
             "mode": "horizontal",
+            "angle": 90,
         },
         "fixture": {
             "housing_width": 0.60,
@@ -105,6 +111,7 @@ LAMP_CONFIGS = {
         "placement": {
             "mode": "corner",
             "max_tilt": 45,
+            "angle": 0,
         },
         # "fixture": {
             # "housing_width": 0.15,
@@ -121,6 +128,7 @@ LAMP_CONFIGS = {
         "placement": {
             "mode": "corner",
             "max_tilt": 45,
+            "angle": 90,
         },
         "fixture": {
             "housing_width": 0.18,
@@ -137,6 +145,7 @@ LAMP_CONFIGS = {
         "placement": {
             "mode": "corner",
             # "max_tilt": 45,
+            "angle": 90,
         },
         "fixture": {
             "housing_width": 0.15,
@@ -153,6 +162,7 @@ LAMP_CONFIGS = {
         "placement": {
             "mode": "edge",
             # "max_tilt": 45,
+            "angle": 90,
         },
         "fixture": {
             "housing_width": 0.20,
@@ -168,6 +178,7 @@ LAMP_CONFIGS = {
         "peak_wavelength": 222,
         "placement": {
             "mode": "downlight",
+            "angle": 0,
         },
         "fixture": {
             "housing_width": 0.12,
