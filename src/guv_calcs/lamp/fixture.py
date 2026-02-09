@@ -1,10 +1,10 @@
 """Fixture (luminaire housing) definitions for lamp geometry."""
 
-from enum import StrEnum
 from dataclasses import dataclass
+from ..units import ParseableEnum
 
 
-class FixtureShape(StrEnum):
+class FixtureShape(ParseableEnum):
     """Physical shape of fixture housing."""
 
     RECTANGULAR = "rectangular"  # Box shape (default, MVP)
@@ -12,13 +12,8 @@ class FixtureShape(StrEnum):
     SPHERICAL = "spherical"  # Sphere (future)
 
     @classmethod
-    def from_any(cls, arg) -> "FixtureShape":
-        """Convert various inputs to FixtureShape."""
-        if arg is None:
-            return cls.RECTANGULAR
-        if isinstance(arg, cls):
-            return arg
-        return cls.from_token(arg)
+    def _default(cls):
+        return cls.RECTANGULAR
 
     @classmethod
     def from_token(cls, token: str) -> "FixtureShape":

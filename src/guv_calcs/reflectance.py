@@ -1,6 +1,5 @@
 import numpy as np
 import copy
-import inspect
 import hashlib
 from dataclasses import dataclass
 from .calc_zone import CalcPlane
@@ -8,6 +7,7 @@ from .calc_manager import apply_plane_filters
 from .room_dims import RoomDimensions
 from .rect_grid import PlaneGrid
 from .poly_grid import PolygonGrid
+from ._serialization import init_from_dict
 
 
 class ReflectanceManager:
@@ -62,8 +62,7 @@ class ReflectanceManager:
 
     @classmethod
     def from_dict(cls, data):
-        keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
-        return cls(**{k: v for k, v in data.items() if k in keys})
+        return init_from_dict(cls, data)
 
     def to_dict(self):
         """Normalized configuration-only dict for equality."""
@@ -440,7 +439,7 @@ class SurfaceZoneCache:
 
 
 def init_room_surfaces(
-    dims: "RoomDimensions | PolygonRoomDimensions",
+    dims: "RoomDimensions",
     reflectances: dict = None,
     x_spacings: dict = None,
     y_spacings: dict = None,
@@ -465,30 +464,26 @@ def init_room_surfaces(
     if dims.is_polygon:
         # Polygon room: floor/ceiling use PolygonGrid, walls use PlaneGrid.from_wall()
         for face_id in ["floor", "ceiling"]:
-            face_data = dims.faces[face_id]
-            height = face_data[4]
-            direction = face_data[6]
-            polygon = face_data[7]
+            face = dims.faces[face_id]
 
             geometry = PolygonGrid(
-                polygon=polygon,
-                height=height,
+                polygon=face.polygon,
+                height=face.height,
                 spacing_init=(x_spacings[face_id], y_spacings[face_id]),
                 num_points_init=(num_x[face_id], num_y[face_id]),
-                direction=direction,
+                direction=face.direction,
             )
             plane = CalcPlane(zone_id=face_id, geometry=geometry, horiz=True)
             surfaces[face_id] = Surface(R=reflectances[face_id], plane=plane)
 
         for wall_id in dims.wall_ids:
-            wall_data = dims.faces[wall_id]
-            x1, y1, x2, y2, edge_length, z_height, normal_2d = wall_data
+            wall = dims.faces[wall_id]
 
             geometry = PlaneGrid.from_wall(
-                p1=(x1, y1),
-                p2=(x2, y2),
-                z_height=z_height,
-                normal_2d=normal_2d,
+                p1=(wall.x1, wall.y1),
+                p2=(wall.x2, wall.y2),
+                z_height=wall.z_height,
+                normal_2d=wall.normal_2d,
                 spacing_init=(x_spacings[wall_id], y_spacings[wall_id]),
                 num_points_init=(num_x[wall_id], num_y[wall_id]),
             )

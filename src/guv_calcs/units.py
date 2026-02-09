@@ -2,7 +2,31 @@ from enum import StrEnum
 import numpy as np
 
 
-class UnitEnum(StrEnum):
+class ParseableEnum(StrEnum):
+    """StrEnum with a shared from_any()/from_token() contract.
+
+    Subclasses must implement from_token(). Override _default() to
+    control what from_any(None) returns (default: None).
+    """
+
+    @classmethod
+    def _default(cls):
+        return None
+
+    @classmethod
+    def from_any(cls, arg):
+        if arg is None:
+            return cls._default()
+        if isinstance(arg, cls):
+            return arg
+        return cls.from_token(arg)
+
+    @classmethod
+    def from_token(cls, token):
+        raise NotImplementedError
+
+
+class UnitEnum(ParseableEnum):
     # subclass contract: members are defined as (token, to_base, aliases) and have a default classmethod
     def __new__(cls, token: str, to_base: float, aliases=()):
         obj = str.__new__(cls, token)

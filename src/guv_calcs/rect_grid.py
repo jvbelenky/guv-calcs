@@ -1,9 +1,9 @@
 from dataclasses import dataclass, replace, field
 import numbers
 import numpy as np
-import inspect
 import warnings
 from .axis import Axis1D
+from ._serialization import init_from_dict
 
 
 @dataclass(frozen=True, eq=False)
@@ -50,8 +50,7 @@ class RectGrid:
 
     @classmethod
     def from_dict(cls, data):
-        keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
-        return cls(**{k: v for k, v in data.items() if k in keys})
+        return init_from_dict(cls, data)
 
     def to_dict(self):
         data = {
@@ -491,7 +490,6 @@ class PlaneGrid(RectGrid):
         """
         rs = self.ref_surface
         if rs is None:
-            print("bork")
             return None
 
         n = self.normal

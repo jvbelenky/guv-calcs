@@ -4,19 +4,14 @@ import numpy as np
 from .lamp.spectrum import Spectrum, log_interp, sum_spectrum
 from .io import get_spectral_weightings
 from .lamp.lamp_type import GUVType
+from .units import ParseableEnum
 
 
-class PhotStandard(StrEnum):
+class PhotStandard(ParseableEnum):
     ACGIH = "acgih"
     UL8802 = "ul8802"
     ICNIRP = "icnirp"
     # GB28235 = "gb28235" # must be below 5 uW/cm2 everywhere at 2.1 m and below--maybe should correspond to a volume?
-
-    @classmethod
-    def from_any(cls, arg) -> "PhotStandard":
-        if isinstance(arg, cls):
-            return arg
-        return cls.from_token(arg)
 
     @classmethod
     def from_token(cls, token: str) -> "PhotStandard":

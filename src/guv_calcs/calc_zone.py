@@ -1,4 +1,3 @@
-import inspect
 import json
 import numpy as np
 from abc import ABC, abstractmethod
@@ -8,8 +7,9 @@ from .rect_grid import VolGrid, PlaneGrid
 from .poly_grid import PolygonGrid, PolygonVolGrid
 from .calc_zone_io import export_plane, export_volume
 from .calc_zone_plot import plot_plane, plot_volume
-from .room_dims import RoomDimensions, PolygonRoomDimensions
+from .room_dims import RoomDimensions
 from .polygon import Polygon2D
+from ._serialization import init_from_dict
 
 
 @dataclass(frozen=True)
@@ -177,8 +177,7 @@ class CalcZone(ABC):
 
     @classmethod
     def from_dict(cls, data):
-        keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
-        return cls(**{k: v for k, v in data.items() if k in keys})
+        return init_from_dict(cls, data)
 
     def to_dict(self):
         data = {}
@@ -414,17 +413,16 @@ class CalcVol(CalcZone):
 
     @classmethod
     def from_dict(cls, data):
-        keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
         if data.get("geometry") is not None:
             geom_data = data.pop("geometry")
             geometry = PolygonVolGrid.from_dict(geom_data) if "polygon" in geom_data else VolGrid.from_dict(geom_data)
             data["geometry"] = geometry
-        return cls(**{k: v for k, v in data.items() if k in keys})
+        return init_from_dict(cls, data)
 
     @classmethod
     def from_dims(
         cls,
-        dims: "RoomDimensions | PolygonRoomDimensions",
+        dims: "RoomDimensions",
         spacing: float | None = None,
         num_points: int | None = None,
         offset: bool = True,
@@ -570,12 +568,11 @@ class CalcPlane(CalcZone):
 
     @classmethod
     def from_dict(cls, data):
-        keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
         if data.get("geometry") is not None:
             geom_data = data.pop("geometry")
             geometry = PolygonGrid.from_dict(geom_data) if "polygon" in geom_data else PlaneGrid.from_dict(geom_data)
             data["geometry"] = geometry
-        return cls(**{k: v for k, v in data.items() if k in keys})
+        return init_from_dict(cls, data)
 
     @classmethod
     def from_points(
@@ -603,7 +600,7 @@ class CalcPlane(CalcZone):
     def from_face(
         cls,
         wall: str,
-        dims: "RoomDimensions | PolygonRoomDimensions",
+        dims: "RoomDimensions",
         normal_offset: float = 0.0,
         spacing: float | None = None,
         num_points: int | None = None,
@@ -615,48 +612,40 @@ class CalcPlane(CalcZone):
                 f"{wall} is not a valid wall ID, must be in {dims.faces.keys()}"
             )
 
-        face_data = dims.faces[wall]
+        face = dims.faces[wall]
 
         # Handle polygon room dimensions
         if dims.is_polygon:
             if wall in ("floor", "ceiling"):
-                # face_data: (x_min, x_max, y_min, y_max, height, ref_surface, direction, polygon)
-                base_height = face_data[4]
-                direction = face_data[6]
-                polygon = face_data[7]
-                height = base_height + normal_offset * direction
+                height = face.height + normal_offset * face.direction
 
                 geometry = PolygonGrid(
-                    polygon=polygon,
+                    polygon=face.polygon,
                     height=height,
                     spacing_init=spacing,
                     num_points_init=num_points,
                     offset=offset,
-                    direction=direction,
+                    direction=face.direction,
                 )
             else:
-                # Wall: (x1, y1, x2, y2, edge_length, z_height, normal_2d)
-                x1, y1, x2, y2, edge_length, z_height, normal_2d = face_data
-
                 geometry = PlaneGrid.from_wall(
-                    p1=(x1, y1),
-                    p2=(x2, y2),
-                    z_height=z_height,
-                    normal_2d=normal_2d,
+                    p1=(face.x1, face.y1),
+                    p2=(face.x2, face.y2),
+                    z_height=face.z_height,
+                    normal_2d=face.normal_2d,
                     spacing_init=spacing,
                     num_points_init=num_points,
                     offset=offset,
                 )
         else:
             # Rectangular room - original behavior
-            x1, x2, y1, y2, base_height, ref_surface, direction = face_data
-            height = base_height + normal_offset * direction
+            height = face.height + normal_offset * face.direction
 
             geometry = PlaneGrid.from_legacy(
-                mins=(x1, y1),
-                maxs=(x2, y2),
+                mins=(face.x1, face.y1),
+                maxs=(face.x2, face.y2),
                 height=height,
-                ref_surface=ref_surface,
+                ref_surface=face.ref_surface,
                 spacing_init=spacing,
                 num_points_init=num_points,
                 offset=offset,

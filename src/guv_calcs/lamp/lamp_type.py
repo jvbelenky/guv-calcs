@@ -1,24 +1,17 @@
-from enum import StrEnum
 from dataclasses import dataclass, replace
+from enum import StrEnum
 import warnings
 from typing import Optional
 import re
 from .spectrum import Spectrum
+from ..units import ParseableEnum
 
 
-class GUVType(StrEnum):
+class GUVType(ParseableEnum):
     KRCL = "krcl"
     LPHG = "lphg"
     LED = "led"
     OTHER = "other"
-
-    @classmethod
-    def from_any(cls, arg) -> "GUVType | None":
-        if arg is None:
-            return None
-        if isinstance(arg, cls):
-            return arg
-        return cls.from_token(arg)
 
     @classmethod
     def from_token(cls, token: str) -> "GUVType":

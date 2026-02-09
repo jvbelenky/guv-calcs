@@ -1,5 +1,4 @@
 import warnings
-import inspect
 import copy
 from collections.abc import Iterable
 from matplotlib import colormaps
@@ -16,6 +15,7 @@ from .safety import PhotStandard, check_lamps, SafetyCheckResult
 from .units import LengthUnits, convert_length
 from .efficacy import InactivationData
 from .scene_registry import LampRegistry, ZoneRegistry, SurfaceRegistry
+from ._serialization import init_from_dict
 
 DEFAULT_DIMS = {}
 for member in list(LengthUnits):
@@ -259,14 +259,12 @@ class Room:
     def from_dict(cls, data: dict):
         """Recreate a room from a dict."""
 
-        room_kwargs = list(inspect.signature(cls.__init__).parameters.keys())[1:]
-
         # Handle polygon deserialization
         init_data = dict(data)
         if "polygon" in init_data and init_data["polygon"] is not None:
             init_data["polygon"] = Polygon2D.from_dict(init_data["polygon"])
 
-        room = cls(**{k: v for k, v in init_data.items() if k in room_kwargs})
+        room = init_from_dict(cls, init_data)
 
         for surface_id, surface in data.get("surfaces", {}).items():
             surf = Surface.from_dict(surface)
@@ -385,48 +383,32 @@ class Room:
         self.ref_manager.enabled = val
         return self
 
+    def _apply_to_surfaces(self, method_name, wall_id=None, **kwargs):
+        """Apply a method to one or all surfaces."""
+        keys = self.surfaces.keys()
+        if wall_id is None:
+            for wall in keys:
+                getattr(self.surfaces[wall], method_name)(**kwargs)
+        else:
+            if wall_id not in keys:
+                raise KeyError(f"wall_id must be in {keys}")
+            getattr(self.surfaces[wall_id], method_name)(**kwargs)
+        return self
+
     def set_reflectance(self, R, wall_id=None):
         """Set the reflectance for the reflective walls.
 
         If wall_id is None, the value is set for all walls.
         """
-        keys = self.surfaces.keys()
-        if wall_id is None:
-            for wall in keys:
-                self.surfaces.get(wall).set_reflectance(R)
-        else:
-            if wall_id not in keys:
-                raise KeyError(f"wall_id must be in {keys}")
-            self.surfaces.get(wall_id).set_reflectance(R)
-        return self
+        return self._apply_to_surfaces("set_reflectance", wall_id, R=R)
 
     def set_reflectance_spacing(self, x_spacing=None, y_spacing=None, wall_id=None):
         """Set the spacing of the calculation points for the reflective walls."""
-        keys = self.surfaces.keys()
-        if wall_id is None:
-            for wall in keys:
-                self.surfaces.get(wall).set_spacing(
-                    x_spacing=x_spacing, y_spacing=y_spacing
-                )
-        else:
-            if wall_id not in keys:
-                raise KeyError(f"wall_id must be in {keys}")
-            self.surfaces.get(wall_id).set_spacing(
-                x_spacing=x_spacing, y_spacing=y_spacing
-            )
-        return self
+        return self._apply_to_surfaces("set_spacing", wall_id, x_spacing=x_spacing, y_spacing=y_spacing)
 
     def set_reflectance_num_points(self, num_x=None, num_y=None, wall_id=None):
         """Set the number of calculation points for the reflective walls."""
-        keys = self.surfaces.keys()
-        if wall_id is None:
-            for wall in keys:
-                self.surfaces.get(wall).set_num_points(num_x=num_x, num_y=num_y)
-        else:
-            if wall_id not in keys:
-                raise KeyError(f"wall_id must be in {keys}")
-            self.surfaces.get(wall_id).set_num_points(num_x=num_x, num_y=num_y)
-        return self
+        return self._apply_to_surfaces("set_num_points", wall_id, num_x=num_x, num_y=num_y)
 
     def set_max_num_passes(self, max_num_passes):
         """Set the maximum number of passes for the interreflection module."""

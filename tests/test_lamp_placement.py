@@ -501,11 +501,11 @@ class TestLampPlacerAPI:
         assert placer.z == 2.7
 
     def test_for_dims_polygon(self):
-        """for_dims works with PolygonRoomDimensions."""
+        """for_dims works with polygon RoomDimensions."""
         from guv_calcs.lamp.lamp_placement import LampPlacer
-        from guv_calcs.room_dims import PolygonRoomDimensions
+        from guv_calcs.room_dims import RoomDimensions
         poly = Polygon2D.rectangle(5, 5)
-        dims = PolygonRoomDimensions(polygon=poly, z=3.0)
+        dims = RoomDimensions(polygon=poly, z=3.0)
         placer = LampPlacer.for_dims(dims)
         assert placer.polygon is poly
         assert placer.z == 3.0

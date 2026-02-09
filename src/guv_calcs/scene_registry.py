@@ -1,4 +1,3 @@
-from enum import Enum
 from dataclasses import dataclass, field
 from collections.abc import MutableMapping, Iterator
 from typing import Generic, TypeVar, Optional, Dict, Callable
@@ -10,13 +9,6 @@ from .room_dims import RoomDimensions
 from .lamp import Lamp
 from .calc_zone import CalcZone
 from .reflectance import Surface
-
-
-# todo - integrate this
-class OnCollision(str, Enum):
-    ERROR = "error"
-    OVERWRITE = "overwrite"
-    INCREMENT = "increment"
 
 
 T = TypeVar("T")

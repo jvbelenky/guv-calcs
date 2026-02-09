@@ -1,5 +1,4 @@
 from importlib import resources
-import inspect
 import json
 import warnings
 import copy
@@ -13,6 +12,7 @@ from .lamp_orientation import LampOrientation
 from .lamp_geometry import LampGeometry
 from .fixture import Fixture
 from ..trigonometry import to_polar
+from .._serialization import init_from_dict
 from ..safety import get_tlvs
 from .lamp_type import GUVType, LampUnitType, LampType
 from ..units import LengthUnits, convert_length
@@ -291,7 +291,6 @@ class Lamp:
     @classmethod
     def from_dict(cls, data):
         """Initialize lamp from dict, with migration support for old formats."""
-        keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
 
         # Handle spectrum (with backwards compatibility for "spectra")
         spectrum_data = data.get("spectrum") or data.get("spectra")
@@ -333,7 +332,7 @@ class Lamp:
             data.pop("length", None)
             data.pop("height", None)
 
-        return cls(**{k: v for k, v in data.items() if k in keys})
+        return init_from_dict(cls, data)
 
     @property
     def keywords(self):

@@ -1,7 +1,42 @@
 from dataclasses import dataclass, field
+from typing import NamedTuple
 import numpy as np
 from .units import LengthUnits, convert_length
 from .polygon import Polygon2D
+
+
+class RectFace(NamedTuple):
+    """Face data for axis-aligned rectangular rooms (floor, ceiling, walls)."""
+    x1: float
+    x2: float
+    y1: float
+    y2: float
+    height: float
+    ref_surface: str
+    direction: int
+
+
+class PolygonFloorCeilingFace(NamedTuple):
+    """Face data for polygon room floor/ceiling."""
+    x_min: float
+    x_max: float
+    y_min: float
+    y_max: float
+    height: float
+    ref_surface: str
+    direction: int
+    polygon: object
+
+
+class WallFace(NamedTuple):
+    """Face data for polygon room walls."""
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+    edge_length: float
+    z_height: float
+    normal_2d: tuple
 
 
 @dataclass(frozen=True)
@@ -75,22 +110,22 @@ class RoomDimensions:
 
         if self.is_polygon:
             result = {
-                "floor": (x_min, x_max, y_min, y_max, 0, "xy", 1, self.polygon),
-                "ceiling": (x_min, x_max, y_min, y_max, self.z, "xy", -1, self.polygon),
+                "floor": PolygonFloorCeilingFace(x_min, x_max, y_min, y_max, 0, "xy", 1, self.polygon),
+                "ceiling": PolygonFloorCeilingFace(x_min, x_max, y_min, y_max, self.z, "xy", -1, self.polygon),
             }
             for i, ((x1, y1), (x2, y2)) in enumerate(self.polygon.edges):
                 edge_length = self.polygon.edge_lengths[i]
                 normal_2d = self.polygon.edge_normals[i]
-                result[f"wall_{i}"] = (x1, y1, x2, y2, edge_length, self.z, normal_2d)
+                result[f"wall_{i}"] = WallFace(x1, y1, x2, y2, edge_length, self.z, normal_2d)
         else:
             # Axis-aligned rectangle: use actual bounding box values
             result = {
-                "floor": (x_min, x_max, y_min, y_max, 0, "xy", 1),
-                "ceiling": (x_min, x_max, y_min, y_max, self.z, "xy", -1),
-                "south": (x_min, x_max, 0, self.z, y_min, "xz", 1),
-                "north": (x_min, x_max, 0, self.z, y_max, "xz", -1),
-                "west": (y_min, y_max, 0, self.z, x_min, "yz", 1),
-                "east": (y_min, y_max, 0, self.z, x_max, "yz", -1),
+                "floor": RectFace(x_min, x_max, y_min, y_max, 0, "xy", 1),
+                "ceiling": RectFace(x_min, x_max, y_min, y_max, self.z, "xy", -1),
+                "south": RectFace(x_min, x_max, 0, self.z, y_min, "xz", 1),
+                "north": RectFace(x_min, x_max, 0, self.z, y_max, "xz", -1),
+                "west": RectFace(y_min, y_max, 0, self.z, x_min, "yz", 1),
+                "east": RectFace(y_min, y_max, 0, self.z, x_max, "yz", -1),
             }
 
         self._cache["faces"] = result
@@ -152,6 +187,3 @@ class RoomDimensions:
         ys = sorted(set(v[1] for v in self.polygon.vertices))
         return len(xs) == 2 and len(ys) == 2
 
-
-# Backward compatibility alias
-PolygonRoomDimensions = RoomDimensions
