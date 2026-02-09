@@ -1,4 +1,4 @@
-import math
+import numpy as np
 
 
 def CADR_CFM(cubic_feet, irrad, k1, k2=0, f=0):
@@ -20,26 +20,12 @@ def eACH_UV(irrad, k1, k2=0, f=0):
     """
     if isinstance(irrad, (list, tuple)):
         return sum(eACH_UV(i, k, kk, ff) for i, k, kk, ff in zip(irrad, k1, k2, f))
-    return (k1 * (1 - f) + k2 - k2 * (1 - f)) * irrad * 3.6
+    return (k1 * (1 - f) + k2 * f) * irrad * 3.6
 
 
-def seconds_to_S(S, irrad, k1, k2=0, f=0, tol=1e-10, max_iter=100):
-    """
-    Calculate time in seconds to reach survival fraction S.
-
-    S: float, (0,1) - surviving fraction
-    irrad: float or list - fluence/irradiance in uW/cm2
-    k1: float or list - first susceptibility value, cm2/mJ
-    k2: float or list - second susceptibility value, cm2/mJ
-    f: float or list - (0,1) resistant fraction
-    tol: float, numerical tolerance
-    max_iter: maximum number of iterations to wait for solution to converge
-
-    For multi-wavelength: pass lists for irrad, k1, k2, f (same length).
-    The k*irrad values are summed, and f values are averaged.
-    """
-    # Handle multi-wavelength case
-    # Note: divide irrad by 1000 to convert µW/cm² to mW/cm² (k is in cm²/mJ)
+def survival_fraction(t, irrad, k1, k2=0, f=0):
+    """Survival fraction S(t) for the biphasic inactivation model."""
+    t = np.asarray(t)
     if isinstance(irrad, (list, tuple)):
         k1_irrad = sum(k * i / 1000 for k, i in zip(k1, irrad))
         k2_irrad = sum(k * i / 1000 for k, i in zip(k2, irrad))
@@ -48,19 +34,18 @@ def seconds_to_S(S, irrad, k1, k2=0, f=0, tol=1e-10, max_iter=100):
         k1_irrad = k1 * irrad / 1000
         k2_irrad = k2 * irrad / 1000
         f_eff = f
+    return (1 - f_eff) * np.exp(-k1_irrad * t) + f_eff * np.exp(-k2_irrad * t)
 
-    def S_of_t(t):
-        return (1 - f_eff) * math.exp(-k1_irrad * t) + f_eff * math.exp(-k2_irrad * t)
 
-    # Bracket the root
+def seconds_to_S(S, irrad, k1, k2=0, f=0, tol=1e-10, max_iter=100):
+    """Time in seconds to reach survival fraction S (bisection on survival_fraction)."""
     t_low = 0.0
     t_high = 1.0
-    while S_of_t(t_high) > S:
+    while float(survival_fraction(t_high, irrad, k1, k2, f)) > S:
         t_high *= 2.0
-    # Bisection
     for _ in range(max_iter):
         t_mid = 0.5 * (t_low + t_high)
-        if S_of_t(t_mid) > S:
+        if float(survival_fraction(t_mid, irrad, k1, k2, f)) > S:
             t_low = t_mid
         else:
             t_high = t_mid

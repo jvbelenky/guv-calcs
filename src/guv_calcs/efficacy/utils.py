@@ -6,6 +6,8 @@ from .constants import (
     LOG_ALIASES,
     TIME_UNIT_ALIASES,
     RATE_COLS,
+    TIME_THRESHOLD_SECONDS,
+    TIME_THRESHOLD_MINUTES,
 )
 
 
@@ -33,9 +35,9 @@ def auto_select_time_columns(df, time_cols, log):
 
     median_seconds = df[sec_key].median()
 
-    if median_seconds < 100:
+    if median_seconds < TIME_THRESHOLD_SECONDS:
         return sec_key, None
-    elif median_seconds < 6000:
+    elif median_seconds < TIME_THRESHOLD_MINUTES:
         return min_key, sec_key
     else:
         return hr_key, min_key

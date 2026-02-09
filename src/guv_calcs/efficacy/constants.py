@@ -82,6 +82,10 @@ TIME_UNIT_ALIASES = {
     "h": "hours",
 }
 
+# Time unit auto-selection thresholds (in seconds)
+TIME_THRESHOLD_SECONDS = 100
+TIME_THRESHOLD_MINUTES = 6000
+
 # Colinear column groups (columns that are linearly related and can share axes)
 RATE_COLS = {COL_EACH, COL_CADR_LPS, COL_CADR_CFM}
 # Time columns at each log level are also colinear (handled in get_compatible_group)

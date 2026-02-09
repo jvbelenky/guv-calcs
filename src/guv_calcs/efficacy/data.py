@@ -15,7 +15,6 @@ from .constants import (
     COL_RESISTANT,
     COL_MEDIUM,
     COL_CONDITION,
-    COL_REFERENCE,
     COL_EACH,
     COL_CADR_LPS,
     COL_CADR_CFM,
@@ -24,15 +23,7 @@ from .constants import (
 from .math import CADR_CFM, CADR_LPS, eACH_UV, log1, log2, log3, log4, log5
 from .plotting import plot_swarm, plot_survival, plot_wavelength
 from .utils import auto_select_time_columns
-from ._kinetics import (
-    species_matches,
-    parse_resistant,
-    extract_kinetic_params,
-    filter_wavelengths,
-    compute_row,
-)
 from ._filtering import (
-    filter_by_column,
     apply_row_filters,
     apply_wavelength_filter,
     get_effective_wavelengths,
@@ -40,8 +31,6 @@ from ._filtering import (
 from ._computation import (
     compute_all_columns,
     combine_wavelengths,
-    add_cadr_columns,
-    calculate_all_time_columns,
 )
 from ._averaging import (
     collect_parametric_inputs,
@@ -51,8 +40,6 @@ from ._averaging import (
     compute_average_single,
     compute_average_multiwavelength,
 )
-from ._state import DataState
-
 pd.options.mode.chained_assignment = None
 
 # Function name mapping for average_value()
@@ -153,7 +140,11 @@ class InactivationData:
 
         # Compute full_df if fluence provided
         if fluence is not None:
-            self._full_df = self._compute_all_columns()
+            self._full_df, self._time_cols, fluence_wavelengths = compute_all_columns(
+                self._base_df, self._fluence, self._volume_m3
+            )
+            if fluence_wavelengths is not None:
+                self._fluence_wavelengths = fluence_wavelengths
         else:
             self._full_df = self._base_df.copy()
 
@@ -240,9 +231,14 @@ class InactivationData:
 
         return self
 
-    def table(self) -> pd.DataFrame:
+    def table(self, species=None, strain=None, condition=None, medium=None, category=None) -> pd.DataFrame:
         """Return filtered DataFrame with context-appropriate columns."""
-        return self.display_df
+        df = self._get_filtered_df(species, strain, condition, medium, category)
+        df = self._select_display_columns(df)
+        for col in [COL_SPECIES, COL_STRAIN, COL_CONDITION]:
+            if col in df.columns:
+                return df.sort_values(col)
+        return df
 
     def plot(self, **kwargs):
         """Plot inactivation data. See plotting.plot for full documentation."""
@@ -272,6 +268,7 @@ class InactivationData:
         strain: str | list | None = None,
         condition: str | list | None = None,
         medium: str | list | None = None,
+        category: str | list | None = None,
         **kwargs,
     ) -> float | dict | None:
         """
@@ -284,13 +281,13 @@ class InactivationData:
             warnings.warn("fluence must be set to compute average_value", stacklevel=2)
             return None
 
-        parametric = collect_parametric_inputs(function, species, strain, medium, condition)
+        parametric = collect_parametric_inputs(function, species, strain, medium, condition, category)
         if parametric:
             return average_value_parametric(
-                self.average_value, function, parametric, species, strain, condition, medium, **kwargs
+                self.average_value, function, parametric, species, strain, condition, medium, category, **kwargs
             )
 
-        return self._average_value_single(function, species, strain, condition, medium, **kwargs)
+        return self._average_value_single(function, species, strain, condition, medium, category, **kwargs)
 
     def _average_value_single(
         self,
@@ -299,18 +296,13 @@ class InactivationData:
         strain: str | None = None,
         condition: str | None = None,
         medium: str | None = None,
+        category: str | None = None,
         **kwargs,
     ) -> float | None:
         """Compute a single derived value from averaged k parameters."""
-        if medium is not None:
-            df = self._full_df.copy()
-            df = filter_by_column(df, COL_MEDIUM, medium)
-            df = filter_by_column(df, COL_CATEGORY, self._category)
-            df = self._apply_wavelength_filter(df)
-        else:
-            df = self.full_df.copy()
+        df = self._get_filtered_df(species, strain, condition, medium, category)
 
-        df = filter_for_average(df, species, strain, condition, **kwargs)
+        df = filter_for_average(df, **kwargs)
         if len(df) == 0:
             warnings.warn("No rows match the specified filters", stacklevel=2)
             return None
@@ -328,10 +320,8 @@ class InactivationData:
     @property
     def display_df(self) -> pd.DataFrame:
         """Return filtered DataFrame with context-appropriate columns."""
-        df = self._apply_row_filters(self._full_df.copy())
-        df = self._apply_wavelength_filter(df)
+        df = self._get_filtered_df()
         df = self._select_display_columns(df)
-        # Sort by first available grouping column
         for col in [COL_SPECIES, COL_STRAIN, COL_CONDITION]:
             if col in df.columns:
                 return df.sort_values(col)
@@ -345,8 +335,7 @@ class InactivationData:
     @property
     def full_df(self) -> pd.DataFrame:
         """Return all computed columns (when fluence provided), filtered."""
-        df = self._apply_row_filters(self._full_df.copy())
-        return self._apply_wavelength_filter(df)
+        return self._get_filtered_df()
 
     @property
     def combined_full_df(self) -> pd.DataFrame | None:
@@ -361,8 +350,8 @@ class InactivationData:
         if self._combined_full_df is None:
             # Compute combined df from full_df (all wavelengths, all rows)
             # Note: We don't filter here - filtering is applied when accessing combined_df
-            self._combined_full_df = self._combine_wavelengths(
-                self._full_df, self._fluence
+            self._combined_full_df, _ = combine_wavelengths(
+                self._full_df, self._fluence, self._volume_m3
             )
         return self._combined_full_df
 
@@ -371,8 +360,7 @@ class InactivationData:
         """Combined multi-wavelength df with context-appropriate columns for display."""
         if self.combined_full_df is None:
             return None
-        # Apply row filters and column selection to the full combined df
-        filtered = self._apply_row_filters(self.combined_full_df.copy())
+        filtered = self._get_filtered_df(df=self.combined_full_df.copy())
         result = self._select_display_columns(filtered)
         return result.sort_values(COL_SPECIES)
 
@@ -391,7 +379,7 @@ class InactivationData:
     @property
     def wavelength(self):
         """Return effective wavelengths (merged fluence + user-specified)."""
-        return self._get_effective_wavelengths()
+        return get_effective_wavelengths(self._wavelength, self._fluence_wavelengths)
 
     @property
     def fluence(self):
@@ -460,56 +448,27 @@ class InactivationData:
     # Private computation methods
     # =========================================================================
 
-    # Static methods delegate to module-level functions for backward compatibility
-    _species_matches = staticmethod(species_matches)
-    _parse_resistant = staticmethod(parse_resistant)
-    _extract_kinetic_params = staticmethod(extract_kinetic_params)
-    _compute_row = staticmethod(compute_row)
-    _filter_wavelengths = staticmethod(filter_wavelengths)
-
-    def _compute_all_columns(self) -> pd.DataFrame:
-        """Compute all derived columns for the dataset."""
-        df, self._time_cols, fluence_wavelengths = compute_all_columns(
-            self._base_df, self._fluence, self._volume_m3
-        )
-        if fluence_wavelengths is not None:
-            self._fluence_wavelengths = fluence_wavelengths
-        return df
-
-    def _combine_wavelengths(self, df: pd.DataFrame, fluence_dict: dict) -> pd.DataFrame:
-        """Combine multi-wavelength data into aggregated rows."""
-        result_df, _ = combine_wavelengths(df, fluence_dict, self._volume_m3)
-        return result_df
-
-    def _add_cadr_columns(self, df: pd.DataFrame) -> None:
-        """Add CADR columns to DataFrame."""
-        add_cadr_columns(df, self._volume_m3)
-
-    def _calculate_all_time_columns(self, df) -> dict:
-        """Calculate minutes/hours columns for all log levels."""
-        return calculate_all_time_columns(df)
-
     # =========================================================================
     # Private filter methods - delegate to _filtering module
     # =========================================================================
 
-    def _filter_by_column(self, df: pd.DataFrame, col: str, value) -> pd.DataFrame:
-        """Filter df by column value."""
-        return filter_by_column(df, col, value)
-
-    def _apply_row_filters(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Apply all row-level filters (medium, category, species, strain, condition)."""
-        return apply_row_filters(
-            df, self._medium, self._category, self._species, self._strain, self._condition
+    def _get_filtered_df(self, species=None, strain=None, condition=None, medium=None, category=None, df=None):
+        """Apply filters, merging call-time overrides with instance state."""
+        if df is None:
+            df = self._full_df.copy()
+        df = apply_row_filters(
+            df,
+            medium=medium if medium is not None else self._medium,
+            category=category if category is not None else self._category,
+            species=species if species is not None else self._species,
+            strain=strain if strain is not None else self._strain,
+            condition=condition if condition is not None else self._condition,
         )
+        return self._apply_wavelength_filter(df)
 
     def _apply_wavelength_filter(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply wavelength filter based on effective wavelengths."""
-        return apply_wavelength_filter(df, self._get_effective_wavelengths())
-
-    def _get_effective_wavelengths(self) -> list | tuple | None:
-        """Get effective wavelengths (merged fluence + user-specified)."""
-        return get_effective_wavelengths(self._wavelength, self._fluence_wavelengths)
+        return apply_wavelength_filter(df, get_effective_wavelengths(self._wavelength, self._fluence_wavelengths))
 
     # =========================================================================
     # Private display methods

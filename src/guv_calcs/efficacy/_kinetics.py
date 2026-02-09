@@ -1,6 +1,5 @@
 """Pure utility functions for kinetic parameter handling."""
 
-import re
 import warnings
 from collections.abc import Callable
 
@@ -9,19 +8,13 @@ import pandas as pd
 from .constants import COL_K1, COL_K2, COL_RESISTANT, COL_SPECIES, COL_WAVELENGTH
 
 
-def species_matches(query: str, target: str) -> bool:
-    """Check if all words in query appear in target (case-insensitive)."""
-    query_words = re.findall(r"\w+", query.lower())
-    target_lower = target.lower()
-    return all(word in target_lower for word in query_words)
-
-
 def parse_resistant(val) -> float:
     """Parse resistant fraction: '0.33%' -> 0.0033, NaN -> 0.0."""
     if pd.isna(val):
         return 0.0
     if isinstance(val, str):
-        return float(val.rstrip("%")) / 100
+        val = val.strip().rstrip("%")
+        return float(val) / 100 if val else 0.0
     return float(val)
 
 
@@ -29,11 +22,7 @@ def extract_kinetic_params(row) -> dict:
     """Extract k1, k2, f from a DataFrame row. NaN -> 0.0."""
     k1 = row[COL_K1] if pd.notna(row[COL_K1]) else 0.0
     k2 = row[COL_K2] if pd.notna(row[COL_K2]) else 0.0
-    f = (
-        float(row[COL_RESISTANT].rstrip("%")) / 100
-        if pd.notna(row[COL_RESISTANT])
-        else 0.0
-    )
+    f = parse_resistant(row[COL_RESISTANT])
     return {"k1": k1, "k2": k2, "f": f}
 
 

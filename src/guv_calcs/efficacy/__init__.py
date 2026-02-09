@@ -7,6 +7,7 @@ from .math import (
     log4,
     log5,
     seconds_to_S,
+    survival_fraction,
     CADR_CFM,
     CADR_LPS,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "log4",
     "log5",
     "seconds_to_S",
+    "survival_fraction",
     "CADR_CFM",
     "CADR_LPS",
 ]

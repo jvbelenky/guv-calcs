@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 from guv_calcs import InactivationData
 from guv_calcs.efficacy._kinetics import (
-    species_matches,
     parse_resistant,
     extract_kinetic_params,
     filter_wavelengths,
@@ -22,7 +21,7 @@ from guv_calcs.efficacy._filtering import (
     get_effective_wavelengths,
     ALIASES,
 )
-from guv_calcs.efficacy._state import DataState
+from guv_calcs.efficacy.math import survival_fraction
 
 
 class TestInactivationDataClassMethods:
@@ -166,6 +165,20 @@ class TestInactivationDataSubset:
         assert len(df) > 0
         assert all("virus" in c.lower() for c in df["Category"])
 
+    def test_subset_category_list_with_aliases(self):
+        """subset(category=['bacteria', 'virus']) should use alias matching per element."""
+        data = InactivationData().subset(category=["bacteria", "virus"])
+        df = data.full_df
+        assert len(df) > 0
+        assert set(df["Category"].unique()) == {"Bacteria", "Viruses"}
+
+    def test_subset_medium_list_with_aliases(self):
+        """subset(medium=['air', 'surface']) should use alias matching per element."""
+        data = InactivationData().subset(medium=["air", "surface"])
+        df = data.full_df
+        assert len(df) > 0
+        assert all(m in ("Aerosol", "Surface") for m in df["Medium"].unique())
+
     def test_subset_empty_result_returns_empty_df(self):
         """subset with no matching rows should return empty DataFrame."""
         data = InactivationData()
@@ -295,6 +308,13 @@ class TestAverageValueParametric:
         assert "log2" in result
         assert "coli" in result["log2"]
 
+    def test_average_value_medium_alias(self):
+        """average_value with medium='air' should resolve to Aerosol and return results."""
+        data = InactivationData(fluence=0.5)
+        result = data.average_value("each", medium="air")
+        assert isinstance(result, float)
+        assert result > 0
+
 
 class TestEfficacyMathFunctions:
     """Tests for efficacy math functions."""
@@ -341,29 +361,6 @@ class TestEfficacyMathFunctions:
 class TestKineticsFunctions:
     """Tests for _kinetics module functions."""
 
-    def test_species_matches_exact(self):
-        """species_matches should match exact species names."""
-        assert species_matches("Escherichia coli", "Escherichia coli")
-
-    def test_species_matches_partial(self):
-        """species_matches should match partial names (all query words in target)."""
-        assert species_matches("e. coli", "Escherichia coli")
-        assert species_matches("coli", "Escherichia coli")
-
-    def test_species_matches_case_insensitive(self):
-        """species_matches should be case-insensitive."""
-        assert species_matches("E. COLI", "Escherichia coli")
-        assert species_matches("STAPH", "Staphylococcus aureus")
-
-    def test_species_matches_multiple_words(self):
-        """species_matches should match all query words."""
-        assert species_matches("staph aureus", "Staphylococcus aureus")
-        assert not species_matches("staph coli", "Staphylococcus aureus")
-
-    def test_species_matches_no_match(self):
-        """species_matches should return False for non-matching names."""
-        assert not species_matches("salmonella", "Escherichia coli")
-
     def test_parse_resistant_percentage(self):
         """parse_resistant should parse percentage strings."""
         assert parse_resistant("0.33%") == pytest.approx(0.0033)
@@ -379,6 +376,11 @@ class TestKineticsFunctions:
         """parse_resistant should pass through numeric values."""
         assert parse_resistant(0.01) == 0.01
         assert parse_resistant(0.5) == 0.5
+
+    def test_parse_resistant_empty_string(self):
+        """parse_resistant should return 0.0 for empty strings."""
+        assert parse_resistant("") == 0.0
+        assert parse_resistant("  ") == 0.0
 
     def test_extract_kinetic_params(self):
         """extract_kinetic_params should extract k1, k2, f from row."""
@@ -403,6 +405,18 @@ class TestKineticsFunctions:
         assert params["k1"] == 0.0
         assert params["k2"] == 0.0
         assert params["f"] == 0.0
+
+    def test_extract_kinetic_params_float_resistant(self):
+        """extract_kinetic_params should handle float resistant values."""
+        row = pd.Series({
+            "k1 [cm2/mJ]": 0.1,
+            "k2 [cm2/mJ]": 0.01,
+            "% resistant": 0.01
+        })
+        params = extract_kinetic_params(row)
+        assert params["k1"] == 0.1
+        assert params["k2"] == 0.01
+        assert params["f"] == 0.01
 
     def test_compute_row_scalar_fluence(self):
         """compute_row should compute with scalar fluence."""
@@ -445,46 +459,33 @@ class TestKineticsFunctions:
         assert result is None
 
 
-class TestDataState:
-    """Tests for DataState dataclass."""
+class TestSurvivalFraction:
+    """Tests for survival_fraction function."""
 
-    def test_datastate_defaults(self):
-        """DataState should have sensible defaults."""
-        state = DataState()
-        assert state.fluence is None
-        assert state.volume_m3 is None
-        assert state.medium is None
-        assert state.category is None
-        assert state.wavelength is None
-        assert state.log == 2
-        assert state.use_metric_units is True
-        assert state.fluence_wavelengths is None
-        assert state.time_cols == {}
+    def test_survival_fraction_at_t0(self):
+        """survival_fraction at t=0 should be 1.0."""
+        assert survival_fraction(0, irrad=100, k1=0.1) == pytest.approx(1.0)
 
-    def test_datastate_with_values(self):
-        """DataState should store provided values."""
-        state = DataState(
-            fluence=0.5,
-            volume_m3=50.0,
-            medium="Aerosol",
-            category="Virus",
-            log=3
-        )
-        assert state.fluence == 0.5
-        assert state.volume_m3 == 50.0
-        assert state.medium == "Aerosol"
-        assert state.category == "Virus"
-        assert state.log == 3
+    def test_survival_fraction_decreases(self):
+        """survival_fraction should decrease over time."""
+        s1 = survival_fraction(10, irrad=100, k1=0.1)
+        s2 = survival_fraction(100, irrad=100, k1=0.1)
+        assert s1 < 1.0
+        assert s2 < s1
 
-    def test_datastate_fluence_dict_initializes_wavelengths(self):
-        """DataState should auto-set fluence_wavelengths from fluence dict."""
-        state = DataState(fluence={222: 0.5, 254: 0.3})
-        assert state.fluence_wavelengths == [222, 254]
+    def test_survival_fraction_vectorized(self):
+        """survival_fraction should accept arrays."""
+        t = np.array([0, 10, 100])
+        result = survival_fraction(t, irrad=100, k1=0.1)
+        assert len(result) == 3
+        assert result[0] == pytest.approx(1.0)
+        assert result[1] < 1.0
+        assert result[2] < result[1]
 
-    def test_datastate_fluence_scalar_no_wavelengths(self):
-        """DataState should not set fluence_wavelengths for scalar fluence."""
-        state = DataState(fluence=0.5)
-        assert state.fluence_wavelengths is None
+    def test_survival_fraction_multi_wavelength(self):
+        """survival_fraction should handle multi-wavelength inputs."""
+        result = survival_fraction(10, irrad=[50, 50], k1=[0.1, 0.05], k2=[0.01, 0.005], f=[0.01, 0.02])
+        assert 0 < float(result) < 1
 
 
 class TestFilteringFunctions:
@@ -601,6 +602,20 @@ class TestFilterByWords:
         result = filter_by_words(df, "Medium", "aero")
         assert len(result) == 1
 
+    def test_filter_by_words_list(self):
+        """filter_by_words with list should match ANY element."""
+        df = pd.DataFrame({"Medium": ["Aerosol", "Surface", "Liquid"]})
+        result = filter_by_words(df, "Medium", ["air", "surface"])
+        assert len(result) == 2
+        assert set(result["Medium"]) == {"Aerosol", "Surface"}
+
+    def test_filter_by_words_list_with_aliases(self):
+        """filter_by_words with list should resolve aliases per element."""
+        df = pd.DataFrame({"Category": ["Bacteria", "Viruses", "Bacterial spores"]})
+        result = filter_by_words(df, "Category", ["bacteria", "virus"])
+        assert len(result) == 2
+        assert set(result["Category"]) == {"Bacteria", "Viruses"}
+
 
 class TestApplyRowFilters:
     """Tests for apply_row_filters function."""
@@ -622,7 +637,7 @@ class TestApplyRowFilters:
         """apply_row_filters should apply multiple filters."""
         df = pd.DataFrame({
             "Medium": ["Aerosol", "Aerosol", "Surface"],
-            "Category": ["Virus", "Bacteria", "Virus"],
+            "Category": ["Viruses", "Bacteria", "Viruses"],
             "Species": ["MS2", "E. coli", "Adeno"],
             "Strain": ["ATCC", "K12", ""],
             "Condition": ["", "", ""],
@@ -699,3 +714,29 @@ class TestPlotFunction:
         fig = data.plot_wavelength(show_fit=False)
         assert fig is not None
         plt.close('all')
+
+
+class TestTableFiltering:
+    """Tests for table() with call-time filter arguments."""
+
+    def test_table_with_species_filter(self):
+        """table(species=...) should return only rows matching the species."""
+        data = InactivationData(fluence=0.5)
+        df = data.table(species="coronavirus")
+        assert len(df) > 0
+        assert all("coronavirus" in s.lower() for s in df["Species"])
+
+    def test_table_with_category_filter(self):
+        """table(category=...) should filter to matching rows."""
+        data = InactivationData(fluence=0.5)
+        all_rows = len(data.table())
+        filtered = data.table(category="virus")
+        assert len(filtered) > 0
+        assert len(filtered) < all_rows
+
+    def test_table_no_args_matches_display_df(self):
+        """table() with no args should match display_df."""
+        data = InactivationData(fluence=0.5).subset(medium="aerosol")
+        table_df = data.table()
+        display_df = data.display_df
+        pd.testing.assert_frame_equal(table_df, display_df)

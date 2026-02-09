@@ -4,12 +4,11 @@ from collections.abc import Callable
 
 import pandas as pd
 
-from .constants import COL_SPECIES, COL_STRAIN, COL_CONDITION, COL_K1, COL_K2, COL_RESISTANT, COL_WAVELENGTH
+from .constants import COL_K1, COL_K2, COL_RESISTANT, COL_WAVELENGTH
 from ._kinetics import parse_resistant
-from ._filtering import filter_by_words
 
 
-def collect_parametric_inputs(function, species, strain, medium, condition) -> list:
+def collect_parametric_inputs(function, species, strain, medium, condition, category=None) -> list:
     """Collect list inputs into parametric tuples for nested dict construction."""
     parametric = []
     if isinstance(function, list):
@@ -22,6 +21,8 @@ def collect_parametric_inputs(function, species, strain, medium, condition) -> l
         parametric.append(("medium", medium))
     if isinstance(condition, list):
         parametric.append(("condition", condition))
+    if isinstance(category, list):
+        parametric.append(("category", category))
     return parametric
 
 
@@ -42,6 +43,7 @@ def average_value_parametric(
     strain,
     condition,
     medium,
+    category=None,
     **kwargs,
 ) -> dict:
     """Build nested dict for parametric average_value calls."""
@@ -57,6 +59,7 @@ def average_value_parametric(
             "strain": val if param_name == "strain" else strain,
             "condition": val if param_name == "condition" else condition,
             "medium": val if param_name == "medium" else medium,
+            "category": val if param_name == "category" else category,
             **kwargs,
         }
 
@@ -75,16 +78,9 @@ def average_value_parametric(
 
 def filter_for_average(
     df: pd.DataFrame,
-    species: str | None,
-    strain: str | None,
-    condition: str | None,
     **kwargs,
 ) -> pd.DataFrame:
-    """Apply species/strain/condition filters for average_value."""
-    df = filter_by_words(df, COL_SPECIES, species)
-    df = filter_by_words(df, COL_STRAIN, strain)
-    df = filter_by_words(df, COL_CONDITION, condition)
-
+    """Apply extra column filters for average_value."""
     for col, value in kwargs.items():
         if col in df.columns:
             df = df[df[col] == value]

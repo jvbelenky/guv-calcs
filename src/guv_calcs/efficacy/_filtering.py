@@ -56,11 +56,14 @@ def words_match(query: str, target: str) -> bool:
     return True
 
 
-def filter_by_words(df: pd.DataFrame, col: str, value: str | None) -> pd.DataFrame:
-    """Filter df where all words in value appear in column (case-insensitive)."""
+def filter_by_words(df: pd.DataFrame, col: str, value: str | list | None) -> pd.DataFrame:
+    """Filter df where all words in value appear in column (case-insensitive). Lists match ANY element."""
     if value is None:
         return df
-    mask = df[col].fillna("").apply(lambda x: words_match(value, x))
+    if isinstance(value, list):
+        mask = df[col].fillna("").apply(lambda x: any(words_match(v, x) for v in value))
+    else:
+        mask = df[col].fillna("").apply(lambda x: words_match(value, x))
     return df[mask]
 
 

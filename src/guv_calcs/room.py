@@ -700,9 +700,9 @@ class Room:
 
     def disinfection_table(self, zone_id="WholeRoomFluence", which="default", **kwargs):
         """Return a table of expected disinfection rates."""
-        data = self.get_efficacy_data(zone_id, **kwargs)
+        data = self.get_efficacy_data(zone_id)
         if which == "default":
-            return data.display_df
+            return data.table(**kwargs)
         elif which == "full":
             return data.full_df
         elif which == "combined":

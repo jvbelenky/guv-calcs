@@ -23,6 +23,8 @@ from .constants import (
     COL_CADR_LPS,
     COL_CADR_CFM,
     TIME_UNIT_ALIASES,
+    TIME_THRESHOLD_SECONDS,
+    TIME_THRESHOLD_MINUTES,
 )
 from .utils import (
     auto_select_time_columns,
@@ -32,7 +34,8 @@ from .utils import (
     get_compatible_group,
     is_time_column,
 )
-from .math import seconds_to_S
+from .math import seconds_to_S, survival_fraction
+from ._kinetics import parse_resistant
 
 __all__ = ["plot_swarm", "plot_survival", "plot_wavelength"]
 
@@ -290,11 +293,8 @@ def plot_swarm(
 def _build_plot_df(data):
     """Build DataFrame for plotting (uses full DFs, not display DFs)."""
     if data.combined_full_df is not None:
-        # Use full combined df with all columns, apply row filters
-        return data._apply_row_filters(data.combined_full_df.copy())
-    # Use full_df with all columns, apply row and wavelength filters
-    df = data._apply_row_filters(data._full_df.copy())
-    return data._apply_wavelength_filter(df)
+        return data._get_filtered_df(df=data.combined_full_df.copy())
+    return data._get_filtered_df()
 
 
 def _determine_x_axis(df):
@@ -1008,12 +1008,11 @@ def plot_survival(
     # For multi-wavelength, use combined_full_df which pre-filters to species with data at all wavelengths
     if multi_wavelength:
         if data.combined_full_df is not None:
-            # Use combined_full_df for species list (already filtered)
-            combined_df = data._apply_row_filters(data.combined_full_df.copy())
+            combined_df = data._get_filtered_df(df=data.combined_full_df.copy())
         else:
             combined_df = None
         # Also get full df for k-value extraction per wavelength
-        df = data._apply_row_filters(data._full_df.copy())
+        df = data._get_filtered_df()
     else:
         df = _build_plot_df(data)
         combined_df = None
@@ -1075,13 +1074,7 @@ def plot_survival(
                     else np.zeros(len(k1_vals))
                 )
                 f_vals = (
-                    wv_df[COL_RESISTANT]
-                    .apply(
-                        lambda x: float(x.rstrip("%")) / 100
-                        if isinstance(x, str) and x.strip()
-                        else 0.0
-                    )
-                    .values
+                    wv_df[COL_RESISTANT].apply(parse_resistant).values
                     if COL_RESISTANT in wv_df.columns
                     else np.zeros(len(k1_vals))
                 )
@@ -1121,13 +1114,7 @@ def plot_survival(
                 else np.zeros(len(k1_vals))
             )
             f_vals = (
-                sp_df[COL_RESISTANT]
-                .apply(
-                    lambda x: float(x.rstrip("%")) / 100
-                    if isinstance(x, str) and x.strip()
-                    else 0.0
-                )
-                .values
+                sp_df[COL_RESISTANT].apply(parse_resistant).values
                 if COL_RESISTANT in sp_df.columns
                 else np.zeros(len(k1_vals))
             )
@@ -1201,9 +1188,9 @@ def plot_survival(
 
     # Auto-select time units based on max_time (in seconds)
     if time_units is None:
-        if max_time < 100:
+        if max_time < TIME_THRESHOLD_SECONDS:
             time_units = "seconds"
-        elif max_time < 6000:
+        elif max_time < TIME_THRESHOLD_MINUTES:
             time_units = "minutes"
         else:
             time_units = "hours"
@@ -1330,30 +1317,6 @@ def plot_survival(
     return fig
 
 
-def _survival_curve(t, irrad, k1, k2, f):
-    """
-    Calculate survival fraction at time t.
-
-    S(t) = (1-f)*exp(-k1*I/1000*t) + f*exp(-k2*I/1000*t)
-
-    For multi-wavelength, pass lists for irrad, k1, k2, f. The k*I values
-    are summed across wavelengths.
-    """
-    t = np.asarray(t)
-    if isinstance(irrad, (list, tuple)):
-        # Multi-wavelength: sum k*I across wavelengths
-        k1_irrad_sum = sum(k * i / 1000 for k, i in zip(k1, irrad))
-        k2_irrad_sum = sum(k * i / 1000 for k, i in zip(k2, irrad))
-        f_eff = sum(f) / len(f)
-        return (1 - f_eff) * np.exp(-k1_irrad_sum * t) + f_eff * np.exp(
-            -k2_irrad_sum * t
-        )
-    else:
-        return (1 - f) * np.exp(-k1 * irrad / 1000 * t) + f * np.exp(
-            -k2 * irrad / 1000 * t
-        )
-
-
 def _plot_survival_with_ci(
     ax, t_seconds, t_display, fluence, species_data, show_ci, label, color
 ):
@@ -1366,7 +1329,7 @@ def _plot_survival_with_ci(
 
     if sd.get("multi_wavelength", False):
         # Multi-wavelength mode
-        S_mean = _survival_curve(
+        S_mean = survival_fraction(
             t_seconds, sd["irrad_list"], sd["k1_list"], sd["k2_list"], sd["f_list"]
         )
 
@@ -1374,26 +1337,26 @@ def _plot_survival_with_ci(
         if show_ci and any(sem > 0 for sem in sd["k1_sem_list"]):
             k1_lo = [k - 1.96 * sem for k, sem in zip(sd["k1_list"], sd["k1_sem_list"])]
             k1_hi = [k + 1.96 * sem for k, sem in zip(sd["k1_list"], sd["k1_sem_list"])]
-            S_lo = _survival_curve(
+            S_lo = survival_fraction(
                 t_seconds, sd["irrad_list"], k1_hi, sd["k2_list"], sd["f_list"]
             )
-            S_hi = _survival_curve(
+            S_hi = survival_fraction(
                 t_seconds, sd["irrad_list"], k1_lo, sd["k2_list"], sd["f_list"]
             )
             ax.fill_between(t_display, S_lo, S_hi, alpha=0.2, color=color)
     else:
         # Single-wavelength mode
-        S_mean = _survival_curve(
+        S_mean = survival_fraction(
             t_seconds, fluence, sd["k1_mean"], sd["k2_mean"], sd["f_mean"]
         )
 
         if show_ci and sd["k1_sem"] > 0:
             k1_lo = sd["k1_mean"] - 1.96 * sd["k1_sem"]
             k1_hi = sd["k1_mean"] + 1.96 * sd["k1_sem"]
-            S_lo = _survival_curve(
+            S_lo = survival_fraction(
                 t_seconds, fluence, k1_hi, sd["k2_mean"], sd["f_mean"]
             )
-            S_hi = _survival_curve(
+            S_hi = survival_fraction(
                 t_seconds, fluence, k1_lo, sd["k2_mean"], sd["f_mean"]
             )
             ax.fill_between(t_display, S_lo, S_hi, alpha=0.2, color=color)
@@ -1488,7 +1451,7 @@ def plot_wavelength(
     - Single filter applied: single color, shape varies by remaining dimension
     """
     # Build plotting DataFrame
-    df = data._apply_row_filters(data._full_df.copy())
+    df = data._get_filtered_df()
 
     # Determine y column
     y_col = COL_K1 if y.lower() == "k1" else COL_K2 if y.lower() == "k2" else y
@@ -1579,7 +1542,6 @@ def _determine_wavelength_plot_style(df, data):
     elif n_categories > 1:
         # Color by category, shape by species if many
         hue_col = COL_CATEGORY
-        hue_order = [cat for cat in CATEGORY_ORDER if cat in df[COL_CATEGORY].unique()]
         style_col = COL_SPECIES if n_species > 1 and n_species <= 6 else None
         palette = None
     elif n_species > 1:
