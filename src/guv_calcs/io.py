@@ -170,13 +170,9 @@ def export_room_zip(
         return zip_bytes
 
 
-def generate_report(self, fname=None):
-    """
-    Dump a one file CSV with a snapshot of the current room.
-    Sections are separated by blank lines so Excel shows each
-    header group clearly.
-    """
-    precision = self.precision if self.precision > 3 else 3
+def _build_room_rows(room):
+    """Build the row data for a single room's report."""
+    precision = room.precision if room.precision > 3 else 3
 
     def fmt(v):
         return round(v, precision) if isinstance(v, (int, float)) else v
@@ -184,22 +180,22 @@ def generate_report(self, fname=None):
     # ───  Room parameters  ───────────────────────────────
     rows = [["Room Parameters"]]
     rows += [["", "Dimensions", "x", "y", "z", "units"]]
-    d = self.dim
+    d = room.dim
     rows += [["", "", fmt(d.x), fmt(d.y), fmt(d.z), d.units]]
-    vol_units = "ft 3" if self.units == "feet" else "m 3"
-    rows += [["", "Volume", fmt(self.volume), vol_units]]
+    vol_units = "ft 3" if room.units == "feet" else "m 3"
+    rows += [["", "Volume", fmt(room.volume), vol_units]]
     rows += [[""]]
 
     # ───  Reflectance  ──────────────────────────────────
     rows += [["", "Reflectance"]]
     rows += [["", "", "Floor", "Ceiling", "North", "South", "East", "West", "Enabled"]]
     rows += [
-        ["", "", *self.ref_manager.reflectances.values(), self.ref_manager.enabled]
+        ["", "", *room.ref_manager.reflectances.values(), room.ref_manager.enabled]
     ]
     rows += [[""]]
 
     # ───  Luminaires  ───────────────────────────────────
-    if self.lamps:
+    if room.lamps:
         rows += [["Luminaires"]]
         rows += [["", "", "", "Surface Position", "", "", "Aim"]]
         rows += [
@@ -220,7 +216,7 @@ def generate_report(self, fname=None):
                 "Scaling factor",
             ]
         ]
-        for lamp in self.lamps.values():
+        for lamp in room.lamps.values():
             rows += [
                 [
                     "",
@@ -242,7 +238,7 @@ def generate_report(self, fname=None):
         rows += [[""]]
 
     # ----- Calc zones ------------------------
-    zones = [z for z in self.calc_zones.values() if z.values is not None]
+    zones = [z for z in room.calc_zones.values() if z.values is not None]
 
     # ----- Calc planes -----------------------
     planes = [z for z in zones if z.calctype == "Plane"]
@@ -335,8 +331,8 @@ def generate_report(self, fname=None):
             avg = values.mean()
             mx = values.max()
             mn = values.min()
-            mxmin = mx / mn
-            avgmin = avg / mn
+            mxmin = mx / mn if mn != 0 else float("inf")
+            avgmin = avg / mn if mn != 0 else float("inf")
             rows += [
                 [
                     "",
@@ -351,7 +347,12 @@ def generate_report(self, fname=None):
             ]
         rows += [[""]]
 
-    # footer
+    return rows
+
+
+def generate_report(self, fname=None):
+    """Dump a one-file CSV snapshot of the current room."""
+    rows = _build_room_rows(self)
     rows += [[f"Generated {datetime.datetime.now().isoformat(timespec='seconds')}"]]
     csv_bytes = rows_to_bytes(rows)
 
@@ -569,17 +570,68 @@ def export_project_zip(project, fname=None, **kwargs):
         return zip_bytes
 
 
+def _build_project_summary(project):
+    """Build a cross-room summary table."""
+    rows = [["=== Project Summary ==="]]
+    header = [
+        "",
+        "Room ID",
+        "Room Name",
+        "Calculation Zone",
+        "Avg",
+        "Max",
+        "Min",
+        "Max/Min",
+        "Avg/Min",
+        "Units",
+    ]
+    has_zones = False
+    data_rows = []
+    for room_id, room in project.rooms.items():
+        zones = [z for z in room.calc_zones.values() if z.values is not None]
+        for zone in zones:
+            has_zones = True
+            values = zone.get_values()
+            avg = values.mean()
+            mx = values.max()
+            mn = values.min()
+            mxmin = mx / mn if mn != 0 else float("inf")
+            avgmin = avg / mn if mn != 0 else float("inf")
+            precision = room.precision if room.precision > 3 else 3
+            data_rows.append(
+                [
+                    "",
+                    room_id,
+                    room.name,
+                    zone.name,
+                    round(avg, precision),
+                    round(mx, precision),
+                    round(mn, precision),
+                    round(mxmin, precision),
+                    round(avgmin, precision),
+                    zone.units,
+                ]
+            )
+
+    if has_zones:
+        rows.append(header)
+        rows += data_rows
+    else:
+        rows.append(["", "No computed zones found."])
+    rows.append([""])
+    return rows
+
+
 def generate_project_report(project, fname=None):
     """Generate a combined CSV report across all rooms."""
     all_rows = []
     for room_id, room in project.rooms.items():
         all_rows.append([f"=== Room: {room_id} ({room.name}) ==="])
-        room_bytes = generate_report(room)
-        if room_bytes:
-            room_text = room_bytes.decode("cp1252")
-            for line in room_text.splitlines():
-                all_rows.append(line.split(","))
+        all_rows += _build_room_rows(room)
         all_rows.append([""])
+
+    all_rows += _build_project_summary(project)
+    all_rows += [[f"Generated {datetime.datetime.now().isoformat(timespec='seconds')}"]]
 
     csv_bytes = rows_to_bytes(all_rows)
     if fname is not None:
