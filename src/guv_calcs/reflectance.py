@@ -259,11 +259,11 @@ class Surface:
 
     @classmethod
     def from_dict(cls, data):
-        plane_data = data.get("plane", {})
-        plane = CalcPlane.from_dict(plane_data)
-        R = data.get("R", 0.0)
-        T = data.get("T", 0.0)
-        return cls(R=R, T=T, plane=plane)
+        data = dict(data)
+        data["plane"] = CalcPlane.from_dict(data.get("plane", {}))
+        data.setdefault("R", 0.0)
+        data.setdefault("T", 0.0)
+        return init_from_dict(cls, data)
 
     @property
     def calc_state(self):

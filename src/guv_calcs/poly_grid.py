@@ -2,6 +2,7 @@ from dataclasses import dataclass, replace, field
 import numpy as np
 from .axis import Axis1D
 from .polygon import Polygon2D
+from ._serialization import init_from_dict
 
 
 @dataclass(frozen=True, eq=False)
@@ -209,15 +210,8 @@ class PolygonGrid(PolygonGridBase):
 
     @classmethod
     def from_dict(cls, data: dict) -> "PolygonGrid":
-        polygon = Polygon2D.from_dict(data["polygon"])
-        return cls(
-            polygon=polygon,
-            height=data.get("height", 0.0),
-            spacing_init=data.get("spacing_init"),
-            num_points_init=data.get("num_points_init"),
-            offset=data.get("offset", True),
-            direction=data.get("direction", 1),
-        )
+        data = {**data, "polygon": Polygon2D.from_dict(data["polygon"])}
+        return init_from_dict(cls, data)
 
 
 @dataclass(frozen=True, eq=False)
@@ -392,11 +386,5 @@ class PolygonVolGrid(PolygonGridBase):
 
     @classmethod
     def from_dict(cls, data: dict) -> "PolygonVolGrid":
-        polygon = Polygon2D.from_dict(data["polygon"])
-        return cls(
-            polygon=polygon,
-            z_height=data.get("z_height", 2.7),
-            spacing_init=data.get("spacing_init"),
-            num_points_init=data.get("num_points_init"),
-            offset=data.get("offset", True),
-        )
+        data = {**data, "polygon": Polygon2D.from_dict(data["polygon"])}
+        return init_from_dict(cls, data)

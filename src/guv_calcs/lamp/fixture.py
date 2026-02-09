@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from ..units import ParseableEnum
+from .._serialization import init_from_dict
 
 
 class FixtureShape(ParseableEnum):
@@ -69,14 +70,9 @@ class Fixture:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Fixture":
-        """Deserialize fixture from dict. Handles backward compatibility."""
-        # Ignore legacy fields: 'height', 'mount_type'
-        return cls(
-            housing_width=data.get("housing_width", 0.0),
-            housing_length=data.get("housing_length", 0.0),
-            housing_height=data.get("housing_height", 0.0),
-            shape=FixtureShape.from_any(data.get("shape")),
-        )
+        """Deserialize fixture from dict."""
+        data = {**data, "shape": FixtureShape.from_any(data.get("shape"))}
+        return init_from_dict(cls, data)
 
     @property
     def has_dimensions(self) -> bool:

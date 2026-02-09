@@ -9,7 +9,7 @@ from .calc_zone_io import export_plane, export_volume
 from .calc_zone_plot import plot_plane, plot_volume
 from .room_dims import RoomDimensions
 from .polygon import Polygon2D
-from ._serialization import init_from_dict
+from ._serialization import init_from_dict, deserialize_geometry
 
 
 @dataclass(frozen=True)
@@ -413,10 +413,7 @@ class CalcVol(CalcZone):
 
     @classmethod
     def from_dict(cls, data):
-        if data.get("geometry") is not None:
-            geom_data = data.pop("geometry")
-            geometry = PolygonVolGrid.from_dict(geom_data) if "polygon" in geom_data else VolGrid.from_dict(geom_data)
-            data["geometry"] = geometry
+        data = deserialize_geometry(data, PolygonVolGrid, VolGrid)
         return init_from_dict(cls, data)
 
     @classmethod
@@ -568,10 +565,7 @@ class CalcPlane(CalcZone):
 
     @classmethod
     def from_dict(cls, data):
-        if data.get("geometry") is not None:
-            geom_data = data.pop("geometry")
-            geometry = PolygonGrid.from_dict(geom_data) if "polygon" in geom_data else PlaneGrid.from_dict(geom_data)
-            data["geometry"] = geometry
+        data = deserialize_geometry(data, PolygonGrid, PlaneGrid)
         return init_from_dict(cls, data)
 
     @classmethod

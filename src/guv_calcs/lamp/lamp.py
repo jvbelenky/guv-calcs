@@ -12,7 +12,7 @@ from .lamp_orientation import LampOrientation
 from .lamp_geometry import LampGeometry
 from .fixture import Fixture
 from ..trigonometry import to_polar
-from .._serialization import init_from_dict
+from .._serialization import init_from_dict, migrate_lamp_dict
 from ..safety import get_tlvs
 from .lamp_type import GUVType, LampUnitType, LampType
 from ..units import LengthUnits, convert_length
@@ -290,10 +290,11 @@ class Lamp:
 
     @classmethod
     def from_dict(cls, data):
-        """Initialize lamp from dict, with migration support for old formats."""
+        """Initialize lamp from dict."""
+        data = migrate_lamp_dict(data)
 
-        # Handle spectrum (with backwards compatibility for "spectra")
-        spectrum_data = data.get("spectrum") or data.get("spectra")
+        # Convert serialized spectrum dict -> spectrum_source for __init__
+        spectrum_data = data.get("spectrum")
         if spectrum_data is not None:
             data["spectrum_source"] = {}
             for k, v in spectrum_data.items():
@@ -303,31 +304,20 @@ class Lamp:
                     lst = v
                 data["spectrum_source"][k] = np.array(lst)
 
-        # --- Migration: handle old 'depth' field ---
-        if "depth" in data and "fixture" not in data and "height" not in data:
-            # Old format: 'depth' was on LampSurface
-            legacy_depth = data.pop("depth", 0.0)
-            # Housing defaults to luminous surface size
-            data.setdefault("housing_width", data.get("width"))
-            data.setdefault("housing_length", data.get("length"))
-            data.setdefault("housing_height", legacy_depth)
-
-        # --- Handle new format with nested fixture dict ---
+        # Flatten nested fixture dict -> flat housing_* params
         if "fixture" in data:
             fixture_data = data["fixture"]
-            # Ignore legacy 'height' and 'mount_type' fields from fixture
             data["housing_width"] = fixture_data.get("housing_width", 0.0)
             data["housing_length"] = fixture_data.get("housing_length", 0.0)
             data["housing_height"] = fixture_data.get("housing_height", 0.0)
 
-        # Handle surface dict for user intent tracking
+        # Flatten nested surface dict -> user intent params
         if "surface" in data:
             surface_data = data["surface"]
             data["width"] = surface_data.get("_user_width")
             data["length"] = surface_data.get("_user_length")
             data["height"] = surface_data.get("_user_height")
         else:
-            # Legacy format - don't pass width/length so IES values will be used
             data.pop("width", None)
             data.pop("length", None)
             data.pop("height", None)
