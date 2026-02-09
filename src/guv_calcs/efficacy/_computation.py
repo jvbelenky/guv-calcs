@@ -84,17 +84,17 @@ def combine_wavelengths(df: pd.DataFrame, fluence_dict: dict, volume_m3=None) ->
             f_list = [item["f"] for item in combo]
             irrad_list = [fluence_dict[wv] for wv in wavelengths]
 
+            args = (irrad_list, k1_list, k2_list, f_list)
             row_data = {
                 COL_SPECIES: species,
                 COL_CATEGORY: category,
                 COL_MEDIUM: med,
-                COL_EACH: round(eACH_UV(irrad_list, k1_list, k2_list, f_list), 1),
-                f"Seconds to {LOG_LABELS[1]} inactivation": round(log1(irrad_list, k1_list, k2_list, f_list), 0),
-                f"Seconds to {LOG_LABELS[2]} inactivation": round(log2(irrad_list, k1_list, k2_list, f_list), 0),
-                f"Seconds to {LOG_LABELS[3]} inactivation": round(log3(irrad_list, k1_list, k2_list, f_list), 0),
-                f"Seconds to {LOG_LABELS[4]} inactivation": round(log4(irrad_list, k1_list, k2_list, f_list), 0),
-                f"Seconds to {LOG_LABELS[5]} inactivation": round(log5(irrad_list, k1_list, k2_list, f_list), 0),
+                COL_EACH: round(eACH_UV(*args), 1),
             }
+            log_funcs = {1: log1, 2: log2, 3: log3, 4: log4, 5: log5}
+            for log_level, func in log_funcs.items():
+                label = LOG_LABELS[log_level]
+                row_data[f"Seconds to {label} inactivation"] = round(func(*args), 0)
             summed_data.append(row_data)
 
     result_df = pd.DataFrame(summed_data)

@@ -10,7 +10,6 @@ from guv_calcs import InactivationData
 from guv_calcs.efficacy._kinetics import (
     parse_resistant,
     extract_kinetic_params,
-    filter_wavelengths,
     compute_row,
 )
 from guv_calcs.efficacy._filtering import (
@@ -19,7 +18,6 @@ from guv_calcs.efficacy._filtering import (
     filter_by_words,
     apply_row_filters,
     get_effective_wavelengths,
-    ALIASES,
 )
 from guv_calcs.efficacy.math import survival_fraction
 
