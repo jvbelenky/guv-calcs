@@ -1,5 +1,5 @@
 import numpy as np
-from .io import rows_to_bytes
+from ..io import rows_to_bytes
 
 
 def export_plane(zone, fname=None):

@@ -1,6 +1,6 @@
 from dataclasses import dataclass, replace
 import numpy as np
-from ..trigonometry import to_polar
+from ..geometry import to_polar
 
 
 @dataclass(frozen=True, slots=True)

@@ -5,8 +5,8 @@ from matplotlib import colormaps
 from .lamp import Lamp, LampPlacer
 from .calc_zone import CalcPlane, CalcVol, CalcZone
 from .room_plotter import RoomPlotter
-from .room_dims import RoomDimensions
-from .polygon import Polygon2D
+from .geometry import RoomDimensions
+from .geometry import Polygon2D
 from .reflectance import ReflectanceManager, Surface, init_room_surfaces
 from .io import parse_guv_file, save_room_data, export_room_zip, generate_report, get_version
 from packaging.version import Version

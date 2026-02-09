@@ -4,9 +4,7 @@ import hashlib
 from dataclasses import dataclass
 from .calc_zone import CalcPlane
 from .calc_manager import apply_plane_filters
-from .room_dims import RoomDimensions
-from .rect_grid import PlaneGrid
-from .poly_grid import PolygonGrid
+from .geometry import RoomDimensions, PlaneGrid, PolygonGrid
 from ._serialization import init_from_dict
 
 

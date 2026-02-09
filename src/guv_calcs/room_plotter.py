@@ -1,9 +1,9 @@
 import plotly.graph_objs as go
 import numpy as np
 from scipy.spatial import Delaunay
-from .trigonometry import to_polar
+from .geometry import to_polar
 from .calc_zone import CalcPlane, CalcVol
-from .poly_grid import PolygonGrid, PolygonVolGrid
+from .geometry import PolygonGrid, PolygonVolGrid
 from .units import convert_units
 
 

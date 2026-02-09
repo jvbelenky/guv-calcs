@@ -3,7 +3,7 @@ import numbers
 import numpy as np
 import warnings
 from .axis import Axis1D
-from ._serialization import init_from_dict
+from .._serialization import init_from_dict
 
 
 @dataclass(frozen=True, eq=False)

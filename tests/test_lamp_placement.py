@@ -2,7 +2,7 @@
 
 import pytest
 import numpy as np
-from guv_calcs.polygon import Polygon2D
+from guv_calcs.geometry import Polygon2D
 from guv_calcs.lamp.lamp_placement import (
     # Geometry utilities
     _point_to_segment_distance,
@@ -493,7 +493,7 @@ class TestLampPlacerAPI:
     def test_for_dims_rectangular(self):
         """for_dims works with rectangular RoomDimensions."""
         from guv_calcs.lamp.lamp_placement import LampPlacer
-        from guv_calcs.room_dims import RoomDimensions
+        from guv_calcs.geometry import RoomDimensions
         dims = RoomDimensions(polygon=Polygon2D.rectangle(6, 4), z=2.7)
         placer = LampPlacer.for_dims(dims)
         assert placer.polygon.x == 6
@@ -503,7 +503,7 @@ class TestLampPlacerAPI:
     def test_for_dims_polygon(self):
         """for_dims works with polygon RoomDimensions."""
         from guv_calcs.lamp.lamp_placement import LampPlacer
-        from guv_calcs.room_dims import RoomDimensions
+        from guv_calcs.geometry import RoomDimensions
         poly = Polygon2D.rectangle(5, 5)
         dims = RoomDimensions(polygon=poly, z=3.0)
         placer = LampPlacer.for_dims(dims)
@@ -513,7 +513,7 @@ class TestLampPlacerAPI:
     def test_for_dims_with_existing(self):
         """for_dims tracks existing positions."""
         from guv_calcs.lamp.lamp_placement import LampPlacer
-        from guv_calcs.room_dims import RoomDimensions
+        from guv_calcs.geometry import RoomDimensions
         dims = RoomDimensions(polygon=Polygon2D.rectangle(6, 4), z=2.7)
         existing = [(1.0, 1.0), (5.0, 3.0)]
         placer = LampPlacer.for_dims(dims, existing=existing)

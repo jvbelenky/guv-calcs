@@ -11,7 +11,7 @@ from .lamp_plotter import LampPlotter
 from .lamp_orientation import LampOrientation
 from .lamp_geometry import LampGeometry
 from .fixture import Fixture
-from ..trigonometry import to_polar
+from ..geometry import to_polar
 from .._serialization import init_from_dict, migrate_lamp_dict
 from ..safety import get_tlvs
 from .lamp_type import GUVType, LampUnitType, LampType

@@ -2,14 +2,14 @@ import json
 import numpy as np
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from .calc_manager import LightingCalculator
-from .rect_grid import VolGrid, PlaneGrid
-from .poly_grid import PolygonGrid, PolygonVolGrid
-from .calc_zone_io import export_plane, export_volume
-from .calc_zone_plot import plot_plane, plot_volume
-from .room_dims import RoomDimensions
-from .polygon import Polygon2D
-from ._serialization import init_from_dict, deserialize_geometry
+from ..calc_manager import LightingCalculator
+from ..geometry import VolGrid, PlaneGrid
+from ..geometry import PolygonGrid, PolygonVolGrid
+from ._io import export_plane, export_volume
+from ._plot import plot_plane, plot_volume
+from ..geometry import RoomDimensions
+from ..geometry import Polygon2D
+from .._serialization import init_from_dict, deserialize_geometry
 
 
 @dataclass(frozen=True)

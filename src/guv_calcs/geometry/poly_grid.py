@@ -2,7 +2,7 @@ from dataclasses import dataclass, replace, field
 import numpy as np
 from .axis import Axis1D
 from .polygon import Polygon2D
-from ._serialization import init_from_dict
+from .._serialization import init_from_dict
 
 
 @dataclass(frozen=True, eq=False)

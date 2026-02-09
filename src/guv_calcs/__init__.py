@@ -2,8 +2,7 @@ from .room import Room
 from .project import Project
 from .lamp import Lamp, LampType, GUVType, LampPlacer, Spectrum, sum_spectrum
 from .calc_zone import CalcVol, CalcPlane
-from .polygon import Polygon2D
-from .trigonometry import to_polar, to_cartesian, attitude
+from .geometry import Polygon2D, to_polar, to_cartesian, attitude
 from .io import get_spectral_weightings
 from .efficacy import InactivationData
 from .safety import PhotStandard, get_tlvs, get_max_irradiance, get_seconds_to_tlv

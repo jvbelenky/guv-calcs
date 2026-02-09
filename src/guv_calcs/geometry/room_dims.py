@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import NamedTuple
 import numpy as np
-from .units import LengthUnits, convert_length
+from ..units import LengthUnits, convert_length
 from .polygon import Polygon2D
 
 

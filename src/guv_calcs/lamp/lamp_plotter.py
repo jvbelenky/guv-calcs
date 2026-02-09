@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial import Delaunay
-from ..trigonometry import to_polar
+from ..geometry import to_polar
 
 
 class LampPlotter:

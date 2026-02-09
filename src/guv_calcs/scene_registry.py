@@ -5,7 +5,7 @@ import warnings
 
 import numpy as np
 
-from .room_dims import RoomDimensions
+from .geometry import RoomDimensions
 from .lamp import Lamp
 from .calc_zone import CalcZone
 from .reflectance import Surface

@@ -4,7 +4,7 @@ import warnings
 from dataclasses import dataclass
 from math import atan, degrees, hypot
 import numpy as np
-from ..polygon import Polygon2D
+from ..geometry import Polygon2D
 from .lamp_configs import resolve_keyword
 
 
