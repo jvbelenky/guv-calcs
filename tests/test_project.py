@@ -239,6 +239,42 @@ class TestExportAndReport:
         text = result.decode("cp1252")
         assert "office" in text
 
+    def test_generate_report_contains_room_sections(self):
+        """Multi-room report labels each room."""
+        project = Project()
+        r1 = project.create_room(room_id="office", x=6, y=4, z=2.7)
+        r1.place_lamp("aerolamp").add_standard_zones().calculate()
+        r2 = project.create_room(room_id="lab", x=8, y=6, z=3.0)
+        r2.place_lamp("aerolamp").add_standard_zones().calculate()
+        result = project.generate_report()
+        text = result.decode("cp1252")
+        assert "=== Room: office" in text
+        assert "=== Room: lab" in text
+
+    def test_generate_report_contains_project_summary(self):
+        """Report includes a project summary section."""
+        project = Project()
+        r = project.create_room(room_id="office", x=6, y=4, z=2.7)
+        r.place_lamp("aerolamp").add_standard_zones().calculate()
+        result = project.generate_report()
+        text = result.decode("cp1252")
+        assert "=== Project Summary ===" in text
+
+    def test_generate_report_multi_room_summary(self):
+        """Summary lists stats from all rooms."""
+        project = Project()
+        r1 = project.create_room(room_id="office", x=6, y=4, z=2.7)
+        r1.place_lamp("aerolamp").add_standard_zones().calculate()
+        r2 = project.create_room(room_id="lab", x=8, y=6, z=3.0)
+        r2.place_lamp("aerolamp").add_standard_zones().calculate()
+        result = project.generate_report()
+        text = result.decode("cp1252")
+        # Summary section should reference both rooms
+        summary_start = text.index("=== Project Summary ===")
+        summary_text = text[summary_start:]
+        assert "office" in summary_text
+        assert "lab" in summary_text
+
 
 class TestProjectCopyAndEquality:
 
