@@ -474,7 +474,7 @@ class Lamp:
         """external method for loading relative intensity map after lamp object has been instantiated"""
         self.surface.load_intensity_map(intensity_map)
 
-    def save_ies(self, fname=None, original=False, precision=2):
+    def save_ies(self, fname=None, original=False, precision=None):
         """
         Save the current lamp paramters as an .ies file; alternatively, save the original ies file.
         """
@@ -500,11 +500,14 @@ class Lamp:
             json.dump(data, json_file, indent=4)
         return data
 
-    def copy(self, lamp_id):
-        """copy the lamp object with a new ID"""
-        lamp = copy.deepcopy(self)
-        lamp.lamp_id = lamp_id
-        return lamp
+    def copy(self, **kwargs):
+        """Create a fresh copy of this lamp."""
+        dct = self.to_dict()
+        for key, val in dct.items():
+            new_val = kwargs.get(key, None)
+            if new_val is not None:
+                dct[key] = new_val
+        return type(self).from_dict(dct)
 
     # ------------------- Position / Orientation ---------------------
 

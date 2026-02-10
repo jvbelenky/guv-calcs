@@ -1,5 +1,4 @@
 from setuptools import setup, find_packages
-#from src.guv_calcs.io import get_version
 from pathlib import Path
 import re
 VERSION_RE = re.compile(r'__version__\s*=\s*"([^"]+)"')

@@ -439,3 +439,21 @@ class TestLazyCaching:
         # Move lamp should invalidate surface position (via geometry)
         basic_lamp.move(1.0, 2.0, 3.0)
         assert surface._position_dirty
+
+
+class TestLampCopy:
+    """Tests for Lamp.copy()."""
+
+    def test_copy_assigns_new_id(self):
+        """Copied lamp should have the new ID, original keeps its ID."""
+        lamp = Lamp.from_keyword("aerolamp")
+        copied = lamp.copy(lamp_id="new_id")
+        assert copied.lamp_id == "new_id"
+        assert lamp.lamp_id == "aerolamp"
+
+    def test_copy_is_independent(self):
+        """Moving the copy should not affect the original."""
+        lamp = Lamp.from_keyword("aerolamp")
+        copied = lamp.copy(lamp_id="new_id")
+        copied.move(x=5, y=5, z=5)
+        assert lamp.x != 5
