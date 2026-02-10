@@ -1,4 +1,6 @@
 from importlib import resources
+from collections.abc import Iterable
+from pathlib import Path
 import json
 import warnings
 import copy
@@ -393,6 +395,41 @@ class Lamp:
         key = valid_keys[key_index]
         kwargs = cls._prepare_from_key(key, kwargs)
         return cls(**kwargs)
+
+    @classmethod
+    def resolve(cls, *args):
+        """Convert various inputs (str keywords, Lamp objects, filepaths, etc.) to Lamp instances."""
+        lst = []
+        for obj in args:
+            if isinstance(obj, cls):
+                lst.append(obj)
+            elif isinstance(obj, Path):
+                lst.append(cls(filedata=obj))
+            elif isinstance(obj, str):
+                try:
+                    lst.append(cls.from_keyword(obj))
+                except KeyError:
+                    path = Path(obj)
+                    if path.is_file():
+                        lst.append(cls(filedata=path))
+                    else:
+                        raise FileNotFoundError(
+                            f"{obj!r} is not a recognized lamp keyword or existing file path"
+                        )
+            elif isinstance(obj, int):
+                lst.append(cls.from_index(obj))
+            elif isinstance(obj, dict):
+                lst.append(cls.resolve(*obj.values()))
+            elif isinstance(obj, Iterable) and not isinstance(obj, (str, bytes)):
+                lst.append(cls.resolve(*obj))
+            else:
+                raise TypeError(
+                    f"{type(obj)} is not a valid Lamp or method of generating a Lamp"
+                )
+        for i, x in enumerate(lst):
+            while i < len(lst) and isinstance(lst[i], list):
+                lst[i : i + 1] = lst[i]
+        return lst
 
     @property
     def calc_state(self):
