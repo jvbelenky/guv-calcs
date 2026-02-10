@@ -12,6 +12,7 @@ from .io import parse_guv_file, save_room_data, export_room_zip, generate_report
 from packaging.version import Version
 from pathlib import Path
 from .safety import PhotStandard, check_lamps, SafetyCheckResult
+from .standard_zones import create_standard_zones, update_standard_zones, WHOLE_ROOM_FLUENCE
 from .units import LengthUnits, convert_length
 from .efficacy import InactivationData
 from .scene_registry import LampRegistry, ZoneRegistry, SurfaceRegistry
@@ -521,7 +522,7 @@ class Room:
         existing = [(l.position[0], l.position[1]) for l in self.lamps.values()]
         placer = LampPlacer.for_dims(self.dim, existing=existing)
 
-        for lamp in self._resolve_lamps(*args):
+        for lamp in Lamp.resolve(*args):
             # Convert units before placement so bbox nudge sees correct dimensions
             if lamp.surface.units != self.dim.units:
                 lamp.set_units(self.dim.units)
@@ -545,44 +546,8 @@ class Room:
 
     def add_standard_zones(self, on_collision=None):
         """Add SkinLimits, EyeLimits, and WholeRoomFluence to the room."""
-        policy = on_collision or "overwrite"
-        flags = self._standard.flags(self.dim.units)
-        spacing = convert_length("meters", self.dim.units, 0.1, 0.1)
-        standard_zones = [
-            CalcVol.from_dims(
-                dims=self.dim,
-                zone_id="WholeRoomFluence",
-                name="Whole Room Fluence",
-                show_values=False,
-                num_points=(25, 25, 25),
-            ),
-            CalcPlane.from_face(
-                dims=self.dim,
-                wall="floor",
-                normal_offset=flags["height"],
-                zone_id="EyeLimits",
-                name="Eye Dose (8 Hours)",
-                dose=True,
-                hours=8,
-                use_normal=False,
-                vert=flags["eye_vert"],
-                fov_vert=flags["fov_vert"],
-                spacing=spacing,
-            ),
-            CalcPlane.from_face(
-                dims=self.dim,
-                wall="floor",
-                normal_offset=flags["height"],
-                zone_id="SkinLimits",
-                name="Skin Dose (8 Hours)",
-                dose=True,
-                hours=8,
-                use_normal=False,
-                horiz=flags["skin_horiz"],
-                spacing=spacing,
-            ),
-        ]
-        self.add(standard_zones, on_collision=policy)
+        zones = create_standard_zones(self._standard, self.dim)
+        self.add(zones, on_collision=on_collision or "overwrite")
         return self
 
     def remove_calc_zone(self, zone_id):
@@ -660,7 +625,7 @@ class Room:
 
     # ------------------- Data and Plotting ----------------------
 
-    def get_efficacy_data(self, zone_id: str = "WholeRoomFluence", **kwargs) -> InactivationData:
+    def get_efficacy_data(self, zone_id: str = WHOLE_ROOM_FLUENCE, **kwargs) -> InactivationData:
         """Create Data instance from this room's fluence values."""
         zone = self.zone(zone_id)
         fluence_dict = {wv: 0.0 for wv in self.lamps.wavelengths.values()}
@@ -680,7 +645,7 @@ class Room:
             medium = "Aerosol"
         return data.subset(medium=medium, use_metric=use_metric, **kwargs)
 
-    def disinfection_table(self, zone_id="WholeRoomFluence", which="default", **kwargs):
+    def disinfection_table(self, zone_id=WHOLE_ROOM_FLUENCE, which="default", **kwargs):
         """Return a table of expected disinfection rates."""
         data = self.get_efficacy_data(zone_id)
         if which == "default":
@@ -695,17 +660,17 @@ class Room:
             "Valid table arguments are default, full, combined, and combined_full"
         )
 
-    def average_value(self, zone_id: str = "WholeRoomFluence", **kwargs):
+    def average_value(self, zone_id: str = WHOLE_ROOM_FLUENCE, **kwargs):
         """Compute a derived efficacy value from averaged k parameters."""
         data = self.get_efficacy_data(zone_id)
         return data.average_value(**kwargs)
 
-    def disinfection_plot(self, zone_id="WholeRoomFluence", category=None, **kwargs):
+    def disinfection_plot(self, zone_id=WHOLE_ROOM_FLUENCE, category=None, **kwargs):
         """A violin plot of expected disinfection rates for all available species."""
         data = self.get_efficacy_data(zone_id, category=category)
         return data.plot(air_changes=self.air_changes, **kwargs)
 
-    def survival_plot(self, zone_id="WholeRoomFluence", species=None, **kwargs):
+    def survival_plot(self, zone_id=WHOLE_ROOM_FLUENCE, species=None, **kwargs):
         """Plot survival fraction over time for pathogens in a calculation zone."""
         data = self.get_efficacy_data(zone_id)
         return data.plot_survival(species=species, **kwargs)
@@ -725,40 +690,6 @@ class Room:
         return {
             k: v for k, v in self.lamps.items() if v.enabled and v.ies is not None
         }
-
-    def _resolve_lamps(self, *args):
-        """Convert various inputs (str keywords, Lamp objects, filepaths, etc.) to Lamp instances."""
-        lst = []
-        for obj in args:
-            if isinstance(obj, Lamp):
-                lst.append(obj)
-            elif isinstance(obj, Path):
-                lst.append(Lamp(filedata=obj))
-            elif isinstance(obj, str):
-                try:
-                    lst.append(Lamp.from_keyword(obj))
-                except KeyError:
-                    path = Path(obj)
-                    if path.is_file():
-                        lst.append(Lamp(filedata=path))
-                    else:
-                        raise FileNotFoundError(
-                            f"{obj!r} is not a recognized lamp keyword or existing file path"
-                        )
-            elif isinstance(obj, int):
-                lst.append(Lamp.from_index(obj))
-            elif isinstance(obj, dict):
-                lst.append(self._resolve_lamps(*obj.values()))
-            elif isinstance(obj, Iterable) and not isinstance(obj, (str, bytes)):
-                lst.append(self._resolve_lamps(*obj))
-            else:
-                raise TypeError(
-                    f"{type(obj)} is not a valid Lamp or method of generating a Lamp"
-                )
-        for i, x in enumerate(lst):
-            while i < len(lst) and isinstance(lst[i], list):
-                lst[i : i + 1] = lst[i]
-        return lst
 
     def _update_dimensions(self, x=None, y=None, z=None, polygon=None):
         """Update dimensions and rebuild dependent objects."""
@@ -786,33 +717,7 @@ class Room:
 
     def _update_standard_zones(self, standard: "PhotStandard", preserve_spacing: bool):
         """Update the standard safety calculation zones."""
-        flags = standard.flags(self.dim.units)
-        x_min, y_min, x_max, y_max = self.dim.polygon.bounding_box
-        if "SkinLimits" in self.calc_zones.keys():
-            zone = self.calc_zones["SkinLimits"]
-            zone.set_dimensions(
-                x1=x_min, x2=x_max, y1=y_min, y2=y_max,
-                preserve_spacing=preserve_spacing,
-            )
-            zone.set_height(height=flags["height"])
-            zone.horiz = flags["skin_horiz"]
-        if "EyeLimits" in self.calc_zones.keys():
-            zone = self.calc_zones["EyeLimits"]
-            zone.set_dimensions(
-                x1=x_min, x2=x_max, y1=y_min, y2=y_max,
-                preserve_spacing=preserve_spacing,
-            )
-            zone.set_height(height=flags["height"])
-            zone.fov_vert = flags["fov_vert"]
-            zone.vert = flags["eye_vert"]
-        if "WholeRoomFluence" in self.calc_zones.keys():
-            zone = self.calc_zones["WholeRoomFluence"]
-            zone.set_dimensions(
-                x1=x_min, x2=x_max,
-                y1=y_min, y2=y_max,
-                z2=self.dim.z,
-                preserve_spacing=preserve_spacing,
-            )
+        update_standard_zones(standard, self.calc_zones, self.dim, preserve_spacing)
 
     def _init_standard_surfaces(self, reflectances=None, x_spacings=None,
                                  y_spacings=None, num_x=None, num_y=None):

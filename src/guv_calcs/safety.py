@@ -5,6 +5,7 @@ from .lamp.spectrum import Spectrum, log_interp, sum_spectrum
 from .io import get_spectral_weightings
 from .lamp.lamp_type import GUVType
 from .units import ParseableEnum
+from .standard_zones import SKIN_LIMITS, EYE_LIMITS
 
 
 class PhotStandard(ParseableEnum):
@@ -245,7 +246,7 @@ def check_lamps(room) -> SafetyCheckResult:
     warnings_list: list[SafetyWarning] = []
 
     # Check for required zones
-    if "SkinLimits" not in room.calc_zones:
+    if SKIN_LIMITS not in room.calc_zones:
         return SafetyCheckResult(
             status=ComplianceStatus.NON_COMPLIANT,
             warnings=[
@@ -256,7 +257,7 @@ def check_lamps(room) -> SafetyCheckResult:
             ],
         )
 
-    if "EyeLimits" not in room.calc_zones:
+    if EYE_LIMITS not in room.calc_zones:
         return SafetyCheckResult(
             status=ComplianceStatus.NON_COMPLIANT,
             warnings=[
@@ -267,8 +268,8 @@ def check_lamps(room) -> SafetyCheckResult:
             ],
         )
 
-    skin = room.calc_zones["SkinLimits"]
-    eye = room.calc_zones["EyeLimits"]
+    skin = room.calc_zones[SKIN_LIMITS]
+    eye = room.calc_zones[EYE_LIMITS]
     skin_values = skin.get_values()
     eye_values = eye.get_values()
 
