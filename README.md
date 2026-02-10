@@ -28,7 +28,7 @@ from guv_calcs import Room, Lamp
 room = Room(x=6, y=4, z=2.7, units="meters")
 
 # Add a lamp at the ceiling, aimed downward
-lamp = Lamp.from_keyword("aerolamp").move(3, 2, 2.7).aim(3, 2, 0)
+lamp = Lamp(filedata="my_lamp.ies").move(3, 2, 2.7).aim(3, 2, 0)
 room.add_lamp(lamp)
 
 # Add standard calculation zones (fluence volume + safety planes)
@@ -49,7 +49,7 @@ print(f"Mean fluence rate: {fluence.values.mean():.2f} µW/cm²")
 ```python
 room = (
     Room(x=6, y=4, z=2.7)
-    .place_lamp("aerolamp")      # Auto-positions lamp
+    .place_lamp("my_lamp.ies")      # Auto-positions lamp
     .add_standard_zones()
     .calculate()
 )
@@ -60,8 +60,8 @@ room = (
 ```python
 room = Room(x=6, y=4, z=2.7)
 
-lamp1 = Lamp.from_keyword("aerolamp").move(2, 2, 2.7).aim(2, 2, 0)
-lamp2 = Lamp.from_keyword("ushio_b1").move(4, 2, 2.7).aim(4, 2, 0)
+lamp1 = Lamp(filedata="my_lamp.ies").move(2, 2, 2.7).aim(2, 2, 0)
+lamp2 = Lamp(filedata="my_other_lamp.ies").move(4, 2, 2.7).aim(4, 2, 0)
 
 room.add_lamp(lamp1).add_lamp(lamp2)
 room.add_standard_zones()
@@ -74,7 +74,7 @@ room.calculate()
 from guv_calcs import Room, Lamp, CalcPlane
 
 room = Room(x=6, y=4, z=2.7)
-lamp = Lamp.from_keyword("aerolamp").move(3, 2, 2.7).aim(3, 2, 0)
+lamp = Lamp(filedata="my_lamp.ies").move(3, 2, 2.7).aim(3, 2, 0)
 room.add_lamp(lamp)
 
 # Add a plane at desk height (0.75m)
@@ -127,23 +127,24 @@ loaded = Room.load("my_room.guv")
 loaded.calculate()
 ```
 
-## Available Lamp Keywords
+## Lamp Keywords
 
-- `aerolamp` - Aerolamp DevKit (222nm KrCl)
-- `beacon` - Beacon (222nm KrCl)
-- `lumenizer_zone` - Lumenizer Zone
+```
+lamp = Lamp.from_keyword('ushio_b1')
+```
+
+Currently, only 222nm lamps are available, with data downloaded from reports.osluv.org. We welcome collaboration to expand the availability of lamp data.
+
+- `aerolamp` - Aerolamp DevKit
+- `beacon` - Beacon
+- `lumenizer_zone` - LumenLabs Lumenizer Zone
 - `nukit_lantern` - NuKit Lantern
 - `nukit_torch` - NuKit Torch
-- `sterilray` - SterilRay
+- `sterilray` - SterilRay Germbuster Sabre
 - `ushio_b1` - Ushio B1
-
-## Key Concepts
-
-- **Fluence rate**: UV power per unit area at a point (µW/cm²)
-- **Irradiance**: UV power incident on a surface (µW/cm²)
-- **CalcVol**: 3D volume grid for fluence calculations
-- **CalcPlane**: 2D surface for irradiance calculations
-- **GUV types**: 222nm (Far-UVC/KrCl), 254nm (conventional), other wavelengths
+- `ushio_b15` - Ushio B1.5
+- `uvpro222_b1` - Bioabundance UVPro222 B1
+- `uvpro222_b1` - Bioabundance UVPro222 B2 
 
 ## License
 

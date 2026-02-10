@@ -727,13 +727,24 @@ class Room:
         }
 
     def _resolve_lamps(self, *args):
-        """Convert various inputs (str keywords, Lamp objects, etc.) to Lamp instances."""
+        """Convert various inputs (str keywords, Lamp objects, filepaths, etc.) to Lamp instances."""
         lst = []
         for obj in args:
             if isinstance(obj, Lamp):
                 lst.append(obj)
+            elif isinstance(obj, Path):
+                lst.append(Lamp(filedata=obj))
             elif isinstance(obj, str):
-                lst.append(Lamp.from_keyword(obj))
+                try:
+                    lst.append(Lamp.from_keyword(obj))
+                except KeyError:
+                    path = Path(obj)
+                    if path.is_file():
+                        lst.append(Lamp(filedata=path))
+                    else:
+                        raise FileNotFoundError(
+                            f"{obj!r} is not a recognized lamp keyword or existing file path"
+                        )
             elif isinstance(obj, int):
                 lst.append(Lamp.from_index(obj))
             elif isinstance(obj, dict):
