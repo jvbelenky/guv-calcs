@@ -59,17 +59,11 @@ publish-pypi:
 	$(PYTHON_INTERPRETER) setup.py sdist bdist_wheel
 	twine upload dist/*
 
-# ----- Create GitHub Release page for the tag -----
-github-release:
-	@which gh >/dev/null || (echo "Install GitHub CLI: https://cli.github.com/"; exit 1)
-	gh release create v$(VERSION) \
-	  --title "guv-calcs v$(VERSION)" \
-	  --notes-file CHANGELOG.md
-	  
 # ----- Full release pipeline -----
+# release.sh bumps version, updates changelog, commits, tags, and pushes.
+# The tag push triggers the GitHub Action to create a GitHub Release.
 release:
 	@bash scripts/release.sh $(VERSION)
 	make publish-pypi
-	make github-release
 
 all: install lint test
