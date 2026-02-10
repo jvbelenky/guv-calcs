@@ -588,7 +588,7 @@ class Room:
     def calculate(self, hard=False):
         """Triggers calculation of lighting values in each calculation zone."""
 
-        valid_lamps = self._get_valid_lamps()
+        valid_lamps = self.lamps.valid()
         # calculate incidence on the surfaces if the reflectances or lamps have changed
         if self.recalculate_incidence or hard:
             self.ref_manager.calculate_incidence(valid_lamps, hard=hard)
@@ -612,7 +612,7 @@ class Room:
 
     def calculate_by_id(self, zone_id, hard=False):
         """Calculate just the calc zone selected."""
-        valid_lamps = self._get_valid_lamps()
+        valid_lamps = self.lamps.valid()
         if len(valid_lamps) > 0:
             if self.recalculate_incidence or hard:
                 self.ref_manager.calculate_incidence(valid_lamps, hard=hard)
@@ -684,12 +684,6 @@ class Room:
         return check_lamps(self)
 
     # -------------------- Private helpers (absorbed from Scene) --------------------
-
-    def _get_valid_lamps(self):
-        """Return all lamps that can participate in a calculation."""
-        return {
-            k: v for k, v in self.lamps.items() if v.enabled and v.ies is not None
-        }
 
     def _update_dimensions(self, x=None, y=None, z=None, polygon=None):
         """Update dimensions and rebuild dependent objects."""

@@ -168,9 +168,11 @@ class LampRegistry(Registry["Lamp"]):
         return lamp
 
     @property
-    def wavelengths(self) -> list:
+    def wavelengths(self) -> dict:
         return {k: v.wavelength for k, v in self.items()}
-
+        
+    def valid(self) -> dict:
+        return {k: v for k,v in self.items() if v.enabled and v.ies is not None}
 
 @dataclass(eq=False)
 class ZoneRegistry(Registry["CalcZone"]):
