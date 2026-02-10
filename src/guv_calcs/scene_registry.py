@@ -14,7 +14,7 @@ from .reflectance import Surface
 T = TypeVar("T")
 
 
-@dataclass
+@dataclass(eq=False)
 class Registry(Generic[T], MutableMapping[str, T]):
     """A thin wrapper around dict[str, T] with consistent ID/collision behavior."""
 
@@ -39,6 +39,11 @@ class Registry(Generic[T], MutableMapping[str, T]):
 
     def __len__(self) -> int:
         return len(self._items)
+
+    def __eq__(self, other):
+        if not isinstance(other, Registry):
+            return NotImplemented
+        return dict(self._items) == dict(other._items)
 
     def require(self, key: str):
         try:
@@ -148,7 +153,7 @@ class Registry(Generic[T], MutableMapping[str, T]):
         return tpl
 
 
-@dataclass
+@dataclass(eq=False)
 class LampRegistry(Registry["Lamp"]):
     base_id = "Lamp"
     expected_type: type | None = Lamp
@@ -167,7 +172,7 @@ class LampRegistry(Registry["Lamp"]):
         return {k: v.wavelength for k, v in self.items()}
 
 
-@dataclass
+@dataclass(eq=False)
 class ZoneRegistry(Registry["CalcZone"]):
     base_id = "CalcZone"
     expected_type: type | None = CalcZone
@@ -182,7 +187,7 @@ class ZoneRegistry(Registry["CalcZone"]):
         ])
 
 
-@dataclass
+@dataclass(eq=False)
 class SurfaceRegistry(Registry["Surface"]):
     base_id = "Surface"
     expected_type: type | None = Surface
@@ -191,7 +196,7 @@ class SurfaceRegistry(Registry["Surface"]):
         return surface.plane.coords
 
 
-@dataclass
+@dataclass(eq=False)
 class RoomRegistry(Registry["Room"]):
     """Registry for Room objects within a Project."""
     base_id = "Room"

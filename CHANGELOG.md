@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Bumped photompy requirement to 0.2.0
+
+### Fixed
+
+- Bug in lamp copy method - lamp_id being improperly assigned
+- Bug in room equality due to Registries comparing dim lambdas
+
 ## [0.6.0] - 2026-02-09
 
 ### Added
