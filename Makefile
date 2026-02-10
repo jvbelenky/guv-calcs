@@ -1,4 +1,4 @@
- .PHONY: test clean build
+ .PHONY: test clean build release
 #################################################################################
 # GLOBALS                                                                       #
 #################################################################################
@@ -28,11 +28,6 @@ install:
 	$(PYTHON_INTERPRETER) setup.py sdist
 	pip install . --no-cache-dir
 
-publish:
-	rm -rf dist build */*.egg-info *.egg-info
-	$(PYTHON_INTERPRETER) setup.py sdist bdist_wheel
-	twine upload dist/*
-
 ## Lint using flake8 and black
 format: 
 	black src/guv_calcs/*
@@ -58,4 +53,23 @@ test-cov:
 test-fast:
 	$(PYTHON_INTERPRETER) -m pytest tests/ -v -x --ignore=tests/test_e2e.py
 	
+# ----- PyPI upload only -----
+publish-pypi:
+	rm -rf dist build */*.egg-info *.egg-info
+	$(PYTHON_INTERPRETER) setup.py sdist bdist_wheel
+	twine upload dist/*
+
+# ----- Create GitHub Release page for the tag -----
+github-release:
+	@which gh >/dev/null || (echo "Install GitHub CLI: https://cli.github.com/"; exit 1)
+	gh release create v$(VERSION) \
+	  --title "guv-calcs v$(VERSION)" \
+	  --notes-file CHANGELOG.md
+	  
+# ----- Full release pipeline -----
+release:
+	@bash scripts/release.sh $(VERSION)
+	make publish-pypi
+	make github-release
+
 all: install lint test
