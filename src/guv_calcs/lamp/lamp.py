@@ -683,19 +683,13 @@ class Lamp:
         """maximum irradiance value"""
         if self.ies is None:
             raise AttributeError("Lamp has no photometry")
-        if self.intensity_units == "mW/sr":
-            return self.ies.photometry.max() / 10
-        else:
-            return self.ies.photometry.max()
-
+        return self.photometry.max() * self.intensity_units.factor
+            
     def center(self):
         """center irradiance value"""
         if self.ies is None:
             raise AttributeError("Lamp has no photometry")
-        if self.intensity_units == "mW/sr":
-            return self.ies.photometry.center() / 10
-        else:
-            return self.ies.photometry.center()
+        return self.photometry.center() * self.intensity_units.factor
 
     def total(self):
         """just an alias for get_total_power for now"""
@@ -705,10 +699,7 @@ class Lamp:
         """return the lamp's total optical power"""
         if self.ies is None:
             raise AttributeError("Lamp has no photometry")
-        if self.intensity_units == "mW/sr":
-            return self.ies.photometry.total_optical_power() / 10
-        else:
-            return self.ies.photometry.total_optical_power()
+        return self.photometry.total_optical_power() * self.intensity_units.factor * 10
 
     def get_tlvs(self, standard=0):
         """
@@ -750,7 +741,7 @@ class Lamp:
     @scaling_factor.setter  # block direct writes
     def scaling_factor(self, _):
         raise AttributeError("scaling_factor is read-only")
-
+        
     def scale(self, scale_val):
         """scale the photometry by the given value"""
         if self.ies is None:
@@ -767,10 +758,7 @@ class Lamp:
             msg = "No .ies file provided; scaling not applied"
             warnings.warn(msg, stacklevel=3)
         else:
-            if self.intensity_units == "mW/sr":
-                self.ies.photometry.scale_to_max(max_val * 10)
-            else:
-                self.ies.photometry.scale_to_max(max_val)
+            self.photometry.scale_to_max(max_val / self.intensity_units.factor)
             self._update_scaling_factor()
         return self
 
@@ -780,7 +768,7 @@ class Lamp:
             msg = "No .ies file provided; scaling not applied"
             warnings.warn(msg, stacklevel=3)
         else:
-            self.ies.photometry.scale_to_total(total_power)
+            self.photometry.scale_to_total(total_power / self.intensity_units.factor / 10)
             self._update_scaling_factor()
         return self
 
@@ -790,10 +778,7 @@ class Lamp:
             msg = "No .ies file provided; scaling not applied"
             warnings.warn(msg, stacklevel=3)
         else:
-            if self.intensity_units == "mW/sr":
-                self.photometry.scale_to_center(center_val * 10)
-            else:
-                self.photometry.scale_to_center(center_val)
+            self.photometry.scale_to_center(center_val / self.intensity_units.factor)
             self._update_scaling_factor()
         return self
 

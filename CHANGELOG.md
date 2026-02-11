@@ -7,11 +7,13 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Bumped photompy requirement to 0.2.0
+- Simplified Room: standard_zones in its own file, lamp validity check on registry, lamp resolve on lamp
 
 ### Fixed
 
 - Bug in lamp copy method - lamp_id being improperly assigned
 - Bug in room equality due to Registries comparing dim lambdas
+- Simplified and corrected Lamp scaling factor errors (to do with intensity_units enum)
 
 ## [0.6.0] - 2026-02-09
 
