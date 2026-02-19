@@ -241,6 +241,43 @@ class TestPolygonRoomPlacement:
             assert inside or near_boundary
 
 
+class TestStandardZoneResize:
+    """Tests for standard zone grid safety when room is resized."""
+
+    def test_small_to_large_resize(self):
+        """Resizing from tiny to large room should not crash or produce huge grids."""
+        room = Room(x=0.1, y=0.1, z=0.1, units="meters")
+        room.add_standard_zones()
+        room.set_dimensions(x=100, y=100, z=10)
+        for zone_id, zone in room.calc_zones.items():
+            for n in zone.geometry.num_points:
+                assert n <= 200, f"{zone_id} has {n} points in a dimension (max 200)"
+
+    def test_large_to_small_resize(self):
+        """Resizing from large to tiny room should not crash."""
+        room = Room(x=50, y=50, z=10, units="meters")
+        room.add_standard_zones()
+        room.set_dimensions(x=0.1, y=0.1, z=0.1)
+
+    def test_whole_room_fluence_stays_25_cubed(self):
+        """WholeRoomFluence should stay at 25x25x25 after resize."""
+        room = Room(x=6, y=4, z=2.7, units="meters")
+        room.add_standard_zones()
+        room.set_dimensions(x=20, y=15, z=5)
+        wrf = room.calc_zones["WholeRoomFluence"]
+        assert tuple(wrf.geometry.num_points) == (25, 25, 25)
+
+    def test_unit_change_then_resize(self):
+        """Changing units then resizing should not crash."""
+        room = Room(x=6, y=4, z=2.7, units="meters")
+        room.add_standard_zones()
+        room.set_units("feet")
+        room.set_dimensions(x=100, y=80, z=12)
+        for zone_id, zone in room.calc_zones.items():
+            for n in zone.geometry.num_points:
+                assert n <= 200, f"{zone_id} has {n} points in a dimension (max 200)"
+
+
 class TestRoomZoneManagement:
     """Tests for calc zone management in Room."""
 

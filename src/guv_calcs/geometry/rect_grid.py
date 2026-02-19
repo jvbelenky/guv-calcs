@@ -228,9 +228,7 @@ class VolGrid(RectGrid):
         if preserve_spacing:
             return self.update(origin=origin, spans=spans, spacing_init=self.spacing)
         else:
-            return self.update(
-                origin=origin, spans=spans, num_points_init=self.num_points
-            )
+            return self.update(origin=origin, spans=spans, num_points_init=self.num_points)
 
 
 @dataclass(frozen=True, eq=False)
@@ -367,7 +365,7 @@ class PlaneGrid(RectGrid):
             return self.update(
                 origin=origin,
                 spans=(span_u, span_v),
-                num_points_init=self.num_points,
+                num_points_init=self.num_points, spacing_init=None,
             )
 
     # ---------------- legacy properties for axis-aligned planes --------------------
@@ -508,9 +506,10 @@ class PlaneGrid(RectGrid):
         origin = (p1[0], p1[1], 0.0)
         u_vec = (dx, dy, 0.0)  # along wall
         v_vec = (0.0, 0.0, 1.0)  # up
+        spans = (edge_length, z_height)
         return cls(
             origin=origin,
-            spans=(edge_length, z_height),
+            spans=spans,
             u_vec=u_vec,
             v_vec=v_vec,
             **kwargs

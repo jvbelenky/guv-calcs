@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Bumped photompy requirement to 0.2.0
 - Simplified Room: standard_zones in its own file, lamp validity check on registry, lamp resolve on lamp
+- More robust point-scaling for standard zones
 
 ### Fixed
 

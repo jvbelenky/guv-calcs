@@ -190,8 +190,9 @@ class PolygonGrid(PolygonGridBase):
         new_height = height if height is not None else self.height
         if preserve_spacing:
             return self.update(
-                polygon=new_poly, height=new_height, spacing_init=self.spacing
-            )
+                polygon=new_poly, 
+                height=new_height, 
+                spacing_init=self.spacing)
         else:
             return self.update(
                 polygon=new_poly,
@@ -372,9 +373,11 @@ class PolygonVolGrid(PolygonGridBase):
         """Update with new z_height (polygon shape preserved)."""
         new_z = maxs[2] if maxs is not None else self.z_height
         if preserve_spacing:
-            return self.update(z_height=new_z, spacing_init=self.spacing)
+            return self.update(z_height=new_z,
+                               spacing_init=self.spacing)
         else:
-            return self.update(z_height=new_z, num_points_init=self.num_points_init)
+            return self.update(z_height=new_z,
+                               num_points_init=self.num_points_init, spacing_init=None)
 
     def to_dict(self) -> dict:
         return {

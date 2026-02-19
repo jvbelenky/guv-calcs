@@ -369,12 +369,10 @@ class Room:
     def standard(self, value):
         self._standard = PhotStandard.from_any(value)
 
-    def set_standard(self, standard, preserve_spacing=True):
+    def set_standard(self, standard):
         """Update the photobiological safety standard the Room is subject to."""
         self.standard = standard
-        self._update_standard_zones(
-            standard=self.standard, preserve_spacing=preserve_spacing
-        )
+        self._update_standard_zones(standard=self.standard)
         return self
 
     # --------------------- Reflectance ----------------------
@@ -423,20 +421,16 @@ class Room:
 
     # -------------- Dimensions and Units -----------------------
 
-    def set_units(self, units, preserve_spacing=True):
+    def set_units(self, units):
         """Set room units."""
         self._update_units(units)
-        self._update_standard_zones(
-            standard=self.standard, preserve_spacing=preserve_spacing
-        )
+        self._update_standard_zones(standard=self.standard)
         return self
 
-    def set_dimensions(self, x=None, y=None, z=None, preserve_spacing=True):
+    def set_dimensions(self, x=None, y=None, z=None):
         """Set room dimensions."""
         self._update_dimensions(x=x, y=y, z=z)
-        self._update_standard_zones(
-            standard=self.standard, preserve_spacing=preserve_spacing
-        )
+        self._update_standard_zones(standard=self.standard)
         return self
 
     @property
@@ -709,9 +703,9 @@ class Room:
                 zone.set_spacing(*new_spacing)
         self.lamps.validate()
 
-    def _update_standard_zones(self, standard: "PhotStandard", preserve_spacing: bool):
+    def _update_standard_zones(self, standard: "PhotStandard"):
         """Update the standard safety calculation zones."""
-        update_standard_zones(standard, self.calc_zones, self.dim, preserve_spacing)
+        update_standard_zones(standard, self.calc_zones, self.dim)
 
     def _init_standard_surfaces(self, reflectances=None, x_spacings=None,
                                  y_spacings=None, num_x=None, num_y=None):
@@ -732,16 +726,12 @@ class Room:
         keys = self.dim.faces.keys()
         existing_keys = [k for k in keys if k in self.surfaces]
         reflectances = {key: self.surfaces[key].R for key in existing_keys}
-        x_spacings = {key: self.surfaces[key].plane.x_spacing for key in existing_keys}
-        y_spacings = {key: self.surfaces[key].plane.y_spacing for key in existing_keys}
         num_x = {key: self.surfaces[key].plane.num_x for key in existing_keys}
         num_y = {key: self.surfaces[key].plane.num_y for key in existing_keys}
 
         room_surfaces = init_room_surfaces(
             dims=self.dim,
             reflectances=reflectances,
-            x_spacings=x_spacings,
-            y_spacings=y_spacings,
             num_x=num_x,
             num_y=num_y,
         )

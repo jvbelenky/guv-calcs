@@ -104,11 +104,11 @@ class Project:
 
     # -------------------- Bulk setters --------------------
 
-    def set_standard(self, standard, preserve_spacing=True):
+    def set_standard(self, standard):
         """Update standard on project and all rooms."""
         self.standard = standard
         for room in self.rooms.values():
-            room.set_standard(self.standard, preserve_spacing=preserve_spacing)
+            room.set_standard(self.standard)
         return self
 
     def set_precision(self, precision):
