@@ -303,47 +303,60 @@ class Room:
         return generate_report(self, fname)
 
     def get_calc_state(self):
-        """Save all features that, if changed, require re-calculation."""
+        """Return hashed calc state per category.
 
+        Returns a dict with:
+        - "lamps": single hash of all enabled lamp calc states
+        - "calc_zones": dict of {zone_id: hash} for each enabled zone
+        - "reflectance": hash of reflectance manager calc state
+
+        Hash values are ints (consistent within a process lifetime).
+        Per-zone hashes enable granular staleness detection on the frontend.
+        """
         lamp_state = {}
         for key, lamp in self.lamps.items():
             if lamp.enabled:
-                lamp_state[key] = lamp.calc_state
+                lamp_state[key] = hash(lamp.calc_state)
 
         zone_state = {}
         for key, zone in self.calc_zones.items():
             if zone.enabled:
-                zone_state[key] = zone.calc_state
+                zone_state[key] = hash(zone.calc_state)
 
-        calc_state = {}
-        calc_state["lamps"] = lamp_state
-        calc_state["calc_zones"] = zone_state
-        calc_state["reflectance"] = self.ref_manager.calc_state
-
-        return calc_state
+        return {
+            "lamps": hash(tuple(sorted(lamp_state.items()))),
+            "calc_zones": zone_state,
+            "reflectance": hash(self.ref_manager.calc_state),
+        }
 
     def get_update_state(self):
-        """Save all features that should NOT trigger a recalculation, only an update."""
+        """Return hashed update state per category.
 
+        Returns a dict with:
+        - "lamps": single hash of all lamp update states
+        - "calc_zones": dict of {zone_id: hash} for each zone
+        - "reflectance": hash of reflectance/units state
+
+        These capture state that should NOT trigger recalculation, only an update.
+        """
         lamp_state = {}
         for key, lamp in self.lamps.items():
-            lamp_state[key] = lamp.update_state
+            lamp_state[key] = hash(lamp.update_state)
 
         zone_state = {}
         for key, zone in self.calc_zones.items():
-            zone_state[key] = zone.update_state
+            zone_state[key] = hash(zone.update_state)
 
         ref_state = (
             tuple(self.ref_manager.reflectances.values()),
             self.units,
         )
 
-        update_state = {}
-        update_state["lamps"] = lamp_state
-        update_state["calc_zones"] = zone_state
-        update_state["reflectance"] = ref_state
-
-        return update_state
+        return {
+            "lamps": hash(tuple(sorted(lamp_state.items()))),
+            "calc_zones": zone_state,
+            "reflectance": hash(ref_state),
+        }
 
     @property
     def recalculate_incidence(self) -> bool:
