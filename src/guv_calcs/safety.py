@@ -203,6 +203,8 @@ class LampComplianceResult:
     eye_dimming_required: float
     is_skin_compliant: bool
     is_eye_compliant: bool
+    skin_near_limit: bool
+    eye_near_limit: bool
     missing_spectrum: bool
 
 
@@ -226,6 +228,10 @@ class SafetyCheckResult:
     weighted_eye_dose: np.ndarray | None = None
     max_skin_dose: float = 0.0
     max_eye_dose: float = 0.0
+    is_skin_compliant: bool = True
+    is_eye_compliant: bool = True
+    skin_near_limit: bool = False
+    eye_near_limit: bool = False
     skin_dimming_for_compliance: float | None = None
     eye_dimming_for_compliance: float | None = None
 
@@ -354,6 +360,8 @@ def check_lamps(room) -> SafetyCheckResult:
                 eye_dimming_required=min(eyedim, 1.0),
                 is_skin_compliant=skindim >= 1,
                 is_eye_compliant=eyedim >= 1,
+                skin_near_limit=(skindim >= 1) and (skindim < 1 / 0.9),
+                eye_near_limit=(eyedim >= 1) and (eyedim < 1 / 0.9),
                 missing_spectrum=missing_spectrum,
             )
 
@@ -409,6 +417,12 @@ def check_lamps(room) -> SafetyCheckResult:
     if weighted_eye_dose.max() > 3:
         eye_dimming_for_compliance = 3 / weighted_eye_dose.max()
 
+    # Per-metric combined compliance
+    is_skin_compliant = weighted_skin_dose.max().round(2) <= 3
+    is_eye_compliant = weighted_eye_dose.max().round(2) <= 3
+    skin_near_limit = is_skin_compliant and weighted_skin_dose.max() > 2.7
+    eye_near_limit = is_eye_compliant and weighted_eye_dose.max() > 2.7
+
     # Combined dose warning
     if DIMMING_NOT_REQUIRED and not LAMPS_COMPLIANT:
         msg = "Though all lamps are individually compliant, dose must be reduced to "
@@ -453,6 +467,10 @@ def check_lamps(room) -> SafetyCheckResult:
         weighted_eye_dose=weighted_eye_dose,
         max_skin_dose=float(weighted_skin_dose.max()),
         max_eye_dose=float(weighted_eye_dose.max()),
+        is_skin_compliant=bool(is_skin_compliant),
+        is_eye_compliant=bool(is_eye_compliant),
+        skin_near_limit=bool(skin_near_limit),
+        eye_near_limit=bool(eye_near_limit),
         skin_dimming_for_compliance=skin_dimming_for_compliance,
         eye_dimming_for_compliance=eye_dimming_for_compliance,
     )
