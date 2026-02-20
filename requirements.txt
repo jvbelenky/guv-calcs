@@ -1,5 +1,6 @@
 matplotlib>=3.8.4
 numpy>=1.26.4
+openpyxl>=3.1.0
 pandas>=2.2.2
 photompy==0.2.0
 plotly>=6.1.1
