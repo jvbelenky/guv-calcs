@@ -46,7 +46,8 @@ jobs:
           "plotly==6.1.1" \
           "scipy==1.13.1" \
           "seaborn==0.13.2" \
-          "kaleido==1.0.0"
+          "kaleido==1.0.0" \
+          "openpyxl==3.1.0"
     - name: Install package and test tools
       run: |
         python -m pip install --no-deps -e .

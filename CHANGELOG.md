@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file.
 
 - Handle all (int, float) pairs with numbers.Real instead 
 - Workflow fix to catch future dependency issues
+- Added missing openpyxl dependency
+- Dropped Python 3.9/3.10 support (not working since photompy 0.2.0 dep update)
 
 ## [0.6.1] - 2026-02-20
 
