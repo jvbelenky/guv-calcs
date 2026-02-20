@@ -16,7 +16,7 @@ endif
 # COMMANDS                                                                      #
 #################################################################################
 
-all: install lint test
+all: install test
 
 ## Install package
 local:
