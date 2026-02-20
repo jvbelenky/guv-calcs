@@ -1,4 +1,4 @@
- .PHONY: test clean build release
+ .PHONY: all test clean build release
 #################################################################################
 # GLOBALS                                                                       #
 #################################################################################
@@ -15,6 +15,8 @@ endif
 #################################################################################
 # COMMANDS                                                                      #
 #################################################################################
+
+all: install lint test
 
 ## Install package
 local:
@@ -65,5 +67,3 @@ publish-pypi:
 release:
 	@bash scripts/release.sh $(VERSION)
 	make publish-pypi
-
-all: install lint test
