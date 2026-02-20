@@ -244,6 +244,7 @@ class TestPolygonRoomPlacement:
 class TestStandardZoneResize:
     """Tests for standard zone grid safety when room is resized."""
 
+    @pytest.mark.filterwarnings("ignore:.*exceeds room boundaries")
     def test_small_to_large_resize(self):
         """Resizing from tiny to large room should not crash or produce huge grids."""
         room = Room(x=0.1, y=0.1, z=0.1, units="meters")

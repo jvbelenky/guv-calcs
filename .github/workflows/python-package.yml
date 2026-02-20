@@ -17,6 +17,11 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        deps: ["latest"]
+        include:
+          # Test with minimum supported versions (from requirements.txt floors)
+          - python-version: "3.12"
+            deps: "minimum"
 
     steps:
     - uses: actions/checkout@v4
@@ -24,8 +29,24 @@ jobs:
       uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
-    - run: |
+    - name: Install dependencies (latest)
+      if: matrix.deps == 'latest'
+      run: |
         python -m pip install --upgrade pip
         python -m pip install -r requirements.txt
+    - name: Install dependencies (minimum supported)
+      if: matrix.deps == 'minimum'
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install \
+          "matplotlib==3.8.4" \
+          "numpy==1.26.4" \
+          "pandas==2.2.2" \
+          "photompy==0.2.0" \
+          "plotly==6.1.1" \
+          "scipy==1.13.1" \
+          "seaborn==0.13.2" \
+          "kaleido==1.0.0"
+        python -m pip install --no-deps -e .
         python -m pip install pytest pytest-cov
     - run: make
