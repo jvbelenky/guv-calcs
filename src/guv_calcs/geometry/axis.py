@@ -48,8 +48,9 @@ class Axis1D:
         """
         if self.span == 0:
             return 0.0
-        if self.spacing_init is None:
-            # if not provided, derive from num_points (or default num_points)
+        if self.spacing_init is None or self.spacing_init == 0:
+            # if not provided (or zero from a previous zero-span rebuild),
+            # derive from num_points (or default num_points)
             num_points = self.num_points_init or self.default_num_points
             return self._set_spacing(num_points, self.default_spacing)
         return self.spacing_init
@@ -58,7 +59,7 @@ class Axis1D:
     def num_points(self):
         if self.span == 0:
             return 1
-        if self.spacing_init is None:
+        if self.spacing_init is None or self.spacing_init == 0:
             return self.num_points_init or self.default_num_points
         else:
             return int(round(self.span / self.spacing_init))
