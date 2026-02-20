@@ -46,6 +46,8 @@ class Axis1D:
         either initial value passsed, derived from initial num_points value,
         or from default num_points value
         """
+        if self.span == 0:
+            return 0.0
         if self.spacing_init is None:
             # if not provided, derive from num_points (or default num_points)
             num_points = self.num_points_init or self.default_num_points
@@ -54,6 +56,8 @@ class Axis1D:
 
     @property
     def num_points(self):
+        if self.span == 0:
+            return 1
         if self.spacing_init is None:
             return self.num_points_init or self.default_num_points
         else:
@@ -84,7 +88,7 @@ class Axis1D:
             return val
 
     def _check_spacing(self, spacing):
-        if spacing is not None:
+        if spacing is not None and self.span > 0:
             if spacing > self.span:
                 raise ValueError("Spacing value cannot be larger than dimension")
 
