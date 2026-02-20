@@ -1,5 +1,6 @@
 from dataclasses import dataclass, replace
 from enum import StrEnum
+import numbers
 import warnings
 from typing import Optional
 import re
@@ -80,7 +81,7 @@ class LampType:
 
     def __post_init__(self):
         if self._wavelength is not None:
-            if not isinstance(self._wavelength, (int, float)):
+            if not isinstance(self._wavelength, numbers.Real):
                 raise TypeError(
                     f"Wavelength must be int or float, not {type(self._wavelength)}"
                 )

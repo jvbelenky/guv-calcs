@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- handle all (int, float) pairs with numbers.Real instead 
+
 ## [0.6.1] - 2026-02-20
 
 ### Added

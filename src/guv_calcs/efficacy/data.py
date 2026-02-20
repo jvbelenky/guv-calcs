@@ -1,3 +1,4 @@
+import numbers
 import warnings
 from collections.abc import Callable
 
@@ -203,7 +204,7 @@ class InactivationData:
         # dict wavelengths (fluence wavelengths are always included in display)
         if wavelength is not None:
             valid_wavelengths = self.get_valid_wavelengths()
-            if isinstance(wavelength, (int, float)):
+            if isinstance(wavelength, numbers.Real):
                 if wavelength not in valid_wavelengths:
                     raise KeyError(
                         f"{wavelength} is not a valid wavelength; must be in {valid_wavelengths}"

@@ -1,3 +1,4 @@
+import numbers
 from matplotlib.colors import LinearSegmentedColormap
 from .constants import (
     COL_CADR_LPS,
@@ -95,7 +96,7 @@ def parse_axis_input(value, time_cols, use_metric_units=True, log_level=None):
     resolved_log = None
 
     # Handle numeric input (survival fraction like 0.9, 0.99, etc. or percent like 99.9)
-    if isinstance(value, (int, float)):
+    if isinstance(value, numbers.Real):
         # Could be survival fraction (0.9, 0.99) or percent without % (99, 99.9)
         if value < 1:
             # Survival fraction: 0.9 -> log1, 0.99 -> log2, etc.

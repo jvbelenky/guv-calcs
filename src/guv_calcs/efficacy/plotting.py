@@ -1,5 +1,6 @@
 import warnings
 import math
+import numbers
 import re
 import textwrap
 import matplotlib.pyplot as plt
@@ -666,7 +667,7 @@ def _get_wavelength_str(data, fluence_dict=None):
 
     # Single wavelength
     if data.wavelength is not None:
-        if isinstance(data.wavelength, (int, float)):
+        if isinstance(data.wavelength, numbers.Real):
             return f"GUV-{int(data.wavelength)}"
         elif isinstance(data.wavelength, list) and len(data.wavelength) == 1:
             return f"GUV-{int(data.wavelength[0])}"
@@ -994,7 +995,7 @@ def plot_survival(
         fluence_dict = None
         wavelengths = None
         # Normalize fluence to list
-        fluence_list = [fluence] if isinstance(fluence, (int, float)) else list(fluence)
+        fluence_list = [fluence] if isinstance(fluence, numbers.Real) else list(fluence)
         multi_fluence = len(fluence_list) > 1
 
     # Validate: species is required when fluence is a list (multiple single-wavelength fluences)

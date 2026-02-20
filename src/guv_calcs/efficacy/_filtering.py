@@ -1,5 +1,6 @@
 """Filtering utilities for the InactivationData class."""
 
+import numbers
 import re
 
 import pandas as pd
@@ -28,7 +29,7 @@ def filter_by_column(df: pd.DataFrame, col: str, value) -> pd.DataFrame:
     """Filter df by column value. Handles scalar, list, or tuple (min, max) range."""
     if value is None:
         return df
-    if isinstance(value, (int, float, str)):
+    if isinstance(value, (numbers.Real, str)):
         return df[df[col] == value]
     elif isinstance(value, list):
         return df[df[col].isin(value)]
@@ -106,7 +107,7 @@ def get_effective_wavelengths(wavelength_filter, fluence_wavelengths) -> list | 
 
     # Add user-specified wavelengths
     if wavelength_filter is not None:
-        if isinstance(wavelength_filter, (int, float)):
+        if isinstance(wavelength_filter, numbers.Real):
             wavelengths.add(wavelength_filter)
         elif isinstance(wavelength_filter, list):
             wavelengths.update(wavelength_filter)

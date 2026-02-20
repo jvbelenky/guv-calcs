@@ -1,6 +1,7 @@
 """CSV report generation for rooms and projects."""
 
 import datetime
+import numbers
 
 from ._export import rows_to_bytes
 
@@ -27,7 +28,7 @@ def _build_room_rows(room):
     precision = room.precision if room.precision > 3 else 3
 
     def fmt(v):
-        return round(v, precision) if isinstance(v, (int, float)) else v
+        return round(v, precision) if isinstance(v, numbers.Real) else v
 
     # ───  Room parameters  ───────────────────────────────
     rows = [["Room Parameters"]]

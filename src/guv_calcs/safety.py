@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from enum import StrEnum
+import numbers
 import numpy as np
 from .lamp.spectrum import Spectrum, log_interp, sum_spectrum
 from .io import get_spectral_weightings
@@ -131,7 +132,7 @@ def get_seconds_to_tlv(
     wavelengths = list(weights.keys())
     values = list(weights.values())
 
-    if isinstance(ref, (int, float)):
+    if isinstance(ref, numbers.Real):
         weighting = log_interp(ref, wavelengths, values)
         weighted_irradiance = irradiance * weighting
     elif isinstance(ref, Spectrum):
@@ -155,7 +156,7 @@ def _tlv(ref, weights: dict) -> float:
     wavelengths = list(weights.keys())
     values = list(weights.values())
 
-    if isinstance(ref, (int, float)):
+    if isinstance(ref, numbers.Real):
         weighting = log_interp(ref, wavelengths, values)
         return 3 / weighting  # value not to be exceeded in 8 hours
     elif isinstance(ref, Spectrum):
