@@ -1,10 +1,9 @@
-import csv
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
-from ..io import get_spectral_weightings, load_csv, rows_to_bytes
+from ..io import get_spectral_weightings, load_spectrum_file, rows_to_bytes
 
 
 @dataclass(frozen=True)
@@ -75,23 +74,13 @@ class Spectrum:
     @classmethod
     def from_file(cls, filepath):
         """
-        Load spectrum from CSV file.
+        Load spectrum from a file.
 
+        Supports CSV and Excel (.xls, .xlsx) files. Automatically detects
+        the row where numeric data begins, skipping arbitrary header rows.
         Expects first column as wavelengths (nm) and second column as intensities.
         """
-        csv_data = load_csv(filepath)
-        reader = csv.reader(csv_data)
-        spectra = []
-        for i, row in enumerate(reader):
-            try:
-                vals = list(map(float, row))
-                spectra.append((vals[0], vals[1]))
-            except ValueError:
-                if i == 0:  # probably a header
-                    continue
-        if len(spectra) == 0:
-            raise ValueError("File contains no valid data.")
-
+        spectra = load_spectrum_file(filepath)
         wavelengths = tuple(s[0] for s in spectra)
         intensities = tuple(s[1] for s in spectra)
         return cls(wavelengths, intensities)

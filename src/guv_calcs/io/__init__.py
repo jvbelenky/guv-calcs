@@ -1,4 +1,4 @@
-from ._data_loaders import get_spectral_weightings, get_full_disinfection_table, load_csv
+from ._data_loaders import get_spectral_weightings, get_full_disinfection_table, load_csv, load_spectrum_file
 from ._export import export_room_zip, export_project_zip, fig_to_bytes, rows_to_bytes
 from ._file_io import (
     parse_guv_file,
@@ -17,6 +17,7 @@ __all__ = [
     "get_spectral_weightings",
     "get_full_disinfection_table",
     "load_csv",
+    "load_spectrum_file",
     # _export
     "export_room_zip",
     "export_project_zip",

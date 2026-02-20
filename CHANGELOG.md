@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - from_int parsing for ParseableEnums (like PhotStandard, etc)
+- more flexible parsing of spectrum files--header data handling and allowing xls and xlsx files
 
 ### Changed
 
