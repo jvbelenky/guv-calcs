@@ -281,12 +281,21 @@ class PlaneGrid(RectGrid):
         )
 
     @property
+    def _in_plane_indices(self):
+        """Indices of the 3D axes that lie in the plane (exclude the normal axis)."""
+        u = np.asarray(self.u_vec, float)
+        v = np.asarray(self.v_vec, float)
+        return [i for i in range(3) if u[i] != 0 or v[i] != 0]
+
+    @property
     def mins(self):
-        return tuple(min(a, b) for a, b in zip(self.origin, self.extent) if a != b)
+        idx = self._in_plane_indices
+        return tuple(min(self.origin[i], self.extent[i]) for i in idx)
 
     @property
     def maxs(self):
-        return tuple(max(a, b) for a, b in zip(self.origin, self.extent) if a != b)
+        idx = self._in_plane_indices
+        return tuple(max(self.origin[i], self.extent[i]) for i in idx)
 
     @property
     def u_hat(self):
