@@ -19,6 +19,14 @@ class ParseableEnum(StrEnum):
             return cls._default()
         if isinstance(arg, cls):
             return arg
+        if isinstance(arg, int):
+            members = list(cls)
+            if 0 <= arg < len(members):
+                return members[arg]
+            raise ValueError(
+                f"Index {arg} out of range for {cls.__name__} "
+                f"(valid: 0–{len(members) - 1})"
+            )
         return cls.from_token(arg)
 
     @classmethod
@@ -53,6 +61,14 @@ class UnitEnum(ParseableEnum):
             return cls.default
         if isinstance(arg, cls):
             return arg
+        if isinstance(arg, int):
+            members = list(cls)
+            if 0 <= arg < len(members):
+                return members[arg]
+            raise ValueError(
+                f"Index {arg} out of range for {cls.__name__} "
+                f"(valid: 0–{len(members) - 1})"
+            )
         return cls.from_token(arg)
 
 

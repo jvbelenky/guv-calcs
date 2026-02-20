@@ -15,7 +15,7 @@ from .lamp_geometry import LampGeometry
 from .fixture import Fixture
 from ..geometry import to_polar
 from .._serialization import init_from_dict, migrate_lamp_dict
-from ..safety import get_tlvs
+from ..safety import get_tlvs, PhotStandard
 from .lamp_type import GUVType, LampUnitType, LampType
 from ..units import LengthUnits, convert_length
 from .lamp_configs import resolve_keyword, get_valid_keys
@@ -710,6 +710,7 @@ class Lamp:
             [`ANSI IES RP 27.1-22`, `IEC 62471-6:2022`]
         Or an integer corresponding to the index of the desired standard.
         """
+        standard = PhotStandard.from_any(standard)
         if self.spectrum is not None:
             skin_tlv, eye_tlv = get_tlvs(self.spectrum, standard)
         elif self.wavelength is not None:
@@ -717,10 +718,6 @@ class Lamp:
         else:
             skin_tlv, eye_tlv = None, None
         return skin_tlv, eye_tlv
-
-    def get_limits(self, standard=0):
-        """compatibility alias for `get_tlvs()`"""
-        return self.get_tlvs(standard=standard)
 
     def get_cartesian(self, scale=1, sigfigs=9):
         """Return lamp's true position coordinates in cartesian space"""

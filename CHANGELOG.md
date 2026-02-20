@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- from_int parsing for ParseableEnums (like PhotStandard, etc)
+
 ### Changed
 
 - Bumped photompy requirement to 0.2.0
@@ -15,6 +19,7 @@ All notable changes to this project will be documented in this file.
 - Bug in lamp copy method - lamp_id being improperly assigned
 - Bug in room equality due to Registries comparing dim lambdas
 - Simplified and corrected Lamp scaling factor errors (to do with intensity_units enum)
+- Bug in lamp.get_tlvs()--standard not parsing correctly.
 
 ## [0.6.0] - 2026-02-09
 
