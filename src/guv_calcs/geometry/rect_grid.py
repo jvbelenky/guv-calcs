@@ -355,6 +355,9 @@ class PlaneGrid(RectGrid):
         u1, u2, v1, v2 = mins[0], maxs[0], mins[1], maxs[1]
         span_u, span_v = (u2 - u1), (v2 - v1)
         origin = u1 * self.u_hat + v1 * self.v_hat
+        # Preserve the fixed-axis component (e.g. height for axis-aligned planes)
+        normal = self.normal
+        origin = origin + np.dot(np.asarray(self.origin), normal) * normal
         if preserve_spacing:
             return self.update(
                 origin=origin,
