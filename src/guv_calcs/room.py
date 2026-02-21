@@ -630,6 +630,45 @@ class Room:
             self.update_state = self.get_update_state()
         return self
 
+    def estimate_calculation_time(self) -> float:
+        """Estimate wall-clock time (seconds) for the next calculate() call.
+
+        Uses empirically fitted coefficients for three cost phases:
+        - Base: lamp-to-zone direct calculation
+        - Incidence: lamp-to-surface + interreflection (skipped if cached)
+        - Zone reflectance: surface-to-zone form factors (skipped if cached)
+        """
+        from math import prod
+
+        lamp_count = len(self.lamps.valid())
+        if lamp_count == 0:
+            return 0.0
+
+        # Total zone grid points (enabled zones only)
+        total_zone_points = 0
+        for zone in self.calc_zones.values():
+            if getattr(zone, 'enabled', True) and zone.geometry is not None:
+                total_zone_points += prod(zone.geometry.num_points)
+
+        # Base cost: direct lamp → zone calculation
+        calc_time = lamp_count * total_zone_points * 0.0000016
+
+        # Reflectance cost (only if enabled AND needs recalculation)
+        if self.ref_manager.enabled and self.recalculate_incidence:
+            refl_points = 0
+            for surface in self.ref_manager.surfaces.values():
+                refl_points += prod(surface.plane.num_points)
+            num_surfaces = len(self.ref_manager.surfaces)
+
+            # Phase 1: incidence (lamp → surface + interreflection passes)
+            incidence_time = lamp_count * refl_points * 0.00003
+            # Phase 2: zone reflectance (surface → zone form factors)
+            zone_reflect_time = (num_surfaces * refl_points
+                                 * total_zone_points * 0.000000009)
+            calc_time += incidence_time + zone_reflect_time
+
+        return calc_time
+
     # ------------------- Data and Plotting ----------------------
 
     def get_efficacy_data(self, zone_id: str = WHOLE_ROOM_FLUENCE, **kwargs) -> InactivationData:

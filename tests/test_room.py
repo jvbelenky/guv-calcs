@@ -462,3 +462,57 @@ class TestPolygonRoom:
         repr_str = repr(room)
         assert "polygon=" in repr_str
         assert "6 vertices" in repr_str
+
+
+class TestEstimateCalculationTime:
+    """Tests for Room.estimate_calculation_time()."""
+
+    def test_no_lamps_returns_zero(self, basic_room):
+        """Room with no lamps should estimate zero time."""
+        basic_room.add_standard_zones()
+        assert basic_room.estimate_calculation_time() == 0.0
+
+    def test_with_lamps_and_zones_returns_positive(self, room_with_zones):
+        """Room with lamps and zones should return a positive estimate."""
+        estimate = room_with_zones.estimate_calculation_time()
+        assert isinstance(estimate, float)
+        assert estimate > 0.0
+
+    def test_reflectance_disabled_smaller_estimate(self):
+        """Disabling reflectance should produce a smaller estimate."""
+        lamp = Lamp.from_keyword("aerolamp").move(3, 2, 2.7).aim(3, 2, 0)
+
+        room_refl = Room(x=6, y=4, z=2.7, units="meters")
+        room_refl.add_lamp(lamp)
+        room_refl.add_standard_zones()
+
+        room_no_refl = Room(x=6, y=4, z=2.7, units="meters", enable_reflectance=False)
+        room_no_refl.add_lamp(lamp)
+        room_no_refl.add_standard_zones()
+
+        assert room_no_refl.estimate_calculation_time() < room_refl.estimate_calculation_time()
+
+    def test_after_calculate_estimate_drops(self, room_with_zones):
+        """After calculate(), incidence is cached so estimate should drop."""
+        estimate_before = room_with_zones.estimate_calculation_time()
+        room_with_zones.calculate()
+        estimate_after = room_with_zones.estimate_calculation_time()
+        assert estimate_after < estimate_before
+
+    def test_scales_with_lamp_count(self):
+        """Estimate should increase with more lamps."""
+        lamp1 = Lamp.from_keyword("aerolamp").move(2, 2, 2.7).aim(2, 2, 0)
+        lamp2 = Lamp.from_keyword("aerolamp").move(4, 2, 2.7).aim(4, 2, 0)
+
+        room_one = Room(x=6, y=4, z=2.7, units="meters")
+        room_one.add_lamp(lamp1)
+        room_one.add_standard_zones()
+
+        room_two = Room(x=6, y=4, z=2.7, units="meters")
+        room_two.add_lamp(lamp1)
+        room_two.add_lamp(lamp2)
+        room_two.add_standard_zones()
+
+        est_one = room_one.estimate_calculation_time()
+        est_two = room_two.estimate_calculation_time()
+        assert est_two > est_one
