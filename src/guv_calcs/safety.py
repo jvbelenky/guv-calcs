@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from enum import StrEnum
+import math
 import numbers
 import numpy as np
 from .lamp.spectrum import Spectrum, log_interp, sum_spectrum
@@ -368,19 +369,25 @@ def check_lamps(room) -> SafetyCheckResult:
 
             # Individual lamp check - generate warnings
             if min(skindim, eyedim, 1) < 1:
-                skindim_pct = round(skindim * 100, 1)
-                eyedim_pct = round(eyedim * 100, 1)
-                if skindim_pct < 100:
-                    msg = f"{lamp.name} must be dimmed to {skindim_pct}% its present power to comply with selected skin TLVs"
-                    if eyedim_pct < 100:
-                        msg += f" and to {eyedim_pct}% to comply with eye TLVs."
+                skindim_min = math.floor(skindim * 100)
+                eyedim_min = math.floor(eyedim * 100)
+                skindim_suggested = max(math.floor(skindim * 0.9 * 100), 0)
+                eyedim_suggested = max(math.floor(eyedim * 0.9 * 100), 0)
+                if skindim_suggested >= skindim_min:
+                    skindim_suggested = skindim_min - 1
+                if eyedim_suggested >= eyedim_min:
+                    eyedim_suggested = eyedim_min - 1
+                if skindim_min < 100:
+                    msg = f"{lamp.name} must be dimmed to {skindim_suggested}% (minimum {skindim_min}%) its present power to comply with selected skin TLVs"
+                    if eyedim_min < 100:
+                        msg += f" and to {eyedim_suggested}% (minimum {eyedim_min}%) to comply with eye TLVs."
                     warnings_list.append(
                         SafetyWarning(
                             level=WarningLevel.WARNING, message=msg, lamp_id=lamp_id
                         )
                     )
-                elif eyedim_pct < 100:
-                    msg = f"{lamp.name} must be dimmed to {eyedim_pct}% its present power to comply with selected eye TLVs"
+                elif eyedim_min < 100:
+                    msg = f"{lamp.name} must be dimmed to {eyedim_suggested}% (minimum {eyedim_min}%) its present power to comply with selected eye TLVs"
                     warnings_list.append(
                         SafetyWarning(
                             level=WarningLevel.WARNING, message=msg, lamp_id=lamp_id
@@ -427,8 +434,8 @@ def check_lamps(room) -> SafetyCheckResult:
     # Combined dose warning
     if DIMMING_NOT_REQUIRED and not LAMPS_COMPLIANT:
         msg = "Though all lamps are individually compliant, dose must be reduced to "
-        skindim_pct = round(3 / weighted_skin_dose.max() * 100, 1)
-        eyedim_pct = round(3 / weighted_eye_dose.max() * 100, 1)
+        skindim_pct = math.floor(3 / weighted_skin_dose.max() * 100)
+        eyedim_pct = math.floor(3 / weighted_eye_dose.max() * 100)
         if weighted_skin_dose.max() > 3:
             msg += f"{skindim_pct}% its present value to comply with selected skin TLVs"
             if weighted_eye_dose.max() > 3:
@@ -440,8 +447,8 @@ def check_lamps(room) -> SafetyCheckResult:
     # Check if dimming will make the installation compliant
     if not DIMMED_LAMPS_COMPLIANT:
         msg = "Even after applying dimming, this installation may not be compliant. Dose must be reduced to "
-        skindim_pct = round(3 / weighted_skin_dose.max() * 100, 1)
-        eyedim_pct = round(3 / weighted_eye_dose.max() * 100, 1)
+        skindim_pct = math.floor(3 / weighted_skin_dose.max() * 100)
+        eyedim_pct = math.floor(3 / weighted_eye_dose.max() * 100)
         if dimmed_weighted_skin_dose.max() > 3:
             msg += f"{skindim_pct}% its present value to comply with selected skin TLVs"
             if dimmed_weighted_eye_dose.max() > 3:
