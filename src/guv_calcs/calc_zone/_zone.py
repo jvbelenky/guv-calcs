@@ -328,6 +328,24 @@ class CalcZone(ABC):
             return self.result.values * 3.6 * self.hours
         return self.result.values
 
+    def get_statistics(self) -> dict | None:
+        """Return NaN-aware statistics for calculated values.
+
+        Returns:
+            Dict with min, max, mean, std, max_min, avg_min keys,
+            or None if uncalculated.
+        """
+        values = self.get_values()
+        if values is None:
+            return None
+        mn, mx, avg = float(np.min(values)), float(np.max(values)), float(np.mean(values))
+        return {
+            "min": mn, "max": mx, "mean": avg,
+            "std": float(np.std(values)),
+            "max_min": mx / mn if mn != 0 else float("inf"),
+            "avg_min": avg / mn if mn != 0 else float("inf"),
+        }
+
     @property
     def lamp_cache(self):
         """lamp_values are stored here"""

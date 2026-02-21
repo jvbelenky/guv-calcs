@@ -6,7 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Calculation time estimate 
+- Calculation time estimate method added to Room
+- Exposed lamp placement, zone stat collection, and standard zone definitions to external API
 
 ## [0.6.2] - 2026-02-20
 

@@ -8,18 +8,13 @@ from ._export import rows_to_bytes
 
 def _zone_stats(zone, precision):
     """Compute avg/max/min/ratios for a calculation zone."""
-    values = zone.get_values()
-    avg = values.mean()
-    mx = values.max()
-    mn = values.min()
-    mxmin = mx / mn if mn != 0 else float("inf")
-    avgmin = avg / mn if mn != 0 else float("inf")
+    s = zone.get_statistics()
     return (
-        round(avg, precision),
-        round(mx, precision),
-        round(mn, precision),
-        round(mxmin, precision),
-        round(avgmin, precision),
+        round(s["mean"], precision),
+        round(s["max"], precision),
+        round(s["min"], precision),
+        round(s["max_min"], precision),
+        round(s["avg_min"], precision),
     )
 
 

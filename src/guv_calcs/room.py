@@ -1,5 +1,6 @@
 import warnings
 import copy
+from math import prod
 from collections.abc import Iterable
 from matplotlib import colormaps
 from .lamp import Lamp, LampPlacer
@@ -638,8 +639,6 @@ class Room:
         - Incidence: lamp-to-surface + interreflection (skipped if cached)
         - Zone reflectance: surface-to-zone form factors (skipped if cached)
         """
-        from math import prod
-
         lamp_count = len(self.lamps.valid())
         if lamp_count == 0:
             return 0.0
@@ -647,17 +646,15 @@ class Room:
         # Total zone grid points (enabled zones only)
         total_zone_points = 0
         for zone in self.calc_zones.values():
-            if getattr(zone, 'enabled', True) and zone.geometry is not None:
-                total_zone_points += prod(zone.geometry.num_points)
+            if getattr(zone, 'enabled', True):
+                total_zone_points += prod(zone.num_points)
 
         # Base cost: direct lamp → zone calculation
         calc_time = lamp_count * total_zone_points * 0.0000016
 
         # Reflectance cost (only if enabled AND needs recalculation)
         if self.ref_manager.enabled and self.recalculate_incidence:
-            refl_points = 0
-            for surface in self.ref_manager.surfaces.values():
-                refl_points += prod(surface.plane.num_points)
+            refl_points = sum(prod(s.plane.num_points) for s in self.ref_manager.surfaces.values())
             num_surfaces = len(self.ref_manager.surfaces)
 
             # Phase 1: incidence (lamp → surface + interreflection passes)

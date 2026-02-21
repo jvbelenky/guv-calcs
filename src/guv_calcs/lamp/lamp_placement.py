@@ -133,6 +133,34 @@ class LampPlacer:
         # Same as edge but caller handles aim z-coordinate
         return self._place_edge(idx, **kwargs)
 
+    @staticmethod
+    def ceiling_offset(lamp) -> float:
+        """Compute ceiling offset from fixture housing dimensions.
+
+        Returns the distance below the ceiling to place a lamp, based on
+        its fixture housing height plus a small margin.
+        """
+        fixture = getattr(lamp, "fixture", None)
+        if fixture is not None and fixture.housing_height > 0:
+            return max(fixture.housing_height + 0.02, 0.05)
+        return 0.1
+
+    @staticmethod
+    def wall_clearance(lamp) -> float:
+        """Compute wall clearance from fixture dimensions.
+
+        Returns the minimum distance from walls to avoid fixture collision,
+        based on the 2D diagonal of the fixture footprint.
+        """
+        fixture = getattr(lamp, "fixture", None)
+        if fixture is None or not fixture.has_dimensions:
+            return 0.05
+        w = fixture.housing_width or 0
+        l = fixture.housing_length or 0
+        h = fixture.housing_height or 0
+        diagonal_2d = (w**2 + l**2) ** 0.5
+        return max(diagonal_2d / 2 + h / 2, 0.05)
+
     def place_lamp(
         self,
         lamp,
@@ -183,25 +211,11 @@ class LampPlacer:
 
         # Calculate ceiling offset from fixture if not specified
         if offset is None:
-            fixture = getattr(lamp, "fixture", None)
-            if fixture is not None and fixture.housing_height > 0:
-                offset = fixture.housing_height + 0.02
-                offset = max(offset, 0.05)
-            else:
-                offset = 0.1  # Default when no fixture dimensions
+            offset = self.ceiling_offset(lamp)
 
         # Calculate wall clearance from fixture dimensions
         if wall_clearance is None:
-            fixture = getattr(lamp, "fixture", None)
-            if fixture is not None and fixture.has_dimensions:
-                # 2D footprint diagonal plus housing height for tilt contribution.
-                # Post-placement nudge corrects any remaining overshoot.
-                w, l, h = fixture.housing_width, fixture.housing_length, fixture.housing_height
-                diagonal_2d = (w**2 + l**2) ** 0.5
-                wall_clearance = diagonal_2d / 2 + h / 2
-                wall_clearance = max(wall_clearance, 0.05)
-            else:
-                wall_clearance = 0.05  # Default when no fixture dimensions
+            wall_clearance = self.wall_clearance(lamp)
 
         idx = len(self._existing) + 1
         beam_angle = self._get_beam_angle(lamp)
