@@ -58,7 +58,7 @@ class UnitEnum(ParseableEnum):
     @classmethod
     def from_any(cls, arg):
         if arg is None:
-            return cls.default
+            return cls.default()
         if isinstance(arg, cls):
             return arg
         if isinstance(arg, int):

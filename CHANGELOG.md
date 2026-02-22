@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Bug in UnitEnum default
+
 ## [0.6.3] - 2026-02-21
 
 ### Added
