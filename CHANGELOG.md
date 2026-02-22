@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 
 - Bug in UnitEnum default
 
+### Changed
+
+- Serialization/migration logic souped up, moved from Room.load() to _serialization.py 
+
 ## [0.6.3] - 2026-02-21
 
 ### Added

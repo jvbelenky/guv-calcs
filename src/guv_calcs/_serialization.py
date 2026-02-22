@@ -20,6 +20,46 @@ def migrate_lamp_dict(data: dict) -> dict:
     return data
 
 
+def migrate_room_dict(data: dict, saved_version: str) -> dict:
+    """Apply legacy migrations to a room dict."""
+    from packaging.version import Version
+
+    data = dict(data)
+
+    if Version(saved_version) < Version("0.4.33"):
+        from .geometry import Polygon2D
+        from .reflectance import RoomDimensions, init_room_surfaces
+
+        dims = RoomDimensions(
+            polygon=Polygon2D.rectangle(
+                data.get("x", 6.0),
+                data.get("y", 4.0),
+            ),
+            z=data.get("z", 2.7),
+        )
+
+        # Extract reflectances: try new key first, then legacy individual keys
+        reflectances = data.get("reflectances")
+        if reflectances is None:
+            legacy = {}
+            for surface in ["ceiling", "north", "east", "south", "west", "floor"]:
+                key = f"reflectance_{surface}"
+                if key in data:
+                    legacy[surface] = data[key]
+            if legacy:
+                reflectances = legacy
+
+        surfaces = init_room_surfaces(
+            dims=dims,
+            reflectances=reflectances,
+            x_spacings=data.get("x_spacings"),
+            y_spacings=data.get("y_spacings"),
+        )
+        data["surfaces"] = {k: v.to_dict() for k, v in surfaces.items()}
+
+    return data
+
+
 def deserialize_geometry(data: dict, polygon_cls, rect_cls) -> dict:
     """Deserialize a nested 'geometry' dict into a typed grid object."""
     data = dict(data)

@@ -10,14 +10,13 @@ from .geometry import RoomDimensions
 from .geometry import Polygon2D
 from .reflectance import ReflectanceManager, Surface, init_room_surfaces
 from .io import parse_guv_file, save_room_data, export_room_zip, generate_report, get_version
-from packaging.version import Version
 from pathlib import Path
 from .safety import PhotStandard, check_lamps, SafetyCheckResult
 from .standard_zones import create_standard_zones, update_standard_zones, WHOLE_ROOM_FLUENCE
 from .units import LengthUnits, convert_length
 from .efficacy import InactivationData
 from .scene_registry import LampRegistry, ZoneRegistry, SurfaceRegistry
-from ._serialization import init_from_dict
+from ._serialization import init_from_dict, migrate_room_dict
 
 DEFAULT_DIMS = {}
 for member in list(LengthUnits):
@@ -236,24 +235,7 @@ class Room:
             )
 
         room_dict = load_data.get("data", load_data)
-
-        # Migrate legacy schema (< 0.4.33)
-        if Version(saved_version) < Version("0.4.33"):
-            from .reflectance import init_room_surfaces
-            dims = RoomDimensions(
-                polygon=Polygon2D.rectangle(
-                    room_dict.get("x", 6.0),
-                    room_dict.get("y", 4.0),
-                ),
-                z=room_dict.get("z", 2.7),
-            )
-            surfaces = init_room_surfaces(
-                dims=dims,
-                reflectances=room_dict.get("reflectances"),
-                x_spacings=room_dict.get("x_spacings"),
-                y_spacings=room_dict.get("y_spacings"),
-            )
-            room_dict["surfaces"] = {k: v.to_dict() for k, v in surfaces.items()}
+        room_dict = migrate_room_dict(room_dict, saved_version)
 
         return cls.from_dict(room_dict)
 
