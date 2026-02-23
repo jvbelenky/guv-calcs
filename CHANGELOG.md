@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - Fixed function definition in Lamp.get_polar() and Lamp.get_cartesian()
 - Lamp equality handled even if they have no photometry
 - Fix in lamp placement algorithm for corners
+- Fixed zero-value handling in calc zones by replacing truthy fallback logic with explicit None coalescing
 
 ### Changed
 

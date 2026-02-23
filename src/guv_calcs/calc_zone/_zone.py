@@ -259,10 +259,14 @@ class CalcZone(ABC):
     ):
         if self.geometry is not None:
             mins = self._strip_tpl(
-                x1 or self.geometry.x1, y1 or self.geometry.y1, z1 or self.geometry.z1
+                self._coalesce(x1, self.geometry.x1),
+                self._coalesce(y1, self.geometry.y1),
+                self._coalesce(z1, self.geometry.z1),
             )
             maxs = self._strip_tpl(
-                x2 or self.geometry.x2, y2 or self.geometry.y2, z2 or self.geometry.z2
+                self._coalesce(x2, self.geometry.x2),
+                self._coalesce(y2, self.geometry.y2),
+                self._coalesce(z2, self.geometry.z2),
             )
             self.geometry = self.geometry.update_dimensions(
                 mins=mins, maxs=maxs, preserve_spacing=preserve_spacing
@@ -275,9 +279,9 @@ class CalcZone(ABC):
         """
         if self.geometry is not None:
             spacing = self._strip_tpl(
-                x_spacing or self.geometry.x_spacing,
-                y_spacing or self.geometry.y_spacing,
-                z_spacing or self.geometry.z_spacing,
+                self._coalesce(x_spacing, self.geometry.x_spacing),
+                self._coalesce(y_spacing, self.geometry.y_spacing),
+                self._coalesce(z_spacing, self.geometry.z_spacing),
             )
             self.geometry = self.geometry.update(spacing_init=spacing)
         return self
@@ -288,9 +292,9 @@ class CalcZone(ABC):
         """
         if self.geometry is not None:
             num_points_init = self._strip_tpl(
-                num_x or self.geometry.num_x,
-                num_y or self.geometry.num_y,
-                num_z or self.geometry.num_z,
+                self._coalesce(num_x, self.geometry.num_x),
+                self._coalesce(num_y, self.geometry.num_y),
+                self._coalesce(num_z, self.geometry.num_z),
             )
             self.geometry = self.geometry.update(num_points_init=num_points_init)
         return self
@@ -303,6 +307,10 @@ class CalcZone(ABC):
     @staticmethod
     def _strip_tpl(*args):
         return tuple(val for val in args if val is not None)
+
+    @staticmethod
+    def _coalesce(value, default):
+        return default if value is None else value
 
     def calculate_values(self, lamps, ref_manager=None, hard=False):
         """Calculate all the values for all the lamps"""
@@ -407,8 +415,16 @@ class CalcVol(CalcZone):
         )
         if geometry is None:
             self.geometry = VolGrid.from_legacy(
-                mins=(x1 or 0.0, y1 or 0.0, z1 or 0.0),
-                maxs=(x2 or 6.0, y2 or 4.0, z2 or 2.7),
+                mins=(
+                    self._coalesce(x1, 0.0),
+                    self._coalesce(y1, 0.0),
+                    self._coalesce(z1, 0.0),
+                ),
+                maxs=(
+                    self._coalesce(x2, 6.0),
+                    self._coalesce(y2, 4.0),
+                    self._coalesce(z2, 2.7),
+                ),
                 num_points_init=(num_x, num_y, num_z),
                 spacing_init=(x_spacing, y_spacing, z_spacing),
                 offset=True if offset is None else bool(offset),
@@ -537,14 +553,14 @@ class CalcPlane(CalcZone):
         if geometry is None:
             # legacy initialization strategy
             self.geometry = PlaneGrid.from_legacy(
-                mins=(x1 or 0.0, y1 or 0.0),
-                maxs=(x2 or 6.0, y2 or 4.0),
+                mins=(self._coalesce(x1, 0.0), self._coalesce(y1, 0.0)),
+                maxs=(self._coalesce(x2, 6.0), self._coalesce(y2, 4.0)),
                 spacing_init=(x_spacing, y_spacing),
                 num_points_init=(num_x, num_y),
                 offset=True if offset is None else bool(offset),
-                height=height or 0,
-                ref_surface=ref_surface or "xy",
-                direction=direction or 1,
+                height=self._coalesce(height, 0),
+                ref_surface=self._coalesce(ref_surface, "xy"),
+                direction=self._coalesce(direction, 1),
             )
         else:
             self.geometry = geometry
