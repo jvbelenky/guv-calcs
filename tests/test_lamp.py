@@ -221,6 +221,14 @@ class TestLampSerialization:
         lamp2 = Lamp.from_keyword("aerolamp").move(1, 2, 3)
         assert lamp1 == lamp2
 
+    def test_equality_missing_photometry(self):
+        """Equality should handle lamps with no photometry."""
+        lamp1 = Lamp(filedata=None)
+        lamp2 = Lamp(filedata=None)
+        lamp1.ies = None
+        lamp2.ies = None
+        assert lamp1 == lamp2
+
 
 class TestLampSurface:
     """Tests for lamp surface properties."""

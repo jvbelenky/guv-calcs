@@ -178,7 +178,11 @@ class Lamp:
     def __eq__(self, other):
         if not isinstance(other, Lamp):
             return NotImplemented
-            
+
+        if (self.ies is None) != (other.ies is None):
+            return False
+        if self.ies is None and other.ies is None:
+            return self.to_dict() == other.to_dict()
         if self.ies.header != other.ies.header:
             return False
 
@@ -255,7 +259,7 @@ class Lamp:
         data["aimy"] = float(self.pose.aimy)
         data["aimz"] = float(self.pose.aimz)
         data["intensity_units"] = self.intensity_units.value
-        data["guv_type"] = self.guv_type.value
+        data["guv_type"] = self.guv_type.value if self.guv_type is not None else None
         data["wavelength"] = self.wavelength
 
         # Store user-provided values (None if not explicitly set)
