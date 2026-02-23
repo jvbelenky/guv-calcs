@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Removed unnecessary np.unique() call in zone construction
 - Fixed function definition in Lamp.get_polar() and Lamp.get_cartesian()
 - Lamp equality handled even if they have no photometry
+- Fix in lamp placement algorithm for corners
 
 ### Changed
 

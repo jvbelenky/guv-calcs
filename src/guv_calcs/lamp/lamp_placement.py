@@ -670,6 +670,28 @@ def _calculate_corner_aim(
             best_score = score
             best_point = intersection
 
+    # Also consider polygon vertices as candidates (ensures exact corner targeting)
+    for vx, vy in polygon.vertices:
+        dist_to_corner = hypot(vx - corner[0], vy - corner[1])
+        if dist_to_corner < 1e-9:
+            continue  # Skip the source corner itself
+
+        # Check direction to this vertex for wall-angle filtering
+        dx, dy = _normalize(vx - corner[0], vy - corner[1])
+        angle_to_wall1 = _angle_to_wall((dx, dy), edge_dirs[0])
+        angle_to_wall2 = _angle_to_wall((dx, dy), edge_dirs[1])
+        min_angle = min(angle_to_wall1, angle_to_wall2)
+
+        if min_angle < min_wall_angle:
+            continue
+
+        wall_bonus = min_angle / 90.0
+        score = dist_to_corner * (0.5 + 0.5 * wall_bonus)
+
+        if score > best_score:
+            best_score = score
+            best_point = (vx, vy)
+
     # If no valid candidates found (all too close to walls), use bisector
     if best_score < 0:
         aim = _ray_polygon_intersection(corner, inward, polygon)
