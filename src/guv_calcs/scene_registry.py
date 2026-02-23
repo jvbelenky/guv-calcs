@@ -124,7 +124,8 @@ class Registry(Generic[T], MutableMapping[str, T]):
 
     def add(self, obj, on_collision=None):
         policy = on_collision or self.on_collision
-        key = getattr(obj, "id") or self.base_id
+        obj = self._validate(obj)
+        key = getattr(obj, "id", None) or self.base_id
         if key in self._items:
             if policy == "error":
                 raise KeyError(f"ID {key!r} already exists.")
@@ -132,7 +133,7 @@ class Registry(Generic[T], MutableMapping[str, T]):
                 key = self._unique_id(key)
             # OVERWRITE keeps key as-is
         obj._assign_id(key)
-        self._items[key] = self._validate(obj)
+        self._items[key] = obj
         # self.on_added(key, obj)  # hook
         return key
 
@@ -203,6 +204,13 @@ class RoomRegistry(Registry["Room"]):
     """Registry for Room objects within a Project."""
     base_id = "Room"
     expected_type: type | None = None  # set lazily to avoid circular import
+
+    def _validate(self, room):
+        # Lazy import avoids a module-level circular dependency with room.py
+        if self.expected_type is None:
+            from .room import Room
+            self.expected_type = Room
+        return super()._validate(room)
 
     def _extract_dimensions(self, obj):
         raise NotImplementedError

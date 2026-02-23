@@ -44,6 +44,11 @@ class TestRoomManagement:
         assert "lab" in project.rooms
         assert project.room("lab") is room
 
+    def test_add_room_rejects_invalid_type(self):
+        project = Project()
+        with pytest.raises(TypeError, match="Must be Room"):
+            project.add_room("not-a-room")
+
     def test_room_access_by_id(self):
         project = Project()
         project.create_room(room_id="office", x=6, y=4, z=2.7)
@@ -127,6 +132,15 @@ class TestSerialization:
         assert "office" in loaded.rooms
         assert "lab" in loaded.rooms
         assert loaded.precision == 3
+
+    def test_from_dict_does_not_mutate_input(self):
+        data = {
+            "standard": "ANSI IES RP 27.1-22 (ACGIH Limits)",
+            "units": "meters",
+            "rooms": {},
+        }
+        Project.from_dict(data)
+        assert "rooms" in data
 
     def test_save_returns_json(self):
         project = Project()

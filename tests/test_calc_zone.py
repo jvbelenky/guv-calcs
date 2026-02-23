@@ -38,6 +38,12 @@ class TestCalcPlaneCreation:
         assert plane.x_spacing == 0.25
         assert plane.y_spacing == 0.25
 
+    def test_constructor_allows_zero_max_bounds(self):
+        """Legacy constructor should preserve explicit zero upper bounds."""
+        plane = CalcPlane(x1=0, x2=0, y1=0, y2=0, height=0)
+        assert plane.x2 == 0
+        assert plane.y2 == 0
+
     def test_num_points(self, calc_plane):
         """CalcPlane should have calculated num_points."""
         assert calc_plane.num_x > 0
@@ -98,6 +104,13 @@ class TestCalcPlaneModification:
         assert calc_plane.x_spacing == 0.1
         assert calc_plane.y_spacing == 0.1
 
+    def test_set_dimensions_allows_zero_values(self):
+        """set_dimensions() should treat 0 as explicit input, not fallback."""
+        plane = CalcPlane(x1=1, x2=2, y1=1, y2=2, height=1.0)
+        plane.set_dimensions(x1=0, y1=0)
+        assert plane.x1 == 0
+        assert plane.y1 == 0
+
     def test_set_value_type(self, calc_plane):
         """set_value_type() should toggle dose mode."""
         calc_plane.set_value_type(True)
@@ -134,6 +147,13 @@ class TestCalcVolCreation:
         assert vol.y2 == 8
         assert vol.z1 == 0
         assert vol.z2 == 3.0
+
+    def test_constructor_allows_zero_max_bounds(self):
+        """Legacy constructor should preserve explicit zero upper bounds."""
+        vol = CalcVol(x1=0, x2=0, y1=0, y2=0, z1=0, z2=0)
+        assert vol.x2 == 0
+        assert vol.y2 == 0
+        assert vol.z2 == 0
 
     def test_custom_spacing(self):
         """CalcVol should accept custom spacing."""

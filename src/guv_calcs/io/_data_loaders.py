@@ -95,6 +95,8 @@ def load_spectrum_file(datasource):
 
 def _read_bytes_to_dataframe(data: bytes) -> pd.DataFrame:
     """Try to parse bytes as CSV, then Excel (.xlsx), then old Excel (.xls)."""
+    parse_errors = []
+
     # Try CSV first — use sep="," explicitly so rows without commas
     # (metadata headers) still produce multiple columns filled with NaN
     try:
@@ -108,26 +110,27 @@ def _read_bytes_to_dataframe(data: bytes) -> pd.DataFrame:
                 names=range(max_fields), on_bad_lines="skip"
             )
             return df
-    except Exception:
-        pass
+    except (pd.errors.ParserError, ValueError, TypeError) as exc:
+        parse_errors.append(f"csv parse failed: {exc}")
 
     # Try xlsx (openpyxl engine)
     try:
         df = pd.read_excel(io.BytesIO(data), header=None, engine="openpyxl")
         if df.shape[1] >= 2:
             return df
-    except Exception:
-        pass
+    except (ValueError, OSError, ImportError, TypeError) as exc:
+        parse_errors.append(f"xlsx parse failed: {exc}")
 
     # Try xls (xlrd engine)
     try:
         df = pd.read_excel(io.BytesIO(data), header=None, engine="xlrd")
         if df.shape[1] >= 2:
             return df
-    except Exception:
-        pass
+    except (ValueError, OSError, ImportError, TypeError) as exc:
+        parse_errors.append(f"xls parse failed: {exc}")
 
-    raise ValueError("Could not parse file as CSV or Excel format")
+    detail = "; ".join(parse_errors) if parse_errors else "no parser accepted the input"
+    raise ValueError(f"Could not parse file as CSV or Excel format: {detail}")
 
 
 def _extract_spectrum_from_dataframe(df: pd.DataFrame) -> list[tuple[float, float]]:
