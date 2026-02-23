@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - Lamp equality handled even if they have no photometry
 - Fix in lamp placement algorithm for corners
 - Fixed zero-value handling in calc zones by replacing truthy fallback logic with explicit None coalescing
+- Made Project.from_dict() non-mutating
 
 ### Changed
 

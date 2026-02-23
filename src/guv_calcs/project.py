@@ -156,8 +156,9 @@ class Project:
     @classmethod
     def from_dict(cls, data):
         """Recreate a Project from a dict."""
-        rooms_data = data.pop("rooms", {})
-        project = cls(**{k: v for k, v in data.items() if k in _ROOM_DEFAULT_KEYS})
+        payload = dict(data)
+        rooms_data = payload.get("rooms", {})
+        project = cls(**{k: v for k, v in payload.items() if k in _ROOM_DEFAULT_KEYS})
         for room_id, room_dict in rooms_data.items():
             room = Room.from_dict(room_dict)
             project.rooms.add(room, on_collision="overwrite")
