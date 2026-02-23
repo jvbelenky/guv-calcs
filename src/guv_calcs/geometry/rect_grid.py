@@ -210,8 +210,7 @@ class VolGrid(RectGrid):
             return self._cache["coords"]
         mesh = np.meshgrid(*self.points, indexing="ij")
         X, Y, Z = [grid.reshape(-1) for grid in mesh]
-        coords = np.array((X, Y, Z)).T + np.asarray(self.origin, float)
-        coords = np.unique(coords, axis=0)
+        coords = np.column_stack((X, Y, Z)) + np.asarray(self.origin, float)
         self._cache["coords"] = coords
         return coords
 
