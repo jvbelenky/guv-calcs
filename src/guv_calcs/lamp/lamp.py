@@ -178,7 +178,7 @@ class Lamp:
     def __eq__(self, other):
         if not isinstance(other, Lamp):
             return NotImplemented
-
+            
         if self.ies.header != other.ies.header:
             return False
 
@@ -721,11 +721,12 @@ class Lamp:
 
     def get_cartesian(self, scale=1, sigfigs=9):
         """Return lamp's true position coordinates in cartesian space"""
-        return self.transform(self.coords, scale=scale).round(sigfigs)
+        coords = self.transform_to_world(self.coords, scale=scale, which="cartesian")
+        return coords.T.round(sigfigs)
 
     def get_polar(self, sigfigs=9):
         """Return lamp's true position coordinates in polar space"""
-        cartesian = self.transform(self.coords) - self.position
+        cartesian = self.transform_to_world(self.coords, which="cartesian").T - self.position
         return np.array(to_polar(*cartesian.T)).round(sigfigs)
 
     # ---- scaling / dimming features -----

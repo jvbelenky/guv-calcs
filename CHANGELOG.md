@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Bug in UnitEnum default
 - Bugged file_to_zone round trip, added test
 - Removed unnecessary np.unique() call in zone construction
+- Fixed function definition in Lamp.get_polar() and Lamp.get_cartesian()
 
 ### Changed
 
