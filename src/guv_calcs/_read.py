@@ -4,25 +4,34 @@ import numpy as np
 
 
 def read_fluence(lines):
-    points = []
+    def _parse_numeric_row(raw_line):
+        tokens = [t.strip() for t in raw_line.split(",") if t.strip() != ""]
+        if not tokens:
+            return None
+        try:
+            return [float(val) for val in tokens]
+        except ValueError:
+            return None
+
+    numeric_rows = []
     values = []
     dose = False
-    for i, line in enumerate(lines):
+    for line in lines:
         if "dose" in line:
             dose = True
-        if i in [15, 16, 17]:
-            lst = line.split("\n")[0].split(",")
-            vals = [float(val) for val in lst]
-            points.append(np.array(vals))
-        elif i > 17:
-            try:
-                lst = line.split("\n")[0].split(",")
-                vals = np.array([float(val) for val in lst])
-                values.append(vals)
-            except ValueError:
-                # these are just blank lines, skip and move on
-                continue
-    xp, yp, zp = points
+        parsed = _parse_numeric_row(line)
+        if parsed is None:
+            continue
+        if len(numeric_rows) < 4:
+            numeric_rows.append(np.array(parsed))
+        else:
+            values.append(np.array(parsed))
+
+    if len(numeric_rows) < 4:
+        raise ValueError("Malformed fluence export: expected num points and x/y/z rows.")
+
+    xp, yp, zp = numeric_rows[1:4]
+    points = [xp, yp, zp]
     arr = np.array(values)
     arr = arr.reshape(len(zp), len(yp), len(xp)).transpose(2, 1, 0)
 
