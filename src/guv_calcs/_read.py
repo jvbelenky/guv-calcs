@@ -135,8 +135,8 @@ def file_to_zone(file_path):
             dose=dose,
             offset=False,
         )
-        zone.values = values
-        zone.coords = coords
+        zone.result.base_values = values
+        zone.result.reflected_values = None
     else:
         values, coords, points, height, ref_surface = read_irradiance(lines)
         xp, yp = points
@@ -157,8 +157,8 @@ def file_to_zone(file_path):
                 ref_surface=ref_surface,
                 offset=False,
             )
-            zone.values = values
-            zone.coords = coords
+            zone.result.base_values = values
+            zone.result.reflected_values = None
         except ValueError:
             if ref_surface == "yz":
                 msg = "Calculation planes derived from Acuity Visual with the `yz` reference plane are bugged and cannot be read."
