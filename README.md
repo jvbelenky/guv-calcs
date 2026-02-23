@@ -144,7 +144,7 @@ Currently, only 222nm lamps are available, with data downloaded from reports.osl
 - `ushio_b1` - Ushio B1
 - `ushio_b15` - Ushio B1.5
 - `uvpro222_b1` - Bioabundance UVPro222 B1
-- `uvpro222_b1` - Bioabundance UVPro222 B2 
+- `uvpro222_b2` - Bioabundance UVPro222 B2 
 
 ## License
 
