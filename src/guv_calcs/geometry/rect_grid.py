@@ -345,7 +345,7 @@ class PlaneGrid(RectGrid):
         u = np.asarray(pU, float) - p0
         v = np.asarray(pV, float) - p0
         if np.dot(u, v) != 0:
-            msg = f"point {pV} is not orthogonal to point {pV}"
+            msg = f"point {pU} is not orthogonal to point {pV}"
             warnings.warn(msg)
         u_hat = u / np.linalg.norm(u)
         v_perp = v - np.dot(v, u_hat) * u_hat
