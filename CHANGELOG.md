@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - Fix floating point comparisons in rect_grid.py
 - Fix div by zero in reflectance form factor calculations
 - Fix div by zero in survival fraction calculation
+- EyeLimits fov_horiz not flowing through to standard zones
 
 ### Changed
 

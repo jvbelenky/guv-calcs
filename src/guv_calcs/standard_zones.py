@@ -1,5 +1,3 @@
-"""Factory functions for standard calculation zones."""
-
 from .calc_zone import CalcPlane, CalcVol
 from .units import convert_length
 
@@ -66,6 +64,7 @@ def update_standard_zones(standard, calc_zones, dims):
         zone.set_height(height=flags["height"])
         if zone_id == EYE_LIMITS:
             zone.fov_vert = flags["fov_vert"]
+            zone.fov_horiz = flags["fov_horiz"]
             zone.vert = flags["eye_vert"]
         else:
             zone.horiz = flags["skin_horiz"]
@@ -99,7 +98,8 @@ def _eye_limits(dims, flags, spacing):
         dims=dims, wall="floor", normal_offset=flags["height"],
         zone_id=EYE_LIMITS, name="Eye Dose (8 Hours)",
         dose=True, hours=8, use_normal=False,
-        vert=flags["eye_vert"], fov_vert=flags["fov_vert"], spacing=spacing,
+        vert=flags["eye_vert"], fov_vert=flags["fov_vert"],
+        fov_horiz=flags["fov_horiz"], spacing=spacing,
     )
 
 

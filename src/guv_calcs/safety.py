@@ -65,12 +65,14 @@ class PhotStandard(ParseableEnum):
                 "skin_horiz": False,
                 "eye_vert": False,
                 "fov_vert": 180,
+                "fov_horiz": 180,
             }
         return {
             "height": 1.8 if units == "meters" else 5.9,
             "skin_horiz": True,
             "eye_vert": True,
             "fov_vert": 80,
+            "fov_horiz": 180,
         }
 
     @classmethod
