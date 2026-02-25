@@ -378,19 +378,26 @@ class Surface:
         distances = distances.reshape(differences.shape[0:-1])
         # distances = np.linalg.norm(differences, axis=-1) # notably slower!
 
+        # mask out coincident points (zero distance) to avoid division by zero
+        zero_mask = distances == 0
+        safe_distances = np.where(zero_mask, 1.0, distances)
+
         # angles relative to reflective surface -- always between 0 and 90 unless the calc zone has been misspecified
         rel_surface = differences @ self.plane.basis
-        cos_theta_surface = -rel_surface[..., 2] / distances
+        cos_theta_surface = -rel_surface[..., 2] / safe_distances
         cos_theta_surface[cos_theta_surface < 0] = 0
+        cos_theta_surface[zero_mask] = 0
         # theta_surface = np.arccos(cos_theta_surface)
-        form_factors = cos_theta_surface / (np.pi * distances ** 2)
+        form_factors = cos_theta_surface / (np.pi * safe_distances ** 2)
+        form_factors[zero_mask] = 0
         form_factors = form_factors.astype("float32")
 
         #  angles relative to calculation zone. only relevant for planes
         if zv.is_plane():
             rel_zone = differences @ zv.basis
-            cos_theta_zone = rel_zone[..., 2] / distances
-            theta_zone = np.arccos(cos_theta_zone).astype("float32")
+            cos_theta_zone = rel_zone[..., 2] / safe_distances
+            cos_theta_zone[zero_mask] = 0
+            theta_zone = np.arccos(np.clip(cos_theta_zone, -1, 1)).astype("float32")
         else:
             theta_zone = None
 
