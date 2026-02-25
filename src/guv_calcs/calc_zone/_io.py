@@ -47,7 +47,7 @@ def export_volume(zone, fname=None):
     A blank line separates the position data from the first horizontal grid of fluence rate values.
     A blank line separates each subsequent horizontal grid of fluence rate values.
 
-    fluence rate values are given in µW/cm²
+    fluence rate values are given in uW/cm2
     """
 
     lines = header.split("\n")
