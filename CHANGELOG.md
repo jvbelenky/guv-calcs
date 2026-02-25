@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Serialization/migration logic souped up, moved from Room.load() to _serialization.py 
+- Simplified standard zones flow
 
 ### Added
 

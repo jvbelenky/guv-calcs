@@ -12,7 +12,7 @@ from .reflectance import ReflectanceManager, Surface, init_room_surfaces
 from .io import parse_guv_file, save_room_data, export_room_zip, generate_report, get_version
 from pathlib import Path
 from .safety import PhotStandard, check_lamps, SafetyCheckResult
-from .standard_zones import create_standard_zones, update_standard_zones, WHOLE_ROOM_FLUENCE
+from .standard_zones import create_standard_zones, WHOLE_ROOM_FLUENCE
 from .units import LengthUnits, convert_length
 from .efficacy import InactivationData
 from .scene_registry import LampRegistry, ZoneRegistry, SurfaceRegistry
@@ -762,7 +762,9 @@ class Room:
 
     def _update_standard_zones(self, standard: "PhotStandard"):
         """Update the standard safety calculation zones."""
-        update_standard_zones(standard, self.calc_zones, self.dim)
+        for zone in create_standard_zones(standard, self.dim):
+            if zone.zone_id in self.calc_zones:
+                self.calc_zones[zone.zone_id] = zone
 
     def _init_standard_surfaces(self, reflectances=None, x_spacings=None,
                                  y_spacings=None, num_x=None, num_y=None):

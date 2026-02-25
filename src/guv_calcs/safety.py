@@ -34,7 +34,7 @@ class PhotStandard(ParseableEnum):
         if self is PhotStandard.ACGIH:
             return "ANSI IES RP 27.1-22 (ACGIH Limits)"
         if self is PhotStandard.UL8802:
-            return "ANSI IES RP 27.1-22 (ACGIH Limits) - UL8802"
+            return "UL8802 (ACGIH Limits)"
         if self is PhotStandard.ICNIRP:
             return "IEC 62471-6:2022 (ICNIRP Limits)"
         # if self is PhotStandard.GB28235:
@@ -57,23 +57,6 @@ class PhotStandard(ParseableEnum):
         elif self is PhotStandard.ICNIRP:
             key = "IEC 62471-6:2022 (Eye/Skin)"
         return {k: v for k, v in zip(weights["Wavelength (nm)"], weights[key])}
-
-    def flags(self, units="meters") -> dict:
-        if self is PhotStandard.UL8802:
-            return {
-                "height": 1.9 if units == "meters" else 6.25,
-                "skin_horiz": False,
-                "eye_vert": False,
-                "fov_vert": 180,
-                "fov_horiz": 180,
-            }
-        return {
-            "height": 1.8 if units == "meters" else 5.9,
-            "skin_horiz": True,
-            "eye_vert": True,
-            "fov_vert": 80,
-            "fov_horiz": 180,
-        }
 
     @classmethod
     def dict(cls) -> dict:

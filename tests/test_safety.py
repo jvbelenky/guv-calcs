@@ -3,6 +3,7 @@
 import pytest
 import numpy as np
 from guv_calcs import PhotStandard, get_tlvs, get_max_irradiance, get_seconds_to_tlv, Spectrum
+from guv_calcs.standard_zones import get_zone_config
 
 
 class TestPhotStandardCreation:
@@ -91,23 +92,30 @@ class TestPhotStandardProperties:
         assert isinstance(weights, dict)
         assert len(weights) > 0
 
-    def test_flags_meters(self):
-        """flags should return dict with height for meters."""
-        flags = PhotStandard.ACGIH.flags(units="meters")
-        assert "height" in flags
-        assert flags["height"] == 1.8
+    def test_zone_config_acgih(self):
+        """ACGIH zone config should have correct defaults."""
+        cfg = get_zone_config(PhotStandard.ACGIH)
+        assert cfg.height_m == 1.8
+        assert cfg.height_ft == 5.9
+        assert cfg.eye_vert is True
+        assert cfg.eye_fov_vert == 80
+        assert cfg.skin_horiz is True
 
-    def test_flags_feet(self):
-        """flags should return dict with height for feet."""
-        flags = PhotStandard.ACGIH.flags(units="feet")
-        assert "height" in flags
-        assert flags["height"] == 5.9
+    def test_zone_config_ul8802(self):
+        """UL8802 zone config should differ from ACGIH."""
+        cfg = get_zone_config(PhotStandard.UL8802)
+        assert cfg.height_m == 1.9
+        assert cfg.height_ft == 6.25
+        assert cfg.eye_fov_vert == 180
+        assert cfg.eye_vert is False
+        assert cfg.skin_horiz is False
 
-    def test_flags_ul8802(self):
-        """UL8802 flags should differ from ACGIH."""
-        flags = PhotStandard.UL8802.flags(units="meters")
-        assert flags["height"] == 1.9
-        assert flags["fov_vert"] == 180
+    def test_zone_config_icnirp_uses_default(self):
+        """ICNIRP should use default config (same as ACGIH)."""
+        cfg = get_zone_config(PhotStandard.ICNIRP)
+        assert cfg.height_m == 1.8
+        assert cfg.height_ft == 5.9
+        assert cfg.eye_fov_vert == 80
 
 
 class TestPhotStandardClassMethods:
