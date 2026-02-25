@@ -246,11 +246,12 @@ class PlaneGrid(RectGrid):
         if not np.isfinite(u).all() or not np.isfinite(v).all():
             raise ValueError("u_vec and v_vec must be finite numeric vectors.")
 
-        if np.linalg.norm(u) == 0 or np.linalg.norm(v) == 0:
+        if np.linalg.norm(u) < 1e-12 or np.linalg.norm(v) < 1e-12:
             raise ValueError("u_vec and v_vec must be non-zero.")
 
         # forbid (near-)parallel u and v; we want a proper plane basis
-        if np.linalg.norm(np.cross(u, v)) == 0:
+        cross_norm = np.linalg.norm(np.cross(u, v))
+        if cross_norm < 1e-12 * np.linalg.norm(u) * np.linalg.norm(v):
             raise ValueError("u_vec and v_vec must not be parallel.")
 
     def __repr__(self):
@@ -344,13 +345,13 @@ class PlaneGrid(RectGrid):
         origin = np.asarray(p0, float)
         u = np.asarray(pU, float) - p0
         v = np.asarray(pV, float) - p0
-        if np.dot(u, v) != 0:
+        if not np.isclose(np.dot(u, v), 0, atol=1e-10):
             msg = f"point {pU} is not orthogonal to point {pV}"
             warnings.warn(msg)
         u_hat = u / np.linalg.norm(u)
         v_perp = v - np.dot(v, u_hat) * u_hat
         v_norm = np.linalg.norm(v_perp)
-        if v_norm == 0:
+        if v_norm < 1e-12:
             raise ValueError("from_points requires non-collinear points")
         v_hat = v_perp / v_norm
         s1, t1 = np.dot(u, u_hat), np.dot(u, v_hat)

@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - Fix in lamp placement algorithm for corners
 - Fixed zero-value handling in calc zones by replacing truthy fallback logic with explicit None coalescing
 - Made Project.from_dict() non-mutating
+- Fix floating point comparisons in rect_grid.py
 
 ### Changed
 
