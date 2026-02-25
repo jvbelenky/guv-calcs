@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - Made Project.from_dict() non-mutating
 - Fix floating point comparisons in rect_grid.py
 - Fix div by zero in reflectance form factor calculations
+- Fix div by zero in survival fraction calculation
 
 ### Changed
 

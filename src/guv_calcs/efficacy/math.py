@@ -27,6 +27,8 @@ def survival_fraction(t, irrad, k1, k2=0, f=0):
     """Survival fraction S(t) for the biphasic inactivation model."""
     t = np.asarray(t)
     if isinstance(irrad, (list, tuple)):
+        if len(irrad) == 0:
+            return np.ones_like(t, dtype=float)
         k1_irrad = sum(k * i / 1000 for k, i in zip(k1, irrad))
         k2_irrad = sum(k * i / 1000 for k, i in zip(k2, irrad))
         f_eff = sum(f) / len(f)
