@@ -22,6 +22,10 @@ All notable changes to this project will be documented in this file.
 
 - Serialization/migration logic souped up, moved from Room.load() to _serialization.py 
 
+### Added
+
+-  New estimate_ozone_increase() method in Room
+
 ## [0.6.3] - 2026-02-21
 
 ### Added

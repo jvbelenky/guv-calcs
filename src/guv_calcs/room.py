@@ -648,6 +648,32 @@ class Room:
 
         return calc_time
 
+    # ------------------- Ozone ----------------------
+
+    OZONE_GENERATION_CONSTANT = 10.0
+
+    def estimate_ozone_increase(self, ozone_generation_constant=None):
+        """Estimate steady-state ozone increase (ppb) from 222nm UV.
+
+        Uses simple steady-state model:
+          delta_O3 = (avg_fluence * generation_constant) / (air_changes + decay_constant)
+
+        Returns None if WholeRoomFluence zone has no calculated values.
+        """
+        if ozone_generation_constant is None:
+            ozone_generation_constant = self.OZONE_GENERATION_CONSTANT
+        wrf = self.calc_zones.get(WHOLE_ROOM_FLUENCE)
+        if wrf is None:
+            return None
+        stats = wrf.get_statistics()
+        if stats is None:
+            return None
+        avg_fluence = stats.get("mean", 0)
+        denominator = self.air_changes + self.ozone_decay_constant
+        if denominator <= 0:
+            return None
+        return avg_fluence * ozone_generation_constant / denominator
+
     # ------------------- Data and Plotting ----------------------
 
     def get_efficacy_data(self, zone_id: str = WHOLE_ROOM_FLUENCE, **kwargs) -> InactivationData:
