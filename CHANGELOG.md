@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 
 - Rooms saved as 'Project' files can now be loaded with Room.load()
 
+### Changed
+
+- Wavelength now part of lamp update state
+
 ## [0.6.4] - 2026-02-25
 
 ### Fixed

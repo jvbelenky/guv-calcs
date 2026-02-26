@@ -483,7 +483,7 @@ class Lamp:
 
     @property
     def update_state(self):
-        return (self.intensity_units,)
+        return (self.intensity_units, self.wavelength)
 
     # ----------------------- IO ------------------------------------
 
