@@ -452,9 +452,9 @@ class PlaneGrid(RectGrid):
             mins=self.mins,
             maxs=self.maxs,
             spacing_init=tuple(self.spacing),
-            height=height or self.height,
+            height=self.height if height is None else height,
             ref_surface=ref_surface or self.ref_surface,
-            direction=direction or self.direction,
+            direction=self.direction if direction is None else direction,
         )
 
     @property
