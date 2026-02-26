@@ -235,6 +235,14 @@ class Room:
             )
 
         room_dict = load_data.get("data", load_data)
+
+        # Project-format files nest room data under "rooms" — extract the first room
+        if load_data.get("format") == "project" or "rooms" in room_dict:
+            rooms = room_dict.get("rooms", {})
+            if not rooms:
+                raise ValueError("Project file contains no rooms")
+            room_dict = next(iter(rooms.values()))
+
         room_dict = migrate_room_dict(room_dict, saved_version)
 
         return cls.from_dict(room_dict)

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Rooms saved as 'Project' files can now be loaded with Room.load()
+
 ## [0.6.4] - 2026-02-25
 
 ### Fixed
