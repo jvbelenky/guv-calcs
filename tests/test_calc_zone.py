@@ -72,11 +72,11 @@ class TestCalcPlaneProperties:
 
     def test_units_irradiance(self, calc_plane):
         """CalcPlane units should be uW/cm² in irradiance mode."""
-        assert calc_plane.units == "uW/cm²"
+        assert calc_plane.value_units == "uW/cm²"
 
     def test_units_dose(self, calc_plane_dose):
         """CalcPlane units should be mJ/cm² in dose mode."""
-        assert calc_plane_dose.units == "mJ/cm²"
+        assert calc_plane_dose.value_units == "mJ/cm²"
 
     def test_enabled_default_true(self):
         """CalcPlane enabled should default to True."""

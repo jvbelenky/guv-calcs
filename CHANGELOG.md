@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Wavelength now part of lamp update state
+- Rename CalcZone units->value_units to avoid confusion/collision with dimension units
 
 ## [0.6.4] - 2026-02-25
 

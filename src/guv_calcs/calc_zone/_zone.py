@@ -144,7 +144,7 @@ class CalcZone(ABC):
         ...
 
     @property
-    def units(self):
+    def value_units(self):
         # todo: probably should be called unit_label or something instead
         if self.dose:
             return "mJ/cm²"

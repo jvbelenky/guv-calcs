@@ -185,7 +185,7 @@ def _build_room_rows(room):
                     mn,
                     mxmin,
                     avgmin,
-                    zone.units,
+                    zone.value_units,
                 ]
             ]
         rows += [[""]]
@@ -240,7 +240,7 @@ def _build_project_summary(project):
                     mn,
                     mxmin,
                     avgmin,
-                    zone.units,
+                    zone.value_units,
                 ]
             )
 

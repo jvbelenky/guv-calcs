@@ -625,8 +625,8 @@ class TestZoneEdgeCases:
         assert np.isclose(actual_ratio, expected_ratio, rtol=0.01)
 
         # Units should differ
-        assert irrad_plane.units == "uW/cm²"
-        assert dose_plane.units == "mJ/cm²"
+        assert irrad_plane.value_units == "uW/cm²"
+        assert dose_plane.value_units == "mJ/cm²"
 
     def test_switch_zone_to_dose_mode_after_calculation(self):
         """Switching zone to dose mode should change get_values() output."""

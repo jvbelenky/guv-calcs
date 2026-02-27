@@ -128,6 +128,6 @@ def plot_plane(zone, fig=None, ax=None, vmin=None, vmax=None, title=None):
         ax.set_xlabel(u_label)
         ax.set_ylabel(v_label)
         ax.set_title(title)
-        cbar.set_label(zone.units, loc="center")
+        cbar.set_label(zone.value_units, loc="center")
 
     return fig, ax
