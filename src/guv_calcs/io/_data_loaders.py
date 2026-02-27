@@ -61,7 +61,7 @@ def load_csv(datasource):
     return csv_data
 
 
-def load_spectrum_file(datasource):
+def load_spectrum_file(datasource, *, all_columns=False):
     """Load spectrum data from a file path or bytes.
 
     Supports CSV (.csv), Excel (.xls, .xlsx) files. Automatically detects
@@ -69,28 +69,43 @@ def load_spectrum_file(datasource):
 
     Args:
         datasource: str/Path to a file, or bytes of file content.
+        all_columns: If True, return all numeric columns as separate series
+            with auto-detected labels. If False (default), return only the
+            first two columns as (wavelength, intensity) pairs.
 
     Returns:
-        list[tuple[float, float]]: (wavelength, intensity) pairs.
+        If all_columns is False:
+            list[tuple[float, float]]: (wavelength, intensity) pairs.
+        If all_columns is True:
+            dict with keys:
+              - wavelengths: list[float]
+              - series: list[dict] each with 'label', 'intensities', 'peak_wavelength'
     """
+    df = _read_datasource_to_dataframe(datasource)
+
+    if all_columns:
+        return _extract_all_spectra_from_dataframe(df)
+    return _extract_spectrum_from_dataframe(df)
+
+
+def _read_datasource_to_dataframe(datasource) -> pd.DataFrame:
+    """Read a file path or bytes into a DataFrame."""
     if isinstance(datasource, (str, pathlib.PurePath)):
         filepath = Path(datasource)
         ext = filepath.suffix.lower()
         if ext == ".csv":
-            df = pd.read_csv(filepath, header=None)
+            return pd.read_csv(filepath, header=None)
         elif ext in (".xls", ".xlsx"):
-            df = pd.read_excel(filepath, header=None)
+            return pd.read_excel(filepath, header=None)
         else:
             raise TypeError(
                 f"Unsupported file extension '{ext}'. "
                 "Supported formats: .csv, .xls, .xlsx"
             )
     elif isinstance(datasource, bytes):
-        df = _read_bytes_to_dataframe(datasource)
+        return _read_bytes_to_dataframe(datasource)
     else:
         raise TypeError(f"Unsupported data source type: {type(datasource)}")
-
-    return _extract_spectrum_from_dataframe(df)
 
 
 def _read_bytes_to_dataframe(data: bytes) -> pd.DataFrame:
@@ -131,6 +146,102 @@ def _read_bytes_to_dataframe(data: bytes) -> pd.DataFrame:
 
     detail = "; ".join(parse_errors) if parse_errors else "no parser accepted the input"
     raise ValueError(f"Could not parse file as CSV or Excel format: {detail}")
+
+
+def _find_data_start_row(df: pd.DataFrame, min_cols: int = 2) -> int:
+    """Find the first row where at least `min_cols` columns are numeric."""
+    for i in range(len(df)):
+        numeric_count = 0
+        for j in range(min(min_cols, df.shape[1])):
+            try:
+                float(df.iloc[i, j])
+                numeric_count += 1
+            except (ValueError, TypeError):
+                break
+        if numeric_count >= min_cols:
+            return i
+    raise ValueError("No numeric data found in file")
+
+
+def _extract_all_spectra_from_dataframe(df: pd.DataFrame) -> dict:
+    """Extract all numeric columns as separate series from a DataFrame.
+
+    Returns a dict with:
+      - wavelengths: list[float]
+      - series: list[dict] each with 'label', 'intensities', 'peak_wavelength'
+    """
+    if df.shape[1] < 2:
+        raise ValueError("Data must have at least 2 columns")
+
+    start_row = _find_data_start_row(df)
+
+    # Auto-detect labels from header rows above the data start.
+    # Scan backwards from start_row for the last row with string values in data columns.
+    labels = []
+    if start_row > 0:
+        for row_idx in range(start_row - 1, -1, -1):
+            row_labels = []
+            has_strings = False
+            for col_idx in range(1, df.shape[1]):
+                val = df.iloc[row_idx, col_idx]
+                if isinstance(val, str) and val.strip():
+                    row_labels.append(val.strip())
+                    has_strings = True
+                else:
+                    row_labels.append(None)
+            if has_strings:
+                labels = row_labels
+                break
+
+    # Extract numeric data from start_row onward
+    data = df.iloc[start_row:].copy()
+    wavelengths = pd.to_numeric(data.iloc[:, 0], errors="coerce")
+
+    series = []
+    for col_idx in range(1, df.shape[1]):
+        col_data = pd.to_numeric(data.iloc[:, col_idx], errors="coerce")
+        # Only include columns that have at least some numeric data
+        valid_mask = wavelengths.notna() & col_data.notna()
+        if valid_mask.sum() == 0:
+            continue
+
+        wl = wavelengths[valid_mask].tolist()
+        intensities = col_data[valid_mask].tolist()
+
+        # Determine label
+        label_idx = col_idx - 1
+        if label_idx < len(labels) and labels[label_idx] is not None:
+            label = labels[label_idx]
+        else:
+            label = f"Column {col_idx}"
+
+        # Find peak wavelength (wavelength at max intensity)
+        max_idx = intensities.index(max(intensities))
+        peak_wavelength = wl[max_idx]
+
+        series.append({
+            "label": label,
+            "intensities": intensities,
+            "peak_wavelength": peak_wavelength,
+        })
+
+    if not series:
+        raise ValueError("No numeric data columns found in file")
+
+    # Use wavelengths from the first valid mask (all series share wavelengths)
+    first_valid = wavelengths.notna()
+    for col_idx in range(1, df.shape[1]):
+        col_data = pd.to_numeric(data.iloc[:, col_idx], errors="coerce")
+        first_valid = first_valid & col_data.notna()
+    # Use the wavelengths from the broadest set (first series)
+    col1 = pd.to_numeric(data.iloc[:, 1], errors="coerce")
+    wl_mask = wavelengths.notna() & col1.notna()
+    final_wavelengths = wavelengths[wl_mask].tolist()
+
+    return {
+        "wavelengths": final_wavelengths,
+        "series": series,
+    }
 
 
 def _extract_spectrum_from_dataframe(df: pd.DataFrame) -> list[tuple[float, float]]:
