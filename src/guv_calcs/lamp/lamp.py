@@ -487,7 +487,7 @@ class Lamp:
 
     # ----------------------- IO ------------------------------------
 
-    def load_ies(self, filedata, override=True):
+    def load_ies(self, filedata, override=False):
         """load an ies file"""
 
         if filedata is None:
@@ -506,9 +506,8 @@ class Lamp:
             self.ies.scale(self.scaling_factor)
 
         # update length/width/units
-        if override:
-            self.surface.set_ies(self.ies)
-
+        self.surface.set_ies(self.ies, override=override)
+        
         return self.ies
 
     def load_intensity_map(self, intensity_map):

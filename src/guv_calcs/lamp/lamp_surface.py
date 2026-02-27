@@ -164,23 +164,24 @@ class LampSurface:
             self.width, self.length = convert_units(
                 self.units, units, self.width, self.length
             )
+            self._user_units = units
             self.units = units
             self._invalidate_grid()
 
-    def set_ies(self, ies):
+    def set_ies(self, ies, override=False):
         """
         Populate length/width/height/units values from an IESFile object.
         Only overwrites values if user didn't explicitly provide them.
         """
         if ies is not None:
-            units_dict = {1: LengthUnits.FEET, 2: LengthUnits.METERS}
-            self.units = units_dict[ies.units]
-
-            if self._user_width is None:
+            if self._user_units is None or override:
+                units_dict = {1: LengthUnits.FEET, 2: LengthUnits.METERS}
+                self.units = units_dict[ies.units]
+            if self._user_width is None or override:
                 self.width = abs(ies.width)
-            if self._user_length is None:
+            if self._user_length is None or override:
                 self.length = abs(ies.length)
-            if self._user_height is None:
+            if self._user_height is None or override:
                 self.height = abs(ies.height)
 
             self._invalidate_grid()
