@@ -7,13 +7,14 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Rooms saved as 'Project' files can now be loaded with Room.load()
+- Calc zone dosages can now be specified in hours/minutes/seconds, not just hours
+- Reports are now included in the "Export all" option for rooms
 
 ### Changed
 
 - Wavelength now part of lamp update state
 - Rename CalcZone units->value_units to avoid confusion/collision with dimension units
 - Make units an override point in lamp.surface (when ies changed after a lamp is already in a room)
-- Calc zone dosages can now be specified 
 
 ## [0.6.4] - 2026-02-25
 

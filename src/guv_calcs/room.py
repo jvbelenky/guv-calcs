@@ -279,6 +279,7 @@ class Room:
         include_plots=False,
         include_lamp_files=False,
         include_lamp_plots=False,
+        include_report=False,
     ):
         """Write the project file and all results files to a zip file."""
         return export_room_zip(
@@ -287,6 +288,7 @@ class Room:
             include_plots=include_plots,
             include_lamp_files=include_lamp_files,
             include_lamp_plots=include_lamp_plots,
+            include_report=include_report,
         )
 
     def generate_report(self, fname=None):

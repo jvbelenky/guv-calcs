@@ -29,6 +29,7 @@ def export_room_zip(
     include_plots=False,
     include_lamp_files=False,
     include_lamp_plots=False,
+    include_report=False,
 ):
     """Write the room project file and all results files to a zip file.
 
@@ -84,6 +85,12 @@ def export_room_zip(
                     data_dict[linkey] = lin_bytes
                 if log_bytes is not None:
                     data_dict[logkey] = log_bytes
+
+    if include_report:
+        from ._reporting import generate_report
+        report_bytes = generate_report(room)
+        if report_bytes is not None:
+            data_dict["report.csv"] = report_bytes
 
     zip_buffer = io.BytesIO()
     # Create a zip file within this BytesIO object
