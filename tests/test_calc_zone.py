@@ -2,6 +2,7 @@
 
 import pytest
 import numpy as np
+from datetime import timedelta
 from guv_calcs import CalcPlane, CalcVol
 
 
@@ -119,8 +120,8 @@ class TestCalcPlaneModification:
         assert calc_plane.dose is False
 
     def test_set_dose_time(self, calc_plane):
-        """set_dose_time() should update hours."""
-        calc_plane.set_dose_time(4.0)
+        """set_dose_time() should update exposure time."""
+        calc_plane.set_dose_time(hours=4.0)
         assert calc_plane.hours == 4.0
 
 
@@ -253,3 +254,104 @@ class TestCalcZoneCopy:
         """CalcVol copy should be independent of original."""
         copy = calc_volume.copy(zone_id="CopiedVolume")
         assert copy.zone_id == "CopiedVolume"
+
+
+class TestExposureTime:
+    """Tests for exposure time parameters."""
+
+    def test_default_hours(self):
+        """Default exposure time is 8 hours."""
+        plane = CalcPlane(zone_id="T")
+        assert plane.hours == 8.0
+        assert plane.exposure_time == timedelta(hours=8)
+
+    def test_hours_param(self):
+        """hours= sets exposure time in hours."""
+        plane = CalcPlane(zone_id="T", hours=4)
+        assert plane.hours == 4.0
+        assert plane.seconds == 14400.0
+
+    def test_minutes_param(self):
+        """minutes= sets exposure time in minutes."""
+        plane = CalcPlane(zone_id="T", minutes=30)
+        assert plane.hours == 0.5
+        assert plane.minutes == 30.0
+
+    def test_seconds_param(self):
+        """seconds= sets exposure time in seconds."""
+        plane = CalcPlane(zone_id="T", seconds=3600)
+        assert plane.hours == 1.0
+
+    def test_combined_time(self):
+        """hours + minutes + seconds sum together."""
+        plane = CalcPlane(zone_id="T", hours=1, minutes=30)
+        assert plane.exposure_time == timedelta(hours=1, minutes=30)
+        assert plane.seconds == 5400.0
+
+    def test_combined_time_all_three(self):
+        """All three time params sum together."""
+        plane = CalcPlane(zone_id="T", hours=1, minutes=30, seconds=45)
+        assert plane.exposure_time == timedelta(hours=1, minutes=30, seconds=45)
+
+    def test_set_dose_time_combined(self):
+        """set_dose_time with multiple params sums them."""
+        plane = CalcPlane(zone_id="T")
+        plane.set_dose_time(hours=2, minutes=15)
+        assert plane.exposure_time == timedelta(hours=2, minutes=15)
+
+    def test_negative_raises(self):
+        """Negative exposure time raises ValueError."""
+        with pytest.raises(ValueError):
+            CalcPlane(zone_id="T", hours=-1)
+
+    def test_non_numeric_raises(self):
+        """Non-numeric exposure time raises TypeError."""
+        with pytest.raises(TypeError):
+            CalcPlane(zone_id="T", hours="eight")
+
+    def test_exposure_time_property(self):
+        """exposure_time returns a timedelta."""
+        plane = CalcPlane(zone_id="T", minutes=30)
+        assert plane.exposure_time == timedelta(minutes=30)
+
+    def test_exposure_time_setter(self):
+        """exposure_time can be set with a timedelta."""
+        plane = CalcPlane(zone_id="T")
+        plane.exposure_time = timedelta(minutes=45)
+        assert plane.hours == 0.75
+
+    def test_set_dose_time_hours(self):
+        """set_dose_time accepts hours kwarg."""
+        plane = CalcPlane(zone_id="T")
+        plane.set_dose_time(hours=4)
+        assert plane.hours == 4.0
+
+    def test_set_dose_time_minutes(self):
+        """set_dose_time accepts minutes kwarg."""
+        plane = CalcPlane(zone_id="T")
+        plane.set_dose_time(minutes=30)
+        assert plane.hours == 0.5
+
+    def test_serialization_round_trip(self):
+        """exposure_time survives to_dict/from_dict."""
+        plane = CalcPlane(zone_id="T", dose=True, minutes=30)
+        data = plane.to_dict()
+        loaded = CalcPlane.from_dict(data)
+        assert loaded.exposure_time == timedelta(minutes=30)
+
+    def test_old_dict_migration(self):
+        """Old dicts with 'hours' key should load correctly."""
+        old_data = {
+            "zone_id": "T",
+            "dose": True,
+            "hours": 4.0,
+            "x1": 0, "x2": 6, "y1": 0, "y2": 4, "height": 1.0,
+        }
+        plane = CalcPlane.from_dict(old_data)
+        assert plane.hours == 4.0
+
+    def test_calcvol_exposure_time(self):
+        """CalcVol also supports hours/minutes/seconds."""
+        vol = CalcVol(zone_id="T", minutes=15)
+        assert vol.minutes == 15.0
+        assert vol.hours == 0.25

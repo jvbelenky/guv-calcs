@@ -122,7 +122,7 @@ def calc_plane_dose():
         y1=0, y2=4,
         height=1.0,
         dose=True,
-        hours=8.0,
+        hours=8,
     )
 
 

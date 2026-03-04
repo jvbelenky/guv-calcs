@@ -107,7 +107,7 @@ def _build_room_rows(room):
                 "Vertical field of view",
                 "Horizontal field of view",
                 "Dose",
-                "Dose Hours",
+                "Exposure Time",
             ]
         ]
         for pl in planes:
@@ -126,7 +126,7 @@ def _build_room_rows(room):
                     pl.fov_vert,
                     pl.fov_horiz,
                     pl.dose,
-                    pl.hours if pl.dose else "",
+                    pl.exposure_time if pl.dose else "",
                 ]
             ]
         rows += [[""]]
@@ -147,7 +147,7 @@ def _build_room_rows(room):
                 "z1",
                 "z2",
                 "Dose",
-                "Dose Hours",
+                "Exposure Time",
             ]
         ]
         for v in vols:
@@ -163,7 +163,7 @@ def _build_room_rows(room):
                     fmt(v.z1),
                     fmt(v.z2),
                     v.dose,
-                    v.hours if v.dose else "",
+                    v.exposure_time if v.dose else "",
                 ]
             ]
         rows += [[""]]

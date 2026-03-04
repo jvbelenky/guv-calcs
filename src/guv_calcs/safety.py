@@ -308,8 +308,8 @@ def check_lamps(room) -> SafetyCheckResult:
             eyerad = eye.lamp_cache[lamp_id].values
 
             # Convert to dose (mJ/cm2)
-            skinvals = skinrad * 3.6 * skin.hours
-            eyevals = eyerad * 3.6 * eye.hours
+            skinvals = skinrad * skin.exposure_time.total_seconds() / 1e3
+            eyevals = eyerad * eye.exposure_time.total_seconds() / 1e3
 
             # Weighting function for this specific lamp
             skinweight, eyeweight = 3 / skinmax, 3 / eyemax

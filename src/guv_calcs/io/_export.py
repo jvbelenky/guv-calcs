@@ -11,6 +11,18 @@ from plotly.graph_objs._figure import Figure as plotly_fig
 from matplotlib.figure import Figure as mpl_fig
 
 
+def _format_exposure(td) -> str:
+    """Format a timedelta as a human-readable exposure label."""
+    secs = td.total_seconds()
+    if secs >= 3600 and secs % 3600 == 0:
+        n = int(secs // 3600)
+        return f"{n} Hour"
+    if secs >= 60 and secs % 60 == 0:
+        n = int(secs // 60)
+        return f"{n} Minute"
+    return f"{secs:g} Second"
+
+
 def export_room_zip(
     room,
     fname=None,
@@ -30,7 +42,7 @@ def export_room_zip(
         data_dict[zone.name + ".csv"] = zone.export()
         if include_plots:
             if zone.dose:
-                title = f"{zone.hours} Hour Dose"
+                title = f"{_format_exposure(zone.exposure_time)} Dose"
             else:
                 title = "Irradiance"
             if zone.calctype == "Plane":

@@ -605,7 +605,7 @@ class TestZoneEdgeCases:
         )
 
         irrad_plane = CalcPlane(zone_id="Irradiance", height=1.0, dose=False)
-        dose_plane = CalcPlane(zone_id="Dose", height=1.0, dose=True, hours=8.0)
+        dose_plane = CalcPlane(zone_id="Dose", height=1.0, dose=True, hours=8)
 
         room.add_calc_zone(irrad_plane)
         room.add_calc_zone(dose_plane)
@@ -618,9 +618,9 @@ class TestZoneEdgeCases:
         # Raw values should be the same (same calculation)
         assert np.allclose(irrad_plane.values, dose_plane.values)
 
-        # get_values() should apply dose conversion: values * 3.6 * hours
-        # For 8 hours: factor = 3.6 * 8 = 28.8
-        expected_ratio = 3.6 * 8.0
+        # get_values() should apply dose conversion: values * total_seconds / 1e3
+        # For 8 hours: factor = 28800 / 1000 = 28.8
+        expected_ratio = 8 * 3600 / 1e3
         actual_ratio = dose_plane.get_values().mean() / irrad_plane.get_values().mean()
         assert np.isclose(actual_ratio, expected_ratio, rtol=0.01)
 
@@ -643,12 +643,12 @@ class TestZoneEdgeCases:
 
         # Switch to dose mode (no recalculation needed - it's just a display conversion)
         plane.set_value_type(True)
-        plane.set_dose_time(8.0)
+        plane.set_dose_time(hours=8)
 
         dose_mean = plane.get_values().mean()
 
         # get_values() should now return dose-adjusted values
-        expected_ratio = 3.6 * 8.0  # dose conversion factor
+        expected_ratio = 8 * 3600 / 1e3  # dose conversion factor
         assert np.isclose(dose_mean / irrad_mean, expected_ratio, rtol=0.01)
 
 

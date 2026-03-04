@@ -60,6 +60,16 @@ def migrate_room_dict(data: dict, saved_version: str) -> dict:
     return data
 
 
+def migrate_zone_dict(data: dict) -> dict:
+    """Migrate old 'hours' key to 'seconds' for CalcZone init."""
+    data = dict(data)
+    if "hours" in data and "exposure_time" not in data:
+        data["seconds"] = data.pop("hours") * 3600
+    elif "exposure_time" in data:
+        data["seconds"] = data.pop("exposure_time")
+    return data
+
+
 def deserialize_geometry(data: dict, polygon_cls, rect_cls) -> dict:
     """Deserialize a nested 'geometry' dict into a typed grid object."""
     data = dict(data)

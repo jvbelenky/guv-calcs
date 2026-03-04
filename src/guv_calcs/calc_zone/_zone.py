@@ -2,6 +2,7 @@ import json
 import numpy as np
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import timedelta
 from ..calc_manager import LightingCalculator
 from ..geometry import VolGrid, PlaneGrid
 from ..geometry import PolygonGrid, PolygonVolGrid
@@ -9,7 +10,7 @@ from ._io import export_plane, export_volume
 from ._plot import plot_plane, plot_volume
 from ..geometry import RoomDimensions
 from ..geometry import Polygon2D
-from .._serialization import init_from_dict, deserialize_geometry
+from .._serialization import init_from_dict, deserialize_geometry, migrate_zone_dict
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,7 @@ class ZoneResult:
         return self.base_values + self.reflected_values
 
 
+
 class CalcZone(ABC):
     """
     Abstract base class representing a calculation zone.
@@ -72,8 +74,9 @@ class CalcZone(ABC):
     offset: bool, default=True
     dose: bool, default=False
         whether to calculate a dose over N hours or just fluence
-    hours: float, default = 8.0
-        number of hours to calculate dose over. Only relevant if dose is True.
+    hours, minutes, seconds: float, default hours=8
+        exposure time for dose calculation. Values are summed.
+        Only relevant if dose is True.
     enabled: bool, default = True
         whether or not the calc zone is enabled for calculations
     show_values: bool, default = True
@@ -85,7 +88,9 @@ class CalcZone(ABC):
         zone_id=None,
         name=None,
         dose=False,
-        hours=8.0,
+        hours=None,
+        minutes=None,
+        seconds=None,
         enabled=True,
         show_values=True,
         colormap=None,
@@ -93,7 +98,7 @@ class CalcZone(ABC):
         self._zone_id = zone_id
         self.name = str(zone_id) if name is None else str(name)
         self.dose = False if dose is None else dose
-        self.hours = hours  # only used if dose is true
+        self._exposure_time = self._parse_exposure_time(hours, minutes, seconds)
         self.enabled = enabled
         self.show_values = show_values
         self.colormap = colormap
@@ -184,7 +189,7 @@ class CalcZone(ABC):
         data["zone_id"] = self.zone_id
         data["name"] = self.name
         data["dose"] = self.dose
-        data["hours"] = self.hours
+        data["exposure_time"] = self._exposure_time.total_seconds()
         data["enabled"] = self.enabled
         data["show_values"] = self.show_values
         data["colormap"] = self.colormap
@@ -239,13 +244,32 @@ class CalcZone(ABC):
             raise TypeError("Dose must be either True or False")
         self.dose = dose
 
-    def set_dose_time(self, hours):
-        """
-        Set the time over which the dose will be calculate in hours
-        """
-        if type(hours) not in [float, int]:
-            raise TypeError("Hours must be numeric")
-        self.hours = hours
+    def set_dose_time(self, hours=None, minutes=None, seconds=None):
+        """Set the exposure time for dose calculation."""
+        self._exposure_time = self._parse_exposure_time(hours, minutes, seconds, default=False)
+        
+    @property
+    def exposure_time(self) -> timedelta:
+        return self._exposure_time
+
+    @exposure_time.setter
+    def exposure_time(self, value: timedelta):
+        if not isinstance(value, timedelta):
+            raise TypeError("exposure_time must be a timedelta")
+        self._exposure_time = value
+
+    @property
+    def hours(self) -> float:
+        return self._exposure_time.total_seconds() / 3600
+
+    @property
+    def minutes(self) -> float:
+        return self._exposure_time.total_seconds() / 60
+
+    @property
+    def seconds(self) -> float:
+        return self._exposure_time.total_seconds()
+
 
     def set_dimensions(
         self,
@@ -333,7 +357,7 @@ class CalcZone(ABC):
         if self.result.values is None:
             return None
         if self.dose:
-            return self.result.values * 3.6 * self.hours
+            return self.result.values * self._exposure_time.total_seconds() / 1e3
         return self.result.values
 
     def get_statistics(self) -> dict | None:
@@ -370,6 +394,23 @@ class CalcZone(ABC):
     @property
     def values(self):
         return self.result.values
+        
+    @staticmethod
+    def _parse_exposure_time(hours=None, minutes=None, seconds=None, default=True):
+        """Parse time params into a timedelta. Values are summed."""
+        h = hours or 0
+        m = minutes or 0
+        s = seconds or 0
+        for name, val in [("hours", h), ("minutes", m), ("seconds", s)]:
+            if not isinstance(val, (int, float)):
+                raise TypeError(f"{name} must be numeric")
+            if val < 0:
+                raise ValueError(f"{name} must be non-negative")
+        if h == 0 and m == 0 and s == 0:
+            if default:
+                return timedelta(hours=8)
+            raise ValueError("Specify at least one of hours, minutes, seconds")
+        return timedelta(hours=h, minutes=m, seconds=s)
 
 
 class CalcVol(CalcZone):
@@ -384,7 +425,9 @@ class CalcVol(CalcZone):
         name: str | None = None,
         geometry: VolGrid | None = None,
         dose: bool = False,
-        hours: int = 8,
+        hours: int | float | None = None,
+        minutes: int | float | None = None,
+        seconds: int | float | None = None,
         enabled: bool = True,
         show_values: bool = True,
         colormap: str | None = None,
@@ -409,6 +452,8 @@ class CalcVol(CalcZone):
             name=name,
             dose=dose,
             hours=hours,
+            minutes=minutes,
+            seconds=seconds,
             enabled=enabled,
             show_values=show_values,
             colormap=colormap,
@@ -447,6 +492,7 @@ class CalcVol(CalcZone):
 
     @classmethod
     def from_dict(cls, data):
+        data = migrate_zone_dict(data)
         data = deserialize_geometry(data, PolygonVolGrid, VolGrid)
         return init_from_dict(cls, data)
 
@@ -515,7 +561,9 @@ class CalcPlane(CalcZone):
         name: str | None = None,
         geometry: "PlaneGrid | PolygonGrid | None" = None,
         dose: bool = False,
-        hours: int = 8,
+        hours: int | float | None = None,
+        minutes: int | float | None = None,
+        seconds: int | float | None = None,
         enabled: bool = True,
         show_values: bool = True,
         colormap: str | None = None,
@@ -545,6 +593,8 @@ class CalcPlane(CalcZone):
             name=name,
             dose=dose,
             hours=hours,
+            minutes=minutes,
+            seconds=seconds,
             enabled=enabled,
             show_values=show_values,
             colormap=colormap,
@@ -599,6 +649,7 @@ class CalcPlane(CalcZone):
 
     @classmethod
     def from_dict(cls, data):
+        data = migrate_zone_dict(data)
         data = deserialize_geometry(data, PolygonGrid, PlaneGrid)
         return init_from_dict(cls, data)
 
