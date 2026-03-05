@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - Rename CalcZone units->value_units to avoid confusion/collision with dimension units
 - Make units an override point in lamp.surface (when ies changed after a lamp is already in a room)
 - Calculation status now part of calc zone calc state
+- Changing units now mutates dimensions 
 
 ## [0.6.4] - 2026-02-25
 

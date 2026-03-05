@@ -12,7 +12,7 @@ from .reflectance import ReflectanceManager, Surface, init_room_surfaces
 from .io import parse_guv_file, save_room_data, export_room_zip, generate_report, get_version
 from pathlib import Path
 from .safety import PhotStandard, check_lamps, SafetyCheckResult
-from .standard_zones import create_standard_zones, WHOLE_ROOM_FLUENCE
+from .standard_zones import create_standard_zones, get_zone_config, WHOLE_ROOM_FLUENCE
 from .units import LengthUnits, convert_length
 from .efficacy import InactivationData
 from .scene_registry import LampRegistry, ZoneRegistry, SurfaceRegistry
@@ -377,8 +377,10 @@ class Room:
 
     def set_standard(self, standard):
         """Update the photobiological safety standard the Room is subject to."""
+        prev = self.standard
         self.standard = standard
-        self._update_standard_zones(standard=self.standard)
+        if get_zone_config(prev) != get_zone_config(self.standard):
+            self._update_standard_zones(standard=self.standard)
         return self
 
     # --------------------- Reflectance ----------------------
@@ -757,17 +759,47 @@ class Room:
         self._update_standard_surfaces()
 
     def _update_units(self, units):
-        """Update units and convert zone spacings."""
+        """Update units, converting all spatial coordinates."""
         old_units = self.dim.units
         new_units = LengthUnits.from_any(units)
+        if old_units == new_units:
+            return
+
+        # Room dimensions (polygon vertices + z)
         self.dim = self.dim.with_(units=new_units)
+
+        # Lamp positions and surface/fixture dimensions
+        for lamp in self.lamps.values():
+            x, y, z = convert_length(old_units, new_units, lamp.x, lamp.y, lamp.z)
+            ax, ay, az = convert_length(old_units, new_units, lamp.pose.aimx, lamp.pose.aimy, lamp.pose.aimz)
+            lamp.move(x=x, y=y, z=z)
+            lamp.aim(x=ax, y=ay, z=az)
+            if lamp.surface.units != new_units:
+                lamp.set_units(new_units)
+
+        # Zone geometry (origin, spans, spacing)
         for zone in self.calc_zones.values():
             if zone.geometry is not None:
+                old_origin = zone.geometry.origin
+                old_spans = zone.geometry.spans
                 old_spacing = zone.geometry.spacing
+                new_origin = convert_length(old_units, new_units, *old_origin)
+                new_spans = convert_length(old_units, new_units, *old_spans)
                 new_spacing = convert_length(old_units, new_units, *old_spacing)
+                if not isinstance(new_origin, tuple):
+                    new_origin = (new_origin,)
+                if not isinstance(new_spans, tuple):
+                    new_spans = (new_spans,)
                 if not isinstance(new_spacing, tuple):
                     new_spacing = (new_spacing,)
-                zone.set_spacing(*new_spacing)
+                zone.geometry = zone.geometry.update(
+                    origin=new_origin, spans=new_spans, spacing_init=new_spacing,
+                )
+
+        # Surfaces (rebuild from new room dims, preserving reflectances)
+        if self.surfaces:
+            self._update_standard_surfaces()
+
         self.lamps.validate()
 
     def _update_standard_zones(self, standard: "PhotStandard"):

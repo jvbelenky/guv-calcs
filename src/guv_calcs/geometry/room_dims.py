@@ -143,35 +143,53 @@ class RoomDimensions:
         return self.polygon.contains_point_inclusive(x, y)
 
     def with_(self, *, x=None, y=None, z=None, units=None, polygon=None):
-        """Return a new RoomDimensions with updated values."""
+        """Return a new RoomDimensions with updated values.
+
+        When only ``units`` changes (no explicit x/y/z/polygon), the existing
+        polygon vertices and z are converted from the old units to the new ones.
+        """
         new_units = self.units if units is None else LengthUnits.from_any(units)
-        new_z = self.z if z is None else z
 
-        if polygon is not None:
-            new_polygon = polygon
-        elif (x is not None or y is not None) and not self.is_polygon:
-            bb = self.polygon.bounding_box  # (x_min, y_min, x_max, y_max)
-
-            if isinstance(x, (tuple, list)):
-                new_x_min, new_x_max = float(x[0]), float(x[1])
-            elif x is not None:
-                new_x_min, new_x_max = bb[0], bb[0] + float(x)
-            else:
-                new_x_min, new_x_max = bb[0], bb[2]
-
-            if isinstance(y, (tuple, list)):
-                new_y_min, new_y_max = float(y[0]), float(y[1])
-            elif y is not None:
-                new_y_min, new_y_max = bb[1], bb[1] + float(y)
-            else:
-                new_y_min, new_y_max = bb[1], bb[3]
-
-            new_polygon = Polygon2D(vertices=(
-                (new_x_min, new_y_min), (new_x_max, new_y_min),
-                (new_x_max, new_y_max), (new_x_min, new_y_max)
-            ))
+        # Unit conversion: scale existing geometry when only units change
+        needs_conversion = (
+            new_units != self.units
+            and x is None and y is None and z is None and polygon is None
+        )
+        if needs_conversion:
+            new_z = convert_length(self.units, new_units, self.z)
+            scaled_verts = tuple(
+                convert_length(self.units, new_units, vx, vy)
+                for vx, vy in self.polygon.vertices
+            )
+            new_polygon = Polygon2D(vertices=scaled_verts)
         else:
-            new_polygon = self.polygon
+            new_z = self.z if z is None else z
+
+            if polygon is not None:
+                new_polygon = polygon
+            elif (x is not None or y is not None) and not self.is_polygon:
+                bb = self.polygon.bounding_box  # (x_min, y_min, x_max, y_max)
+
+                if isinstance(x, (tuple, list)):
+                    new_x_min, new_x_max = float(x[0]), float(x[1])
+                elif x is not None:
+                    new_x_min, new_x_max = bb[0], bb[0] + float(x)
+                else:
+                    new_x_min, new_x_max = bb[0], bb[2]
+
+                if isinstance(y, (tuple, list)):
+                    new_y_min, new_y_max = float(y[0]), float(y[1])
+                elif y is not None:
+                    new_y_min, new_y_max = bb[1], bb[1] + float(y)
+                else:
+                    new_y_min, new_y_max = bb[1], bb[3]
+
+                new_polygon = Polygon2D(vertices=(
+                    (new_x_min, new_y_min), (new_x_max, new_y_min),
+                    (new_x_max, new_y_max), (new_x_min, new_y_max)
+                ))
+            else:
+                new_polygon = self.polygon
 
         return RoomDimensions(
             polygon=new_polygon,
