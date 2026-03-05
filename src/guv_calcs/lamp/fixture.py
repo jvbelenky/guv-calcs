@@ -36,7 +36,7 @@ class FixtureShape(ParseableEnum):
             raise ValueError(f"Unknown FixtureShape: {token}")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, repr=False)
 class Fixture:
     """
     Physical housing of a luminaire.
@@ -58,6 +58,12 @@ class Fixture:
     housing_length: float = 0.0
     housing_height: float = 0.0
     shape: FixtureShape = FixtureShape.RECTANGULAR
+
+    def __repr__(self):
+        return (
+            f"Fixture({self.housing_width}×{self.housing_length}×{self.housing_height}, "
+            f"shape={self.shape.value!r})"
+        )
 
     def to_dict(self) -> dict:
         """Serialize fixture state for persistence."""

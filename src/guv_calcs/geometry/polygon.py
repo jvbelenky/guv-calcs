@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class Polygon2D:
     """
     A 2D polygon defined by vertices in counter-clockwise order.
@@ -15,6 +15,9 @@ class Polygon2D:
 
     vertices: tuple[tuple[float, float], ...]
     _cache: dict = field(default_factory=dict, repr=False, compare=False)
+
+    def __repr__(self):
+        return f"Polygon2D({self.n_vertices} vertices, area={self.area:.3g})"
 
     def __post_init__(self):
         if len(self.vertices) < 3:

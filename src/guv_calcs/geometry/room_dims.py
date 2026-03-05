@@ -39,7 +39,7 @@ class WallFace(NamedTuple):
     normal_2d: tuple
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class RoomDimensions:
     """Room dimensions defined by a 2D polygon floor plan with uniform ceiling height.
 
@@ -52,6 +52,13 @@ class RoomDimensions:
     z: float
     units: LengthUnits = LengthUnits.METERS
     _cache: dict = field(default_factory=dict, repr=False, compare=False)
+
+    def __repr__(self):
+        if self.is_polygon:
+            shape = f"polygon={self.polygon.n_vertices} vertices, area={self.polygon.area:.3g}"
+        else:
+            shape = f"x={self.x}, y={self.y}"
+        return f"RoomDimensions({shape}, z={self.z}, units={self.units.value!r})"
 
     def __post_init__(self):
         if not isinstance(self.polygon, Polygon2D):

@@ -19,6 +19,11 @@ class IntensityMap:
         """Load intensity map from various sources."""
         self.original = self._load(source)
 
+    def __repr__(self):
+        if self.original is None:
+            return "IntensityMap(None)"
+        return f"IntensityMap({self.original.shape[0]}×{self.original.shape[1]})"
+
     @property
     def normalized(self):
         """Return mean-normalized map, or None if no map."""

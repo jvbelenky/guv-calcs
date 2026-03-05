@@ -32,6 +32,15 @@ class LampGeometry:
         # Set back-reference so surface can access pose
         self._surface.set_geometry(self)
 
+    def __repr__(self):
+        p = self._pose
+        s = self._surface
+        return (
+            f"LampGeometry(pos=({p.x:.3g}, {p.y:.3g}, {p.z:.3g}), "
+            f"surface={s.width}×{s.length}, "
+            f"fixture={self._fixture.housing_width}×{self._fixture.housing_length})"
+        )
+
     # --- Properties ---
 
     @property

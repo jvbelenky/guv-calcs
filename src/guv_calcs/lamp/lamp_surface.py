@@ -51,6 +51,14 @@ class LampSurface:
 
         self.plotter = LampSurfacePlotter(self)
 
+    def __repr__(self):
+        imap = self._intensity_map.original is not None
+        return (
+            f"LampSurface(width={self.width}, length={self.length}, "
+            f"height={self.height}, units={self.units.value!r}, "
+            f"source_density={self._source_density}, intensity_map={imap})"
+        )
+
     # ---- Geometry back-reference ----
 
     def set_geometry(self, geometry: "LampGeometry"):

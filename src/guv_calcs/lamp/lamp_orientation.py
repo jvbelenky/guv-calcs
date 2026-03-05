@@ -3,7 +3,7 @@ import numpy as np
 from ..geometry import to_polar
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, repr=False)
 class LampOrientation:
     x: float = 0.0
     y: float = 0.0
@@ -12,6 +12,13 @@ class LampOrientation:
     aimx: float = 0.0
     aimy: float = 0.0
     aimz: float = -1.0
+
+    def __repr__(self):
+        return (
+            f"LampOrientation(pos=({self.x:.3g}, {self.y:.3g}, {self.z:.3g}), "
+            f"aim=({self.aimx:.3g}, {self.aimy:.3g}, {self.aimz:.3g}), "
+            f"angle={self.angle})"
+        )
 
     def __post_init__(self):
         if (self.aimx, self.aimy, self.aimz) == (self.x, self.y, self.z):

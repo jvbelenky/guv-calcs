@@ -6,7 +6,7 @@ import numpy as np
 from ..io import get_spectral_weightings, load_spectrum_file, rows_to_bytes
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class Spectrum:
     """
     Immutable spectral power distribution for a UV lamp.
@@ -23,6 +23,12 @@ class Spectrum:
     wavelengths: tuple[float, ...]
     intensities: tuple[float, ...]
     _cache: dict = field(default_factory=dict, repr=False, compare=False)
+
+    def __repr__(self):
+        n = len(self.wavelengths)
+        wl_min = self.wavelengths[0] if n else None
+        wl_max = self.wavelengths[-1] if n else None
+        return f"Spectrum({n} points, {wl_min}-{wl_max} nm)"
 
     def __post_init__(self):
         # Convert to numpy for processing, then back to tuple for immutability
