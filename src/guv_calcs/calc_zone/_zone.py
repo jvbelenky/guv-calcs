@@ -160,7 +160,7 @@ class CalcZone(ABC):
         """if changes, these parameters indicate zone must be recalculated"""
         if self.geometry is None:
             return ()
-        return self.geometry.calc_state
+        return self.geometry.calc_state + (self.result.base_values is not None,)
 
     @property
     def update_state(self):
