@@ -1,7 +1,7 @@
 import json
 import numpy as np
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from ..calc_manager import LightingCalculator
 from ..geometry import VolGrid, PlaneGrid
@@ -270,6 +270,18 @@ class CalcZone(ABC):
     def seconds(self) -> float:
         return self._exposure_time.total_seconds()
 
+
+    def convert_units(self, old_units, new_units):
+        """Convert geometry coordinates without invalidating calculated values."""
+        if self._geometry is not None:
+            self._geometry = self._geometry._convert_units(old_units, new_units)
+            # Update cached calc_state to match new geometry, preventing unnecessary recalc
+            if self.calculator.cache.calc_state is not None:
+                self.calculator.cache = replace(
+                    self.calculator.cache,
+                    calc_state=self.calc_state,
+                    update_state=self.update_state,
+                )
 
     def set_dimensions(
         self,

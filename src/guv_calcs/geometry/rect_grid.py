@@ -4,6 +4,7 @@ import numpy as np
 import warnings
 from .axis import Axis1D
 from .._serialization import init_from_dict
+from ..units import convert_length_tuple
 
 
 @dataclass(frozen=True, eq=False)
@@ -69,6 +70,17 @@ class RectGrid:
         # clear cache
         object.__setattr__(new, "_cache", {})
         return new
+
+    def _convert_units(self, old_units, new_units):
+        """Convert all spatial coordinates from old_units to new_units."""
+        new_origin = convert_length_tuple(old_units, new_units, *self.origin)
+        new_spans = convert_length_tuple(old_units, new_units, *self.spans)
+        new_spacing = convert_length_tuple(old_units, new_units, *self.spacing)
+        return self.update(
+            origin=new_origin, spans=new_spans,
+            spacing_init=new_spacing,
+            num_points_init=self.num_points,
+        )
 
     @property
     def axes(self):
@@ -225,9 +237,9 @@ class VolGrid(RectGrid):
         origin = np.asarray(mins, float)
         spans = np.asarray(maxs, float) - origin
         if preserve_spacing:
-            return self.update(origin=origin, spans=spans, spacing_init=self.spacing)
+            return self.update(origin=origin, spans=spans, spacing_init=self.spacing, num_points_init=None)
         else:
-            return self.update(origin=origin, spans=spans, num_points_init=self.num_points)
+            return self.update(origin=origin, spans=spans, num_points_init=self.num_points, spacing_init=None)
 
 
 @dataclass(frozen=True, eq=False)
@@ -372,6 +384,7 @@ class PlaneGrid(RectGrid):
                 origin=origin,
                 spans=(span_u, span_v),
                 spacing_init=self.spacing,
+                num_points_init=None,
             )
         else:
             return self.update(

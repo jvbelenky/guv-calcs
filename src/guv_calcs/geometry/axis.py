@@ -22,8 +22,6 @@ class Axis1D:
     def __post_init__(self):
         self._check_spacing(self.spacing_init)
         self._check_num_points(self.num_points_init)
-        # print(self.spacing_init,self.num_points_init)
-        # print(self.spacing, self.num_points)
 
     @property
     def default_spacing(self):
@@ -59,10 +57,11 @@ class Axis1D:
     def num_points(self):
         if self.span == 0:
             return 1
-        if self.spacing_init is None or self.spacing_init == 0:
-            return self.num_points_init or self.default_num_points
-        else:
+        if self.num_points_init is not None:
+            return self.num_points_init
+        if self.spacing_init is not None and self.spacing_init != 0:
             return int(round(self.span / self.spacing_init))
+        return self.default_num_points
 
     @property
     def points(self):

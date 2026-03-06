@@ -20,6 +20,8 @@ class StandardZoneConfig:
     skin_horiz: bool
 
 
+# height_ft values are deliberately rounded to user-friendly numbers
+# (e.g. 6.25 ft = 6'3") rather than exact conversions from height_m
 _ZONE_CONFIGS = {
     "ul8802": StandardZoneConfig(height_m=1.9, height_ft=6.25, eye_vert=False, eye_fov_vert=180, skin_horiz=False),
 }

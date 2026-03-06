@@ -1,7 +1,7 @@
 import numpy as np
 from dataclasses import dataclass, field
 import warnings
-from .units import convert_units
+from .units import convert_units, LengthUnits
 
 np.seterr(divide="ignore", invalid="ignore")
 
@@ -108,6 +108,12 @@ class LightingCalculator:
         # sum across lamp values
         return self.aggregate(lamps, zv)
 
+    def _to_meters(self, R, lamp):
+        """Convert distance array to meters for inverse-square calculation."""
+        if lamp.surface.units != LengthUnits.METERS:
+            return np.array(convert_units(lamp.surface.units, "meters", *R))
+        return R
+
     def calculate_lamp(self, lamp, zv, hard: bool):
         """
         Calculate the zone values for a single lamp
@@ -122,8 +128,7 @@ class LightingCalculator:
             # get coords
             rel_coords = zv.coords - lamp.surface.position
             Theta, Phi, R = lamp.transform_to_lamp(rel_coords, which="polar")
-            if lamp.surface.units.lower() != "meters":
-                R = np.array(convert_units(lamp.surface.units, "meters", *R))
+            R = self._to_meters(R, lamp)
             # fetch intensity values from photometric data
             phot = lamp.ies.photometry.interpolated()
             values = phot.get_intensity(Theta, Phi) / R ** 2
@@ -175,8 +180,7 @@ class LightingCalculator:
             Theta, Phi, R = lamp.transform_to_lamp(rel_coords, which="polar")
             Theta_n, Phi_n, R_n = Theta[near_idx], Phi[near_idx], R[near_idx]
 
-            if lamp.surface.units.lower() != "meters":
-                R_n = np.array(convert_units(lamp.surface.units, "meters", *R_n))
+            R_n = self._to_meters(R_n, lamp)
 
             phot = lamp.ies.photometry.interpolated()
             near_values = phot.get_intensity(Theta_n, Phi_n) / R_n ** 2

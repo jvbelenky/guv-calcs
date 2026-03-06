@@ -169,8 +169,8 @@ class LampSurface:
         """Set units and convert all values."""
         units = LengthUnits.from_any(units)
         if units != self.units:
-            self.width, self.length = convert_units(
-                self.units, units, self.width, self.length
+            self.width, self.length, self.height = convert_units(
+                self.units, units, self.width, self.length, self.height
             )
             self._user_units = units
             self.units = units

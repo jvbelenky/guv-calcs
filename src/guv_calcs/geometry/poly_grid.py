@@ -3,6 +3,7 @@ import numpy as np
 from .axis import Axis1D
 from .polygon import Polygon2D
 from .._serialization import init_from_dict
+from ..units import convert_length, convert_length_tuple
 
 
 @dataclass(frozen=True, eq=False)
@@ -184,20 +185,37 @@ class PolygonGrid(PolygonGridBase):
             self.direction,
         )
 
+    def _convert_units(self, old_units, new_units):
+        """Convert all spatial coordinates from old_units to new_units."""
+        factor = convert_length(old_units, new_units, 1.0)
+        new_verts = tuple(
+            tuple(c * factor for c in v) for v in self.polygon.vertices
+        )
+        new_poly = Polygon2D(vertices=new_verts)
+        new_height = convert_length(old_units, new_units, self.height)
+        new_spacing = convert_length_tuple(old_units, new_units, *self.spacing)
+        return self.update(
+            polygon=new_poly, height=new_height,
+            spacing_init=new_spacing,
+            num_points_init=self.num_points_init,
+        )
+
     def update_dimensions(self, polygon=None, height=None, preserve_spacing=True):
         """Update with new polygon or height."""
         new_poly = polygon if polygon is not None else self.polygon
         new_height = height if height is not None else self.height
         if preserve_spacing:
             return self.update(
-                polygon=new_poly, 
-                height=new_height, 
-                spacing_init=self.spacing)
+                polygon=new_poly,
+                height=new_height,
+                spacing_init=self.spacing,
+                num_points_init=None)
         else:
             return self.update(
                 polygon=new_poly,
                 height=new_height,
                 num_points_init=self.num_points_init,
+                spacing_init=None,
             )
 
     def to_dict(self) -> dict:
@@ -369,12 +387,28 @@ class PolygonVolGrid(PolygonGridBase):
             self.offset,
         )
 
+    def _convert_units(self, old_units, new_units):
+        """Convert all spatial coordinates from old_units to new_units."""
+        factor = convert_length(old_units, new_units, 1.0)
+        new_verts = tuple(
+            tuple(c * factor for c in v) for v in self.polygon.vertices
+        )
+        new_poly = Polygon2D(vertices=new_verts)
+        new_z = convert_length(old_units, new_units, self.z_height)
+        new_spacing = convert_length_tuple(old_units, new_units, *self.spacing)
+        return self.update(
+            polygon=new_poly, z_height=new_z,
+            spacing_init=new_spacing,
+            num_points_init=self.num_points_init,
+        )
+
     def update_dimensions(self, mins=None, maxs=None, preserve_spacing=True):
         """Update with new z_height (polygon shape preserved)."""
         new_z = maxs[2] if maxs is not None else self.z_height
         if preserve_spacing:
             return self.update(z_height=new_z,
-                               spacing_init=self.spacing)
+                               spacing_init=self.spacing,
+                               num_points_init=None)
         else:
             return self.update(z_height=new_z,
                                num_points_init=self.num_points_init, spacing_init=None)

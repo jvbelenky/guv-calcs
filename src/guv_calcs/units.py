@@ -121,6 +121,12 @@ def convert_length(src, dst, *args, sigfigs: int | None = 12):
     return convert(LengthUnits, src, dst, *args, sigfigs=sigfigs)
 
 
+def convert_length_tuple(src, dst, *args, sigfigs: int | None = 12):
+    """Like convert_length but always returns a tuple."""
+    result = convert_length(src, dst, *args, sigfigs=sigfigs)
+    return result if isinstance(result, tuple) else (result,)
+
+
 def convert_time(src, dst, *args, sigfigs: int | None = None):
     return convert(TimeUnits, src, dst, *args, sigfigs=sigfigs)
 

@@ -430,9 +430,30 @@ class Room:
     # -------------- Dimensions and Units -----------------------
 
     def set_units(self, units):
-        """Set room units."""
-        self._update_units(units)
-        self._update_standard_zones(standard=self.standard)
+        """Set room units, converting all spatial coordinates."""
+        old_units = self.dim.units
+        new_units = LengthUnits.from_any(units)
+        if old_units == new_units:
+            return
+
+        # Room dimensions (polygon vertices + z)
+        self.dim = self.dim.with_(units=new_units)
+
+        # Lamp positions and surface/fixture dimensions
+        for lamp in self.lamps.values():
+            x, y, z = convert_length(old_units, new_units, lamp.x, lamp.y, lamp.z)
+            ax, ay, az = convert_length(old_units, new_units, lamp.pose.aimx, lamp.pose.aimy, lamp.pose.aimz)
+            lamp.move(x=x, y=y, z=z)
+            lamp.aim(x=ax, y=ay, z=az)
+            lamp.set_units(new_units)
+
+        # Zone geometry (origin, spans, spacing, polygon vertices, etc.)
+        for zone in self.calc_zones.values():
+            zone.convert_units(old_units, new_units)
+        # Surfaces (rebuild from new room dims, preserving reflectances)
+        if self.surfaces:
+            self._update_standard_surfaces()
+            
         return self
 
     def set_dimensions(self, x=None, y=None, z=None):
@@ -757,50 +778,6 @@ class Room:
         else:
             self.dim = self.dim.with_(z=z)
         self._update_standard_surfaces()
-
-    def _update_units(self, units):
-        """Update units, converting all spatial coordinates."""
-        old_units = self.dim.units
-        new_units = LengthUnits.from_any(units)
-        if old_units == new_units:
-            return
-
-        # Room dimensions (polygon vertices + z)
-        self.dim = self.dim.with_(units=new_units)
-
-        # Lamp positions and surface/fixture dimensions
-        for lamp in self.lamps.values():
-            x, y, z = convert_length(old_units, new_units, lamp.x, lamp.y, lamp.z)
-            ax, ay, az = convert_length(old_units, new_units, lamp.pose.aimx, lamp.pose.aimy, lamp.pose.aimz)
-            lamp.move(x=x, y=y, z=z)
-            lamp.aim(x=ax, y=ay, z=az)
-            if lamp.surface.units != new_units:
-                lamp.set_units(new_units)
-
-        # Zone geometry (origin, spans, spacing)
-        for zone in self.calc_zones.values():
-            if zone.geometry is not None:
-                old_origin = zone.geometry.origin
-                old_spans = zone.geometry.spans
-                old_spacing = zone.geometry.spacing
-                new_origin = convert_length(old_units, new_units, *old_origin)
-                new_spans = convert_length(old_units, new_units, *old_spans)
-                new_spacing = convert_length(old_units, new_units, *old_spacing)
-                if not isinstance(new_origin, tuple):
-                    new_origin = (new_origin,)
-                if not isinstance(new_spans, tuple):
-                    new_spans = (new_spans,)
-                if not isinstance(new_spacing, tuple):
-                    new_spacing = (new_spacing,)
-                zone.geometry = zone.geometry.update(
-                    origin=new_origin, spans=new_spans, spacing_init=new_spacing,
-                )
-
-        # Surfaces (rebuild from new room dims, preserving reflectances)
-        if self.surfaces:
-            self._update_standard_surfaces()
-
-        self.lamps.validate()
 
     def _update_standard_zones(self, standard: "PhotStandard"):
         """Update the standard safety calculation zones."""

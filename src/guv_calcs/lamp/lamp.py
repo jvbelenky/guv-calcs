@@ -854,7 +854,8 @@ class Lamp:
         old_units = self.surface.units
 
         if self.ies is not None:
-            self.ies.update(units=1 if units == "feet" else 2)
+            # IES standard only supports feet (1) and meters (2)
+            self.ies.update(units=1 if new_units == LengthUnits.FEET else 2)
         self.surface.set_units(units)
 
         # Convert fixture dimensions if units changed
