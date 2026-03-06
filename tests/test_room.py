@@ -76,6 +76,31 @@ class TestRoomUnits:
         assert basic_room.y == 8
         assert basic_room.z == 3.5
 
+    def test_set_units_preserves_calculated_values(self, calculated_room):
+        """Changing room units should not invalidate zone values."""
+        values = {}
+        for zid, zone in calculated_room.calc_zones.items():
+            if zone.values is not None:
+                values[zid] = zone.values.copy()
+        calculated_room.set_units("feet")
+        for zid, before in values.items():
+            after = calculated_room.calc_zones[zid].values
+            assert after is not None, f"{zid} values were cleared"
+            assert np.allclose(before, after), f"{zid} values changed"
+
+    def test_set_units_roundtrip_preserves_values(self, calculated_room):
+        """meters -> feet -> meters should preserve values."""
+        values_orig = {}
+        for zid, zone in calculated_room.calc_zones.items():
+            if zone.values is not None:
+                values_orig[zid] = zone.values.copy()
+        calculated_room.set_units("feet")
+        calculated_room.set_units("meters")
+        for zid, orig in values_orig.items():
+            after = calculated_room.calc_zones[zid].values
+            assert after is not None
+            assert np.allclose(orig, after)
+
 
 @pytest.mark.filterwarnings("ignore:aerolamp exceeds room boundaries")
 class TestRoomLampManagement:

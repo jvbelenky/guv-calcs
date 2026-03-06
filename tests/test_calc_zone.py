@@ -355,3 +355,36 @@ class TestExposureTime:
         vol = CalcVol(zone_id="T", minutes=15)
         assert vol.minutes == 15.0
         assert vol.hours == 0.25
+
+
+class TestCalcZoneConvertUnits:
+    """Tests for CalcZone.convert_units preserving calculated values."""
+
+    def test_convert_units_preserves_values(self, calculated_room):
+        """Changing units should not clear calculated values."""
+        zone = calculated_room.calc_zones["WholeRoomFluence"]
+        values_before = zone.values.copy()
+        zone.convert_units("meters", "feet")
+        assert zone.values is not None
+        assert np.allclose(values_before, zone.values)
+
+    def test_convert_units_updates_geometry(self, calculated_room):
+        """Geometry coordinates should scale with unit conversion."""
+        zone = calculated_room.calc_zones["WholeRoomFluence"]
+        spacing_before = zone.geometry.spacing
+        zone.convert_units("meters", "feet")
+        factor = 1.0 / 0.3048
+        for old, new in zip(spacing_before, zone.geometry.spacing):
+            assert np.isclose(new, old * factor, rtol=1e-4)
+
+    def test_convert_units_updates_cache(self, calculated_room):
+        """Cache calc_state should match new geometry after conversion."""
+        zone = calculated_room.calc_zones["WholeRoomFluence"]
+        zone.convert_units("meters", "feet")
+        assert zone.calculator.cache.calc_state == zone.calc_state
+
+    def test_convert_units_noop_without_geometry(self):
+        """Should not error when geometry is None."""
+        zone = CalcPlane(zone_id="test")
+        zone._geometry = None
+        zone.convert_units("meters", "feet")  # should not raise

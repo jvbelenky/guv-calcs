@@ -3,6 +3,7 @@
 import pytest
 import numpy as np
 from guv_calcs import convert_length, convert_time, convert_units
+from guv_calcs.units import convert_length_tuple
 
 
 class TestLengthConversions:
@@ -154,3 +155,23 @@ class TestEdgeCases:
         """Invalid unit should raise ValueError."""
         with pytest.raises(ValueError):
             convert_length("invalid_unit", "feet", 1.0)
+
+
+class TestConvertLengthTuple:
+    """Tests for convert_length_tuple helper."""
+
+    def test_single_value_returns_tuple(self):
+        result = convert_length_tuple("meters", "feet", 1.0)
+        assert isinstance(result, tuple)
+        assert len(result) == 1
+
+    def test_multiple_values_returns_tuple(self):
+        result = convert_length_tuple("meters", "feet", 1.0, 2.0, 3.0)
+        assert isinstance(result, tuple)
+        assert len(result) == 3
+
+    def test_values_match_convert_length(self):
+        single = convert_length_tuple("meters", "feet", 1.0)
+        multi = convert_length_tuple("meters", "feet", 1.0, 2.0)
+        assert np.isclose(single[0], convert_length("meters", "feet", 1.0))
+        assert np.isclose(multi[0], single[0])
