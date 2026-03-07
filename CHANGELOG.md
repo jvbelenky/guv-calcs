@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file.
 
 - room.set_units() early return is now self, not None
 
+### Changed
+
+- PolyGrids and RectGrids consolidated; PlaneGrid and VolGrid classes replaced with SurfaceGrid and VolumeGrid classes
+- CalcPlane/CalcVol can no longer be constructed with legacy constructors--use from_legacy instead
+
 ## [0.6.5] - 2026-03-06
 
 ### Added

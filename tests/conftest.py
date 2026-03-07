@@ -3,7 +3,7 @@
 import pytest
 import tempfile
 import os
-from guv_calcs import Room, Lamp, CalcPlane, CalcVol, Polygon2D
+from guv_calcs import Room, Lamp, CalcPlane, CalcVol, Polygon2D, SurfaceGrid, VolumeGrid
 
 
 # ============== Warning Filters ==============
@@ -91,11 +91,8 @@ def calc_plane():
     """A basic calculation plane at height 1.8m."""
     return CalcPlane(
         zone_id="TestPlane",
-        x1=0, x2=6,
-        y1=0, y2=4,
-        height=1.8,
-        x_spacing=0.5,
-        y_spacing=0.5,
+        geometry=SurfaceGrid.from_legacy(
+            mins=(0, 0), maxs=(6, 4), height=1.8, spacing_init=(0.5, 0.5)),
     )
 
 
@@ -104,12 +101,8 @@ def calc_volume():
     """A basic calculation volume covering the full room."""
     return CalcVol(
         zone_id="TestVolume",
-        x1=0, x2=6,
-        y1=0, y2=4,
-        z1=0, z2=2.7,
-        x_spacing=0.5,
-        y_spacing=0.5,
-        z_spacing=0.5,
+        geometry=VolumeGrid.from_legacy(
+            mins=(0, 0, 0), maxs=(6, 4, 2.7), spacing_init=(0.5, 0.5, 0.5)),
     )
 
 
@@ -118,9 +111,8 @@ def calc_plane_dose():
     """A calculation plane configured for dose mode."""
     return CalcPlane(
         zone_id="DosePlane",
-        x1=0, x2=6,
-        y1=0, y2=4,
-        height=1.0,
+        geometry=SurfaceGrid.from_legacy(
+            mins=(0, 0), maxs=(6, 4), height=1.0),
         dose=True,
         hours=8,
     )

@@ -3,7 +3,6 @@ import numpy as np
 from scipy.spatial import Delaunay
 from .geometry import to_polar
 from .calc_zone import CalcPlane, CalcVol
-from .geometry import PolygonGrid, PolygonVolGrid
 from .units import convert_units
 
 
@@ -307,15 +306,13 @@ class RoomPlotter:
 
     def _plot_plane_values(self, zone, fig):
         # Check if this is a polygon grid (irregular points)
-        is_irregular = isinstance(zone.geometry, PolygonGrid)
-
-        if is_irregular:
+        if not zone.geometry.is_rectangular:
             # Use Mesh3d with Delaunay triangulation for irregular grids
             x, y, z = zone.coords.T
             values = zone.values.flatten() if zone.values.ndim > 1 else zone.values
 
             # Create 2D triangulation based on the plane orientation
-            if isinstance(zone.geometry, PolygonGrid):
+            if zone.geometry.ref_surface == "xy" or zone.geometry.ref_surface is None:
                 # Floor/ceiling - triangulate in xy plane
                 tri = Delaunay(np.column_stack((x, y)))
                 simplices = tri.simplices
@@ -369,7 +366,7 @@ class RoomPlotter:
         if zone_value_trace.name not in traces:
             fig.add_trace(zone_value_trace)
         else:
-            if is_irregular:
+            if not zone.geometry.is_rectangular:
                 self._update_trace_by_id(
                     fig,
                     zone.zone_id,
@@ -416,7 +413,7 @@ class RoomPlotter:
     def _plot_vol(self, zone, fig, select_id=None):
 
         # Check if this is a polygon volume
-        if isinstance(zone.geometry, PolygonVolGrid):
+        if not zone.geometry.is_rectangular:
             x_coords, y_coords, z_coords = self._get_polygon_vol_coords(zone.geometry)
         else:
             x_coords, y_coords, z_coords = self._get_box_coords(
@@ -452,7 +449,7 @@ class RoomPlotter:
             values = zone.values.flatten()
 
             # For polygon volumes, use full grid with -inf masking for proper isosurface
-            if isinstance(zone.geometry, PolygonVolGrid):
+            if not zone.geometry.is_rectangular:
                 coords_full = zone.geometry.coords_full
                 values_full = zone.geometry.values_to_full_grid(values)
                 # Filter out -inf values for mean calculation
@@ -587,7 +584,7 @@ class RoomPlotter:
     def _get_polygon_vol_coords(self, geometry):
         """Get coordinates for drawing a polygon volume outline."""
         polygon = geometry.polygon
-        z_height = geometry.z_height
+        z_height = geometry.depth
 
         # Get polygon vertices and close the polygon
         verts = list(polygon.vertices)

@@ -3,7 +3,7 @@
 import pytest
 import numpy as np
 from datetime import timedelta
-from guv_calcs import CalcPlane, CalcVol
+from guv_calcs import CalcPlane, CalcVol, SurfaceGrid, VolumeGrid
 
 
 class TestCalcPlaneCreation:
@@ -16,12 +16,11 @@ class TestCalcPlaneCreation:
         assert plane.calctype == "Plane"
 
     def test_custom_dimensions(self):
-        """CalcPlane should accept custom dimensions."""
+        """CalcPlane should accept custom dimensions via geometry."""
         plane = CalcPlane(
             zone_id="TestPlane",
-            x1=0, x2=10,
-            y1=0, y2=8,
-            height=1.5,
+            geometry=SurfaceGrid.from_legacy(
+                mins=(0, 0), maxs=(10, 8), height=1.5),
         )
         assert plane.x1 == 0
         assert plane.x2 == 10
@@ -30,18 +29,19 @@ class TestCalcPlaneCreation:
         assert plane.height == 1.5
 
     def test_custom_spacing(self):
-        """CalcPlane should accept custom spacing."""
+        """CalcPlane should accept custom spacing via geometry."""
         plane = CalcPlane(
             zone_id="TestPlane",
-            x_spacing=0.25,
-            y_spacing=0.25,
+            geometry=SurfaceGrid.from_legacy(
+                mins=(0, 0), maxs=(6, 4), spacing_init=(0.25, 0.25)),
         )
         assert plane.x_spacing == 0.25
         assert plane.y_spacing == 0.25
 
     def test_constructor_allows_zero_max_bounds(self):
-        """Legacy constructor should preserve explicit zero upper bounds."""
-        plane = CalcPlane(x1=0, x2=0, y1=0, y2=0, height=0)
+        """Constructor should preserve explicit zero upper bounds."""
+        plane = CalcPlane(geometry=SurfaceGrid.from_legacy(
+            mins=(0, 0), maxs=(0, 0), height=0))
         assert plane.x2 == 0
         assert plane.y2 == 0
 
@@ -107,7 +107,8 @@ class TestCalcPlaneModification:
 
     def test_set_dimensions_allows_zero_values(self):
         """set_dimensions() should treat 0 as explicit input, not fallback."""
-        plane = CalcPlane(x1=1, x2=2, y1=1, y2=2, height=1.0)
+        plane = CalcPlane(geometry=SurfaceGrid.from_legacy(
+            mins=(1, 1), maxs=(2, 2), height=1.0))
         plane.set_dimensions(x1=0, y1=0)
         assert plane.x1 == 0
         assert plane.y1 == 0
@@ -135,12 +136,11 @@ class TestCalcVolCreation:
         assert vol.calctype == "Volume"
 
     def test_custom_dimensions(self):
-        """CalcVol should accept custom dimensions."""
+        """CalcVol should accept custom dimensions via geometry."""
         vol = CalcVol(
             zone_id="TestVol",
-            x1=0, x2=10,
-            y1=0, y2=8,
-            z1=0, z2=3.0,
+            geometry=VolumeGrid.from_legacy(
+                mins=(0, 0, 0), maxs=(10, 8, 3.0)),
         )
         assert vol.x1 == 0
         assert vol.x2 == 10
@@ -150,19 +150,20 @@ class TestCalcVolCreation:
         assert vol.z2 == 3.0
 
     def test_constructor_allows_zero_max_bounds(self):
-        """Legacy constructor should preserve explicit zero upper bounds."""
-        vol = CalcVol(x1=0, x2=0, y1=0, y2=0, z1=0, z2=0)
+        """Constructor should preserve explicit zero upper bounds."""
+        vol = CalcVol(geometry=VolumeGrid.from_legacy(
+            mins=(0, 0, 0), maxs=(0, 0, 0)))
         assert vol.x2 == 0
         assert vol.y2 == 0
         assert vol.z2 == 0
 
     def test_custom_spacing(self):
-        """CalcVol should accept custom spacing."""
+        """CalcVol should accept custom spacing via geometry."""
         vol = CalcVol(
             zone_id="TestVol",
-            x_spacing=0.25,
-            y_spacing=0.25,
-            z_spacing=0.25,
+            geometry=VolumeGrid.from_legacy(
+                mins=(0, 0, 0), maxs=(6, 4, 2.7),
+                spacing_init=(0.25, 0.25, 0.25)),
         )
         assert vol.x_spacing == 0.25
         assert vol.y_spacing == 0.25
@@ -229,14 +230,16 @@ class TestCalcZoneSerialization:
 
     def test_plane_equality(self):
         """Two CalcPlanes with same properties should be equal."""
-        plane1 = CalcPlane(zone_id="Test", x1=0, x2=6, y1=0, y2=4, height=1.8)
-        plane2 = CalcPlane(zone_id="Test", x1=0, x2=6, y1=0, y2=4, height=1.8)
+        geom = SurfaceGrid.from_legacy(mins=(0, 0), maxs=(6, 4), height=1.8)
+        plane1 = CalcPlane(zone_id="Test", geometry=geom)
+        plane2 = CalcPlane(zone_id="Test", geometry=geom)
         assert plane1 == plane2
 
     def test_volume_equality(self):
         """Two CalcVols with same properties should be equal."""
-        vol1 = CalcVol(zone_id="Test", x1=0, x2=6, y1=0, y2=4, z1=0, z2=2.7)
-        vol2 = CalcVol(zone_id="Test", x1=0, x2=6, y1=0, y2=4, z1=0, z2=2.7)
+        geom = VolumeGrid.from_legacy(mins=(0, 0, 0), maxs=(6, 4, 2.7))
+        vol1 = CalcVol(zone_id="Test", geometry=geom)
+        vol2 = CalcVol(zone_id="Test", geometry=geom)
         assert vol1 == vol2
 
 

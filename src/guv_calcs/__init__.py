@@ -3,7 +3,7 @@ from .project import Project
 from .lamp import Lamp, LampType, GUVType, LampPlacer, Spectrum, sum_spectrum
 from .calc_zone import CalcVol, CalcPlane
 from .geometry import Polygon2D, to_polar, to_cartesian, attitude
-from .geometry import PlaneGrid, VolGrid
+from .geometry import SurfaceGrid, VolumeGrid
 from .io import get_spectral_weightings
 from .efficacy import InactivationData
 from .safety import PhotStandard, get_tlvs, get_max_irradiance, get_seconds_to_tlv
@@ -24,8 +24,8 @@ __all__ = [
     "sum_spectrum",
     "CalcVol",
     "CalcPlane",
-    "PlaneGrid",
-    "VolGrid",
+    "SurfaceGrid",
+    "VolumeGrid",
     "Polygon2D",
     "to_polar",
     "to_cartesian",

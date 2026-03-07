@@ -3,7 +3,7 @@
 import pytest
 import numpy as np
 import warnings
-from guv_calcs import Room, Lamp, CalcPlane, CalcVol, Spectrum, PhotStandard
+from guv_calcs import Room, Lamp, CalcPlane, CalcVol, Spectrum, PhotStandard, SurfaceGrid, VolumeGrid
 
 
 class TestBasicWorkflow:
@@ -127,11 +127,9 @@ class TestCustomZoneWorkflow:
         # Add custom plane at workplane height
         plane = CalcPlane(
             zone_id="WorkPlane",
-            x1=0, x2=6,
-            y1=0, y2=4,
-            height=0.75,  # desk height
-            x_spacing=0.25,
-            y_spacing=0.25,
+            geometry=SurfaceGrid.from_legacy(
+                mins=(0, 0), maxs=(6, 4), height=0.75,
+                spacing_init=(0.25, 0.25)),
         )
         room.add_calc_zone(plane)
         room.calculate()
@@ -152,12 +150,9 @@ class TestCustomZoneWorkflow:
         # Add custom volume for breathing zone
         volume = CalcVol(
             zone_id="BreathingZone",
-            x1=1, x2=5,
-            y1=1, y2=3,
-            z1=1.0, z2=1.8,  # breathing zone height
-            x_spacing=0.25,
-            y_spacing=0.25,
-            z_spacing=0.2,
+            geometry=VolumeGrid.from_legacy(
+                mins=(1, 1, 1.0), maxs=(5, 3, 1.8),
+                spacing_init=(0.25, 0.25, 0.2)),
         )
         room.add_calc_zone(volume)
         room.calculate()
@@ -376,7 +371,8 @@ class TestModifyAfterCalculation:
         )
 
         # Add custom zone
-        plane = CalcPlane(zone_id="CustomPlane", height=1.0)
+        plane = CalcPlane(zone_id="CustomPlane", geometry=SurfaceGrid.from_legacy(
+            mins=(0, 0), maxs=(6, 4), height=1.0))
         room.add_calc_zone(plane)
         room.calculate()
 
@@ -463,14 +459,16 @@ class TestOutOfOrderOperations:
         )
 
         # Add one zone and calculate
-        plane1 = CalcPlane(zone_id="Plane1", height=1.0)
+        plane1 = CalcPlane(zone_id="Plane1", geometry=SurfaceGrid.from_legacy(
+            mins=(0, 0), maxs=(6, 4), height=1.0))
         room.add_calc_zone(plane1)
         room.calculate()
 
         first_values = room.calc_zones["Plane1"].values.copy()
 
         # Add another zone and calculate
-        plane2 = CalcPlane(zone_id="Plane2", height=1.5)
+        plane2 = CalcPlane(zone_id="Plane2", geometry=SurfaceGrid.from_legacy(
+            mins=(0, 0), maxs=(6, 4), height=1.5))
         room.add_calc_zone(plane2)
         room.calculate()
 
@@ -562,11 +560,9 @@ class TestZoneEdgeCases:
 
         plane = CalcPlane(
             zone_id="FineGrid",
-            x1=2, x2=4,
-            y1=1, y2=3,
-            height=1.0,
-            x_spacing=0.1,
-            y_spacing=0.1,
+            geometry=SurfaceGrid.from_legacy(
+                mins=(2, 1), maxs=(4, 3), height=1.0,
+                spacing_init=(0.1, 0.1)),
         )
         room.add_calc_zone(plane)
         room.calculate()
@@ -584,11 +580,9 @@ class TestZoneEdgeCases:
 
         plane = CalcPlane(
             zone_id="CoarseGrid",
-            x1=0, x2=6,
-            y1=0, y2=4,
-            height=1.0,
-            x_spacing=2.0,
-            y_spacing=2.0,
+            geometry=SurfaceGrid.from_legacy(
+                mins=(0, 0), maxs=(6, 4), height=1.0,
+                spacing_init=(2.0, 2.0)),
         )
         room.add_calc_zone(plane)
         room.calculate()
@@ -604,8 +598,10 @@ class TestZoneEdgeCases:
             .place_lamp("aerolamp")
         )
 
-        irrad_plane = CalcPlane(zone_id="Irradiance", height=1.0, dose=False)
-        dose_plane = CalcPlane(zone_id="Dose", height=1.0, dose=True, hours=8)
+        irrad_plane = CalcPlane(zone_id="Irradiance", geometry=SurfaceGrid.from_legacy(
+            mins=(0, 0), maxs=(6, 4), height=1.0), dose=False)
+        dose_plane = CalcPlane(zone_id="Dose", geometry=SurfaceGrid.from_legacy(
+            mins=(0, 0), maxs=(6, 4), height=1.0), dose=True, hours=8)
 
         room.add_calc_zone(irrad_plane)
         room.add_calc_zone(dose_plane)
@@ -635,7 +631,8 @@ class TestZoneEdgeCases:
             .place_lamp("aerolamp")
         )
 
-        plane = CalcPlane(zone_id="TestPlane", height=1.0, dose=False)
+        plane = CalcPlane(zone_id="TestPlane", geometry=SurfaceGrid.from_legacy(
+            mins=(0, 0), maxs=(6, 4), height=1.0), dose=False)
         room.add_calc_zone(plane)
         room.calculate()
 

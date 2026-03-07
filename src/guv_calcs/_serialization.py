@@ -70,11 +70,54 @@ def migrate_zone_dict(data: dict) -> dict:
     return data
 
 
-def deserialize_geometry(data: dict, polygon_cls, rect_cls) -> dict:
+def deserialize_geometry(data: dict, grid_cls) -> dict:
     """Deserialize a nested 'geometry' dict into a typed grid object."""
     data = dict(data)
     geom_data = data.pop("geometry", None)
     if geom_data is not None:
-        cls = polygon_cls if "polygon" in geom_data else rect_cls
-        data["geometry"] = cls.from_dict(geom_data)
+        data["geometry"] = grid_cls.from_dict(geom_data)
+    return data
+
+
+def migrate_surface_grid_dict(data: dict) -> dict:
+    """Migrate legacy PlaneGrid dicts to SurfaceGrid format."""
+    from .geometry import Polygon2D
+
+    data = dict(data)
+    if "polygon" not in data and "spans" in data:
+        spans = data.pop("spans")
+        data["polygon"] = Polygon2D.rectangle(spans[0], spans[1])
+    elif "polygon" in data and isinstance(data["polygon"], dict):
+        data["polygon"] = Polygon2D.from_dict(data["polygon"])
+    data.pop("spans", None)
+    data.pop("height", None)
+    data.pop("direction", None)
+    # Rename old serialization key
+    if "spacing" not in data and "spacing_init" in data:
+        data["spacing_init"] = data.pop("spacing_init")  # already correct field name
+    elif "spacing" in data and "spacing_init" not in data:
+        data["spacing_init"] = data.pop("spacing")
+    return data
+
+
+def migrate_volume_grid_dict(data: dict) -> dict:
+    """Migrate legacy VolGrid dicts to VolumeGrid format."""
+    from .geometry import Polygon2D
+
+    data = dict(data)
+    if "polygon" not in data and "spans" in data:
+        spans = data.pop("spans")
+        data["polygon"] = Polygon2D.rectangle(spans[0], spans[1])
+        data["depth"] = spans[2]
+    elif "polygon" not in data and "origin" in data:
+        data["polygon"] = Polygon2D.rectangle(1.0, 1.0)
+        data.setdefault("depth", 2.7)
+    elif "polygon" in data and isinstance(data["polygon"], dict):
+        data["polygon"] = Polygon2D.from_dict(data["polygon"])
+    data.pop("spans", None)
+    # Rename old serialization key
+    if "spacing" not in data and "spacing_init" in data:
+        data["spacing_init"] = data.pop("spacing_init")  # already correct field name
+    elif "spacing" in data and "spacing_init" not in data:
+        data["spacing_init"] = data.pop("spacing")
     return data

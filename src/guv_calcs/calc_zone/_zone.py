@@ -4,8 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
 from datetime import timedelta
 from ..calc_manager import LightingCalculator
-from ..geometry import VolGrid, PlaneGrid
-from ..geometry import PolygonGrid, PolygonVolGrid
+from ..geometry import SurfaceGrid, VolumeGrid
 from ._io import export_plane, export_volume
 from ._plot import plot_plane, plot_volume
 from ..geometry import RoomDimensions
@@ -64,24 +63,9 @@ class CalcZone(ABC):
     Abstract base class representing a calculation zone.
 
     Subclasses must implement calctype, to_view(), export(), and plot().
-
-    Parameters:
-    --------
-    zone_id: str
-        identification tag for internal tracking
-    name: str, default=None
-        externally visible name for zone
-    offset: bool, default=True
-    dose: bool, default=False
-        whether to calculate a dose over N hours or just fluence
-    hours, minutes, seconds: float, default hours=8
-        exposure time for dose calculation. Values are summed.
-        Only relevant if dose is True.
-    enabled: bool, default = True
-        whether or not the calc zone is enabled for calculations
-    show_values: bool, default = True
-    colormap: str, default = None
     """
+
+    _grid_cls = None  # subclasses set to VolumeGrid or SurfaceGrid
 
     def __init__(
         self,
@@ -182,12 +166,16 @@ class CalcZone(ABC):
 
     @classmethod
     def from_dict(cls, data):
+        data = migrate_zone_dict(data)
+        if cls._grid_cls is not None:
+            data = deserialize_geometry(data, cls._grid_cls)
         return init_from_dict(cls, data)
 
     def to_dict(self):
         data = {}
         data["zone_id"] = self.zone_id
         data["name"] = self.name
+        data["calctype"] = self.calctype
         data["dose"] = self.dose
         data["exposure_time"] = self._exposure_time.total_seconds()
         data["enabled"] = self.enabled
@@ -426,16 +414,15 @@ class CalcZone(ABC):
 
 
 class CalcVol(CalcZone):
-    """
-    Represents a volumetric calculation zone.
-    A subclass of CalcZone designed for three-dimensional volumetric calculations.
-    """
+    """Volumetric calculation zone for three-dimensional calculations."""
+
+    _grid_cls = VolumeGrid
 
     def __init__(
         self,
         zone_id: str | None = None,
         name: str | None = None,
-        geometry: VolGrid | None = None,
+        geometry: VolumeGrid | None = None,
         dose: bool = False,
         hours: int | float | None = None,
         minutes: int | float | None = None,
@@ -443,20 +430,6 @@ class CalcVol(CalcZone):
         enabled: bool = True,
         show_values: bool = True,
         colormap: str | None = None,
-        # legacy -- ignored if geometry is not None
-        x1: float | None = None,
-        x2: float | None = None,
-        y1: float | None = None,
-        y2: float | None = None,
-        z1: float | None = None,
-        z2: float | None = None,
-        num_x: int | None = None,
-        num_y: int | None = None,
-        num_z: int | None = None,
-        x_spacing: float | None = None,
-        y_spacing: float | None = None,
-        z_spacing: float | None = None,
-        offset: bool | None = None,
     ):
 
         super().__init__(
@@ -471,29 +444,12 @@ class CalcVol(CalcZone):
             colormap=colormap,
         )
         if geometry is None:
-            self.geometry = VolGrid.from_legacy(
-                mins=(
-                    self._coalesce(x1, 0.0),
-                    self._coalesce(y1, 0.0),
-                    self._coalesce(z1, 0.0),
-                ),
-                maxs=(
-                    self._coalesce(x2, 6.0),
-                    self._coalesce(y2, 4.0),
-                    self._coalesce(z2, 2.7),
-                ),
-                num_points_init=(num_x, num_y, num_z),
-                spacing_init=(x_spacing, y_spacing, z_spacing),
-                offset=True if offset is None else bool(offset),
+            geometry = VolumeGrid.from_legacy(
+                mins=(0.0, 0.0, 0.0),
+                maxs=(6.0, 4.0, 2.7),
+                offset=True,
             )
-        else:
-            self.geometry = geometry
-
-    def _extra_dict(self) -> dict:
-        zone_data = super()._extra_dict()
-        data = {"calctype": self.calctype}
-        zone_data.update(data)
-        return zone_data
+        self.geometry = geometry
 
     @property
     def calctype(self) -> str:
@@ -501,12 +457,6 @@ class CalcVol(CalcZone):
 
     def __repr__(self):
         return super().__repr__() + f"geometry: {self.geometry.__repr__()})"
-
-    @classmethod
-    def from_dict(cls, data):
-        data = migrate_zone_dict(data)
-        data = deserialize_geometry(data, PolygonVolGrid, VolGrid)
-        return init_from_dict(cls, data)
 
     @classmethod
     def from_dims(
@@ -518,23 +468,13 @@ class CalcVol(CalcZone):
         **kwargs,
     ):
         """Create a CalcVol from room dimensions."""
-        if dims.is_polygon:
-            geometry = PolygonVolGrid(
-                polygon=dims.polygon,
-                z_height=dims.z,
-                spacing_init=spacing,
-                num_points_init=num_points,
-                offset=offset,
-            )
-        else:
-            x_min, y_min, x_max, y_max = dims.polygon.bounding_box
-            geometry = VolGrid.from_legacy(
-                mins=(x_min, y_min, 0),
-                maxs=(x_max, y_max, dims.z),
-                spacing_init=spacing,
-                num_points_init=num_points,
-                offset=offset,
-            )
+        geometry = VolumeGrid.from_polygon(
+            polygon=dims.polygon,
+            z_height=dims.z,
+            spacing_init=spacing,
+            num_points_init=num_points,
+            offset=offset,
+        )
         return cls(geometry=geometry, **kwargs)
 
     def to_view(self):
@@ -562,16 +502,15 @@ class CalcVol(CalcZone):
 
 
 class CalcPlane(CalcZone):
-    """
-    Represents a planar calculation zone.
-    A subclass of CalcZone designed for two-dimensional planar calculations at a specific height.
-    """
+    """Planar calculation zone for two-dimensional calculations at a specific height."""
+
+    _grid_cls = SurfaceGrid
 
     def __init__(
         self,
         zone_id: str | None = None,
         name: str | None = None,
-        geometry: "PlaneGrid | PolygonGrid | None" = None,
+        geometry: "SurfaceGrid | None" = None,
         dose: bool = False,
         hours: int | float | None = None,
         minutes: int | float | None = None,
@@ -579,25 +518,11 @@ class CalcPlane(CalcZone):
         enabled: bool = True,
         show_values: bool = True,
         colormap: str | None = None,
-        # soon to be legacy-ish
         fov_vert: int | float = 180,
         fov_horiz: int | float = 360,
         vert: bool = False,
         horiz: bool = False,
         use_normal: bool = True,
-        # legacy only! ignored if geometry is not None
-        x1: float | None = None,
-        x2: float | None = None,
-        y1: float | None = None,
-        y2: float | None = None,
-        num_x: int | None = None,
-        num_y: int | None = None,
-        x_spacing: float | None = None,
-        y_spacing: float | None = None,
-        offset: bool | None = None,
-        height: float | None = None,
-        ref_surface: str | None = None,
-        direction: int | None = None,
     ):
 
         super().__init__(
@@ -613,23 +538,18 @@ class CalcPlane(CalcZone):
         )
 
         if geometry is None:
-            # legacy initialization strategy
-            self.geometry = PlaneGrid.from_legacy(
-                mins=(self._coalesce(x1, 0.0), self._coalesce(y1, 0.0)),
-                maxs=(self._coalesce(x2, 6.0), self._coalesce(y2, 4.0)),
-                spacing_init=(x_spacing, y_spacing),
-                num_points_init=(num_x, num_y),
-                offset=True if offset is None else bool(offset),
-                height=self._coalesce(height, 0),
-                ref_surface=self._coalesce(ref_surface, "xy"),
-                direction=self._coalesce(direction, 1),
+            geometry = SurfaceGrid.from_legacy(
+                mins=(0.0, 0.0),
+                maxs=(6.0, 4.0),
+                offset=True,
+                height=0,
+                ref_surface="xy",
+                direction=1,
             )
-        else:
-            self.geometry = geometry
+        self.geometry = geometry
 
         self.fov_vert = fov_vert
         self.fov_horiz = fov_horiz
-        # flags to be killed and replaced by PlaneType enum or something
         self.use_normal = use_normal
         self.vert = vert
         self.horiz = horiz
@@ -639,18 +559,13 @@ class CalcPlane(CalcZone):
         return "Plane"
 
     def _extra_dict(self):
-
-        zone_data = super()._extra_dict()
-        data = {
+        return {
             "fov_vert": self.fov_vert,
             "fov_horiz": self.fov_horiz,
             "use_normal": self.use_normal,
             "vert": self.vert,
             "horiz": self.horiz,
-            "calctype": self.calctype,
         }
-        zone_data.update(data)
-        return zone_data
 
     def __repr__(self):
         return super().__repr__() + (
@@ -658,12 +573,6 @@ class CalcPlane(CalcZone):
             f"field_of_view=({self.fov_horiz}° horiz, {self.fov_vert}° vert), "
             f"flags=(vert={self.vert}, horiz={self.horiz}, use_normal={self.use_normal}), "
         )
-
-    @classmethod
-    def from_dict(cls, data):
-        data = migrate_zone_dict(data)
-        data = deserialize_geometry(data, PolygonGrid, PlaneGrid)
-        return init_from_dict(cls, data)
 
     @classmethod
     def from_points(
@@ -677,7 +586,7 @@ class CalcPlane(CalcZone):
         **kwargs,
     ):
         """define a calc plane from an arbitrary origin, U point, and V point"""
-        geometry = PlaneGrid.from_points(
+        geometry = SurfaceGrid.from_points(
             p0=p0,
             pU=pU,
             pV=pV,
@@ -710,7 +619,7 @@ class CalcPlane(CalcZone):
             if wall in ("floor", "ceiling"):
                 height = face.height + normal_offset * face.direction
 
-                geometry = PolygonGrid(
+                geometry = SurfaceGrid.from_polygon(
                     polygon=face.polygon,
                     height=height,
                     spacing_init=spacing,
@@ -719,11 +628,10 @@ class CalcPlane(CalcZone):
                     direction=face.direction,
                 )
             else:
-                geometry = PlaneGrid.from_wall(
+                geometry = SurfaceGrid.from_wall(
                     p1=(face.x1, face.y1),
                     p2=(face.x2, face.y2),
                     z_height=face.z_height,
-                    normal_2d=face.normal_2d,
                     spacing_init=spacing,
                     num_points_init=num_points,
                     offset=offset,
@@ -732,7 +640,7 @@ class CalcPlane(CalcZone):
             # Rectangular room - original behavior
             height = face.height + normal_offset * face.direction
 
-            geometry = PlaneGrid.from_legacy(
+            geometry = SurfaceGrid.from_legacy(
                 mins=(face.x1, face.y1),
                 maxs=(face.x2, face.y2),
                 height=height,
@@ -759,7 +667,7 @@ class CalcPlane(CalcZone):
         if not isinstance(polygon, Polygon2D):
             polygon = Polygon2D(vertices=tuple(tuple(v) for v in polygon))
 
-        geometry = PolygonGrid(
+        geometry = SurfaceGrid.from_polygon(
             polygon=polygon,
             height=height,
             spacing_init=spacing,

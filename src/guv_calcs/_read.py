@@ -1,4 +1,5 @@
 from .calc_zone import CalcVol, CalcPlane
+from .geometry import SurfaceGrid, VolumeGrid
 from pathlib import Path
 import numpy as np
 
@@ -130,20 +131,13 @@ def file_to_zone(file_path):
         x1, x2 = xp[0], xp[-1]
         y1, y2 = yp[0], yp[-1]
         z1, z2 = zp[0], zp[-1]
-        zone = CalcVol(
-            zone_id=path.stem,
-            x1=x1,
-            x2=x2,
-            y1=y1,
-            y2=y2,
-            z1=z1,
-            z2=z2,
-            x_spacing=x_spacing,
-            y_spacing=y_spacing,
-            z_spacing=z_spacing,
-            dose=dose,
+        geometry = VolumeGrid.from_legacy(
+            mins=(x1, y1, z1),
+            maxs=(x2, y2, z2),
+            spacing_init=(x_spacing, y_spacing, z_spacing),
             offset=False,
         )
+        zone = CalcVol(zone_id=path.stem, geometry=geometry, dose=dose)
         zone.result.base_values = values
         zone.result.reflected_values = None
     else:
@@ -154,18 +148,15 @@ def file_to_zone(file_path):
         x1, x2 = xp[0], xp[-1]
         y1, y2 = yp[0], yp[-1]
         try:
-            zone = CalcPlane(
-                zone_id=path.stem,
-                x1=x1,
-                x2=x2,
-                y1=y1,
-                y2=y2,
+            geometry = SurfaceGrid.from_legacy(
+                mins=(x1, y1),
+                maxs=(x2, y2),
                 height=height,
-                x_spacing=x_spacing,
-                y_spacing=y_spacing,
+                spacing_init=(x_spacing, y_spacing),
                 ref_surface=ref_surface,
                 offset=False,
             )
+            zone = CalcPlane(zone_id=path.stem, geometry=geometry)
             zone.result.base_values = values
             zone.result.reflected_values = None
         except ValueError:

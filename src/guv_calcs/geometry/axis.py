@@ -4,14 +4,11 @@ from dataclasses import dataclass
 
 @dataclass(slots=True, frozen=True)
 class Axis1D:
-    """
-    span: float, default= 5
-    spacing_init: float, default = None
-        desired spacing between points. will override num_points_init. If None,
-        first num_points_init will be used, then defaults generated.
-    num_points_init: desired number of points
-    offset: if true, the points will be centered between lo and hi. If false,
+    """1D axis with evenly spaced points over a span.
 
+    Resolution priority when both spacing_init and num_points_init are provided:
+    spacing_init wins for .spacing, num_points_init wins for .num_points.
+    If both are provided, the caller is responsible for consistency.
     """
 
     span: float = 1.0

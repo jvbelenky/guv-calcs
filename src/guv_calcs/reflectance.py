@@ -4,7 +4,7 @@ import hashlib
 from dataclasses import dataclass
 from .calc_zone import CalcPlane
 from .calc_manager import apply_plane_filters
-from .geometry import RoomDimensions, PlaneGrid, PolygonGrid
+from .geometry import RoomDimensions, SurfaceGrid
 from ._serialization import init_from_dict
 
 
@@ -467,11 +467,11 @@ def init_room_surfaces(
     surfaces = {}
 
     if dims.is_polygon:
-        # Polygon room: floor/ceiling use PolygonGrid, walls use PlaneGrid.from_wall()
+        # Polygon room: floor/ceiling use SurfaceGrid.from_polygon, walls use SurfaceGrid.from_wall
         for face_id in ["floor", "ceiling"]:
             face = dims.faces[face_id]
 
-            geometry = PolygonGrid(
+            geometry = SurfaceGrid.from_polygon(
                 polygon=face.polygon,
                 height=face.height,
                 spacing_init=(x_spacings[face_id], y_spacings[face_id]),
@@ -484,11 +484,10 @@ def init_room_surfaces(
         for wall_id in dims.wall_ids:
             wall = dims.faces[wall_id]
 
-            geometry = PlaneGrid.from_wall(
+            geometry = SurfaceGrid.from_wall(
                 p1=(wall.x1, wall.y1),
                 p2=(wall.x2, wall.y2),
                 z_height=wall.z_height,
-                normal_2d=wall.normal_2d,
                 spacing_init=(x_spacings[wall_id], y_spacings[wall_id]),
                 num_points_init=(num_x[wall_id], num_y[wall_id]),
             )
