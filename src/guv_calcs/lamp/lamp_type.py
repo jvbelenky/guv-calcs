@@ -118,9 +118,11 @@ class LampType:
     def wavelength(self):
         if self.spectrum is not None:
             return self.spectrum.peak_wavelength
+        if self._wavelength is not None:
+            return self._wavelength
         if self._guv_type is not None:
             return self._guv_type.default_wavelength
-        return self._wavelength
+        return None
 
 
 class LampUnitType(StrEnum):
