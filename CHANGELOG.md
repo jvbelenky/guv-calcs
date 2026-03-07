@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- room.set_units() early return is now self, not None
+
 ## [0.6.5] - 2026-03-06
 
 ### Added

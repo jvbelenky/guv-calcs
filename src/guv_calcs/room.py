@@ -434,7 +434,7 @@ class Room:
         old_units = self.dim.units
         new_units = LengthUnits.from_any(units)
         if old_units == new_units:
-            return
+            return self 
 
         # Room dimensions (polygon vertices + z)
         self.dim = self.dim.with_(units=new_units)
