@@ -9,7 +9,7 @@ from ._io import export_plane, export_volume
 from ._plot import plot_plane, plot_volume
 from ..geometry import RoomDimensions
 from ..geometry import Polygon2D
-from .._serialization import init_from_dict, deserialize_geometry, migrate_zone_dict
+from .._serialization import init_from_dict, deserialize_geometry, migrate_zone_dict, migrate_legacy_zone_geometry
 
 
 @dataclass(frozen=True)
@@ -168,6 +168,7 @@ class CalcZone(ABC):
     def from_dict(cls, data):
         data = migrate_zone_dict(data)
         if cls._grid_cls is not None:
+            data = migrate_legacy_zone_geometry(data, cls._grid_cls)
             data = deserialize_geometry(data, cls._grid_cls)
         return init_from_dict(cls, data)
 

@@ -133,7 +133,92 @@ def deserialize_geometry(data: dict, grid_cls) -> dict:
     data = dict(data)
     geom_data = data.pop("geometry", None)
     if geom_data is not None:
-        data["geometry"] = grid_cls.from_dict(geom_data)
+        if isinstance(geom_data, dict):
+            data["geometry"] = grid_cls.from_dict(geom_data)
+        else:
+            data["geometry"] = geom_data
+    return data
+
+
+def migrate_legacy_zone_geometry(data: dict, grid_cls) -> dict:
+    """Construct a geometry object from legacy flat zone params.
+
+    Legacy .guv files (pre-0.5) store spatial params (x1, x2, y1, y2,
+    height, offset, etc.) directly on the zone dict rather than in a
+    nested 'geometry' dict.  This function detects that case and builds
+    the appropriate grid object so that ``from_dict`` can proceed.
+    """
+    from .geometry import SurfaceGrid, VolumeGrid
+
+    if "geometry" in data:
+        return data
+
+    # Only migrate if we have legacy spatial keys
+    if "x1" not in data:
+        return data
+
+    data = dict(data)
+
+    if grid_cls is SurfaceGrid:
+        x1 = data.pop("x1", 0.0)
+        x2 = data.pop("x2", 6.0)
+        y1 = data.pop("y1", 0.0)
+        y2 = data.pop("y2", 4.0)
+        height = data.pop("height", 0.0)
+        ref_surface = data.pop("ref_surface", "xy")
+        direction = data.pop("direction", 1)
+        offset = data.pop("offset", True)
+
+        grid_kwargs = {"offset": offset}
+
+        num_x = data.pop("num_x", None)
+        num_y = data.pop("num_y", None)
+        x_spacing = data.pop("x_spacing", None)
+        y_spacing = data.pop("y_spacing", None)
+
+        if num_x is not None and num_y is not None:
+            grid_kwargs["num_points_init"] = (num_x, num_y)
+        elif x_spacing is not None and y_spacing is not None:
+            grid_kwargs["spacing_init"] = (x_spacing, y_spacing)
+
+        data["geometry"] = SurfaceGrid.from_legacy(
+            mins=(x1, y1),
+            maxs=(x2, y2),
+            height=height,
+            ref_surface=ref_surface,
+            direction=direction if direction is not None else 1,
+            **grid_kwargs,
+        )
+
+    elif grid_cls is VolumeGrid:
+        x1 = data.pop("x1", 0.0)
+        x2 = data.pop("x2", 6.0)
+        y1 = data.pop("y1", 0.0)
+        y2 = data.pop("y2", 4.0)
+        z1 = data.pop("z1", 0.0)
+        z2 = data.pop("z2", 2.7)
+        offset = data.pop("offset", True)
+
+        grid_kwargs = {"offset": offset}
+
+        num_x = data.pop("num_x", None)
+        num_y = data.pop("num_y", None)
+        num_z = data.pop("num_z", None)
+        x_spacing = data.pop("x_spacing", None)
+        y_spacing = data.pop("y_spacing", None)
+        z_spacing = data.pop("z_spacing", None)
+
+        if num_x is not None and num_y is not None and num_z is not None:
+            grid_kwargs["num_points_init"] = (num_x, num_y, num_z)
+        elif x_spacing is not None and y_spacing is not None and z_spacing is not None:
+            grid_kwargs["spacing_init"] = (x_spacing, y_spacing, z_spacing)
+
+        data["geometry"] = VolumeGrid.from_legacy(
+            mins=(x1, y1, z1),
+            maxs=(x2, y2, z2),
+            **grid_kwargs,
+        )
+
     return data
 
 
