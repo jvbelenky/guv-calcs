@@ -818,6 +818,12 @@ class Lamp:
         self.lamp_type = LampType(_wavelength=wavelength)
         return self
 
+    def clear_spectrum(self):
+        """Remove spectrum data while preserving wavelength and guv_type."""
+        self.lamp_type = self.lamp_type.clear_spectrum()
+        self.spectrum_source = None
+        return self
+
     @property
     def spectrum(self):
         return self.lamp_type.spectrum

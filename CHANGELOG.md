@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Method on lamp to clear spectrum but preserve wavelength/guv_type
+
 ### Fixed
 
 - room.set_units() early return is now self, not None

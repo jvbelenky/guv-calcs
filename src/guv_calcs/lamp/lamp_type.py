@@ -105,6 +105,15 @@ class LampType:
     def update(self, **changes):
         return replace(self, **changes)
 
+    def clear_spectrum(self):
+        """Return a new LampType with spectrum removed but wavelength/guv_type preserved."""
+        return replace(
+            self,
+            spectrum=None,
+            _wavelength=self.wavelength,
+            _guv_type=self.guv_type,
+        )
+
     @property
     def guv_type(self):
         if self.spectrum is not None:
