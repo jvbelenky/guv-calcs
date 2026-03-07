@@ -1,10 +1,68 @@
 import inspect
+from importlib import resources
+
+from photompy import IESFile
+
+from .lamp.lamp_configs import LAMP_CONFIGS
 
 
 def init_from_dict(cls, data: dict):
     """Construct cls from dict, filtering to valid __init__ params."""
     keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
     return cls(**{k: v for k, v in data.items() if k in keys})
+
+
+# ---------------------------------------------------------------------------
+# Preset identification from IES data (for legacy save migration)
+# ---------------------------------------------------------------------------
+
+def _build_preset_lookups():
+    """Build LUMCAT/LUMINAIRE -> preset and fingerprint -> preset maps."""
+    header_map: dict[str, str] = {}
+    fp_map: dict[bytes, str] = {}
+
+    for preset_id, config in LAMP_CONFIGS.items():
+        try:
+            path = resources.files("guv_calcs.data.lamp_data").joinpath(config["ies_file"])
+            ies = IESFile.read(path)
+            kw = getattr(ies.header, "keywords", {})
+            for field in ("LUMCAT", "LUMINAIRE"):
+                val = kw.get(field)
+                if val and val != "Unknown":
+                    header_map[val] = preset_id
+            fp_map[ies.photometry.to_fingerprint()] = preset_id
+        except Exception:
+            pass
+
+    return header_map, fp_map
+
+
+_HEADER_TO_PRESET, _FINGERPRINT_TO_PRESET = _build_preset_lookups()
+
+
+def identify_preset(lamp) -> str | None:
+    """Try to identify a preset from a Lamp's loaded IES data.
+
+    Checks header keywords (LUMCAT, LUMINAIRE) first, then falls back
+    to photometry fingerprint matching.
+    """
+    if lamp.ies is None:
+        return None
+
+    kw = getattr(lamp.ies.header, "keywords", {})
+    for field in ("LUMCAT", "LUMINAIRE"):
+        val = kw.get(field)
+        if val and val in _HEADER_TO_PRESET:
+            return _HEADER_TO_PRESET[val]
+
+    try:
+        fp = lamp.ies.photometry.to_fingerprint()
+        if fp in _FINGERPRINT_TO_PRESET:
+            return _FINGERPRINT_TO_PRESET[fp]
+    except Exception:
+        pass
+
+    return None
 
 
 def migrate_lamp_dict(data: dict) -> dict:

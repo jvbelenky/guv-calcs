@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 
 - PolyGrids and RectGrids consolidated; PlaneGrid and VolGrid classes replaced with SurfaceGrid and VolumeGrid classes
 - CalcPlane/CalcVol can no longer be constructed with legacy constructors--use from_legacy instead
+- Lamp now stores preset_id if loaded from keyword
 
 ## [0.6.5] - 2026-03-06
 

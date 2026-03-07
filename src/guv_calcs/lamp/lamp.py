@@ -14,7 +14,7 @@ from .lamp_orientation import LampOrientation
 from .lamp_geometry import LampGeometry
 from .fixture import Fixture
 from ..geometry import to_polar
-from .._serialization import init_from_dict, migrate_lamp_dict
+from .._serialization import init_from_dict, migrate_lamp_dict, identify_preset
 from ..safety import get_tlvs, PhotStandard
 from .lamp_type import GUVType, LampUnitType, LampType
 from ..units import LengthUnits, convert_length
@@ -98,7 +98,9 @@ class Lamp:
         intensity_map=None,
         enabled: bool = True,
         scaling_factor: float = 1.0,
+        preset_id: str | None = None,
     ):
+        self.preset_id = preset_id
         self._lamp_id = lamp_id or "Lamp"
         self.name = str(self.lamp_id) if name is None else str(name)
         self.enabled = True if enabled is None else enabled
@@ -276,6 +278,7 @@ class Lamp:
             data["intensity_map"] = self.surface.intensity_map_orig.tolist()
 
         data["enabled"] = True
+        data["preset_id"] = self.preset_id
 
         # Include surface dict for new format
         data["surface"] = self.surface.to_dict()
@@ -328,7 +331,13 @@ class Lamp:
             data.pop("length", None)
             data.pop("height", None)
 
-        return init_from_dict(cls, data)
+        lamp = init_from_dict(cls, data)
+
+        # Identify preset for old saves that lack preset_id
+        if lamp.preset_id is None and lamp.ies is not None:
+            lamp.preset_id = identify_preset(lamp)
+
+        return lamp
 
     @property
     def keywords(self):
@@ -377,6 +386,7 @@ class Lamp:
                 kwargs.setdefault(k, fixture_cfg[k])
 
         kwargs.setdefault("lamp_id", canonical)
+        kwargs.setdefault("preset_id", canonical)
         return kwargs
 
     @classmethod
