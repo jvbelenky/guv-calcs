@@ -1,3 +1,4 @@
+import copy
 import numbers
 import warnings
 from collections.abc import Callable
@@ -165,7 +166,10 @@ class InactivationData:
         use_metric: bool | None = None,
     ) -> "InactivationData":
         """
-        Set filters for display. Returns self for chaining.
+        Return a new InactivationData with the given filters applied.
+
+        The returned instance shares computed data with the original,
+        so this is cheap to call and safe to use without side effects.
 
         medium : str or list, optional
             Filter by medium ("Aerosol", "Surface", "Liquid"). Case-insensitive,
@@ -187,17 +191,22 @@ class InactivationData:
         use_metric : bool, optional
             If True, display CADR in lps; if False, display in cfm. Default True.
         """
+        # Shallow copy: shares _full_df, _base_df, _time_cols by reference
+        new = copy.copy(self)
+        # Reset lazily-computed cache on the copy
+        new._combined_full_df = None
+
         # Set row filters (all use case-insensitive substring matching)
         if medium is not None:
-            self._medium = medium
+            new._medium = medium
         if category is not None:
-            self._category = category
+            new._category = category
         if species is not None:
-            self._species = species
+            new._species = species
         if strain is not None:
-            self._strain = strain
+            new._strain = strain
         if condition is not None:
-            self._condition = condition
+            new._condition = condition
 
         # Validate and set wavelength filter
         # When fluence is a dict, user-specified wavelengths are ADDED to the fluence
@@ -218,19 +227,19 @@ class InactivationData:
                 # Normalize single-item lists
                 if len(wavelength) == 1:
                     wavelength = wavelength[0]
-            self._wavelength = wavelength
+            new._wavelength = wavelength
 
         # Validate and set log level
         if log is not None:
             if log not in [1, 2, 3, 4, 5]:
                 raise ValueError(f"log must be 1, 2, 3, 4, or 5; got {log}")
-            self._log = log
+            new._log = log
 
         # Set CADR display units
         if use_metric is not None:
-            self._use_metric_units = use_metric
+            new._use_metric_units = use_metric
 
-        return self
+        return new
 
     def table(self, species=None, strain=None, condition=None, medium=None, category=None) -> pd.DataFrame:
         """Return filtered DataFrame with context-appropriate columns."""

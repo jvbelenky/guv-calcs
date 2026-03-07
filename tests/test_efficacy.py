@@ -88,59 +88,63 @@ class TestInactivationDataInitialization:
 class TestInactivationDataSubset:
     """Tests for InactivationData.subset() filtering."""
 
-    def test_subset_returns_self(self):
-        """subset() should return self for chaining."""
+    def test_subset_returns_new_instance(self):
+        """subset() should return a new instance, not mutate the original."""
         data = InactivationData()
         result = data.subset(medium="Aerosol")
-        assert result is data
+        assert result is not data
+        assert result._medium == "Aerosol"
+        assert data._medium is None  # original unchanged
 
     def test_subset_by_medium(self):
         """subset(medium=...) should filter by medium."""
         data = InactivationData()
-        data.subset(medium="Aerosol")
-        # The filter is applied, internal state is set
-        assert data._medium is not None
+        result = data.subset(medium="Aerosol")
+        assert result._medium is not None
 
     def test_subset_by_category(self):
         """subset(category=...) should filter by category."""
         data = InactivationData()
         categories = InactivationData.get_valid_categories()
         if categories:
-            data.subset(category=categories[0])
-            assert data._category is not None
+            result = data.subset(category=categories[0])
+            assert result._category is not None
 
     def test_subset_by_species(self):
         """subset(species=...) should filter by species."""
         data = InactivationData()
-        data.subset(species="coli")
-        assert data._species is not None
+        result = data.subset(species="coli")
+        assert result._species is not None
         # Check that full_df is filtered (display_df may remove single-value columns)
-        df = data.full_df
+        df = result.full_df
         assert all("coli" in s.lower() for s in df["Species"])
 
     def test_subset_by_strain(self):
         """subset(strain=...) should filter by strain."""
         data = InactivationData()
-        data.subset(strain="ATCC")
-        assert data._strain is not None
+        result = data.subset(strain="ATCC")
+        assert result._strain is not None
 
     def test_subset_by_condition(self):
         """subset(condition=...) should filter by condition."""
         data = InactivationData()
-        data.subset(condition="stationary")
-        assert data._condition is not None
+        result = data.subset(condition="stationary")
+        assert result._condition is not None
 
     def test_subset_by_log_level(self):
         """subset(log=...) should set log reduction level."""
         data = InactivationData(fluence=1.0)
-        data.subset(log=3)
-        assert data._log == 3
+        result = data.subset(log=3)
+        assert result._log == 3
 
     def test_subset_chaining(self):
-        """Multiple subset calls should chain."""
+        """Multiple subset calls should chain without mutating."""
         data = InactivationData()
         result = data.subset(medium="Aerosol").subset(log=2)
-        assert result is data
+        assert result is not data
+        assert result._medium == "Aerosol"
+        assert result._log == 2
+        assert data._medium is None  # original unchanged
 
     def test_subset_case_insensitive_medium(self):
         """subset() should match medium case-insensitively."""
@@ -179,8 +183,7 @@ class TestInactivationDataSubset:
 
     def test_subset_empty_result_returns_empty_df(self):
         """subset with no matching rows should return empty DataFrame."""
-        data = InactivationData()
-        data.subset(species="nonexistent_species_xyz")
+        data = InactivationData().subset(species="nonexistent_species_xyz")
         # Result should be empty but not raise
         assert len(data.display_df) == 0
 

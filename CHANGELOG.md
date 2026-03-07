@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - room.set_units() early return is now self, not None
 - lamp_types with no default wavelength will now return an explicitly set wavelength
+- subset() in InactivationData now non-mutating
 
 ### Changed
 
