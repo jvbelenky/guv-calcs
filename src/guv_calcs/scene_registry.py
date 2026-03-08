@@ -180,14 +180,24 @@ class ZoneRegistry(Registry["CalcZone"]):
     base_id = "CalcZone"
     expected_type: type | None = CalcZone
 
-    def _extract_dimensions(self, zone):
-        x, y, z = zone.coords.T
-        return np.array([
-            [x.min(), y.min(), z.min()], [x.max(), y.min(), z.min()],
-            [x.max(), y.max(), z.min()], [x.min(), y.max(), z.min()],
-            [x.min(), y.min(), z.max()], [x.max(), y.min(), z.max()],
-            [x.max(), y.max(), z.max()], [x.min(), y.max(), z.max()],
-        ])
+    def check_position(self, zone) -> str | None:
+        """Check zone bbox against room bbox (avoids false positives for polygon rooms)."""
+        if self.dims is None:
+            return None
+        room_dims = self.dims()
+        coords = zone.coords
+        if coords is None or len(coords) == 0:
+            return None
+        tol = 1e-9
+        x, y, z = coords.T
+        rx_min, ry_min, rx_max, ry_max = room_dims.polygon.bounding_box
+        if (x.min() < rx_min - tol or x.max() > rx_max + tol or
+                y.min() < ry_min - tol or y.max() > ry_max + tol or
+                z.min() < -tol or z.max() > room_dims.z + tol):
+            msg = f"{zone.name} exceeds room boundaries!"
+            warnings.warn(msg, stacklevel=2)
+            return msg
+        return None
 
 
 @dataclass(eq=False)
@@ -195,8 +205,24 @@ class SurfaceRegistry(Registry["Surface"]):
     base_id = "Surface"
     expected_type: type | None = Surface
 
-    def _extract_dimensions(self, surface):
-        return surface.plane.coords
+    def check_position(self, surface) -> str | None:
+        """Check surface bbox against room bbox (avoids false positives for polygon rooms)."""
+        if self.dims is None:
+            return None
+        room_dims = self.dims()
+        coords = surface.plane.coords
+        if coords is None or len(coords) == 0:
+            return None
+        tol = 1e-9
+        x, y, z = coords.T
+        rx_min, ry_min, rx_max, ry_max = room_dims.polygon.bounding_box
+        if (x.min() < rx_min - tol or x.max() > rx_max + tol or
+                y.min() < ry_min - tol or y.max() > ry_max + tol or
+                z.min() < -tol or z.max() > room_dims.z + tol):
+            msg = f"{surface.name} exceeds room boundaries!"
+            warnings.warn(msg, stacklevel=2)
+            return msg
+        return None
 
 
 @dataclass(eq=False)

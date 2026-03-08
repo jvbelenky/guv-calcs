@@ -466,13 +466,13 @@ class SurfaceGrid(_GridBase):
         """Create a horizontal surface grid from a polygon at a given height."""
         if not isinstance(polygon, Polygon2D):
             polygon = Polygon2D(vertices=tuple(tuple(v) for v in polygon))
-        x_min, y_min, _, _ = polygon.bounding_box
+        x_min, y_min, _, y_max = polygon.bounding_box
         if direction == 1:
             origin = (x_min, y_min, height)
             u_vec = (1, 0, 0)
             v_vec = (0, 1, 0)
         else:
-            origin = (x_min, y_min, height)
+            origin = (x_min, y_max, height)
             u_vec = (1, 0, 0)
             v_vec = (0, -1, 0)
         # Translate polygon so its bounding box starts at (0, 0)
