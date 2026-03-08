@@ -37,6 +37,8 @@ class PlacementResult:
 
     position: tuple[float, float]
     aim: tuple[float, float]
+    index: int = 0
+    count: int = 1
 
 
 class LampPlacer:
@@ -242,6 +244,132 @@ class LampPlacer:
         self._nudge_into_bounds(lamp)
         self.record(lamp.x, lamp.y)
         return lamp
+
+    def place_at_index(self, mode: str, index: int, **kwargs) -> PlacementResult:
+        """Get the Nth-ranked position for a mode, cycling with modulo.
+
+        Unlike place() which skips occupied positions, this returns the position
+        at a specific rank regardless of occupancy. Used for interactive cycling.
+
+        Args:
+            mode: "corner", "edge", or "horizontal"
+            index: 0-based position index (wraps via modulo)
+            **kwargs: Mode-specific options (wall_offset, beam_angle)
+
+        Returns:
+            PlacementResult with index and count populated
+        """
+        handlers = {
+            "corner": self._ranked_corner,
+            "edge": self._ranked_edge,
+            "horizontal": self._ranked_edge,
+        }
+        if mode not in handlers:
+            raise ValueError(f"Indexed placement not supported for mode '{mode}'")
+        return handlers[mode](index, **kwargs)
+
+    def place_lamp_at_index(
+        self,
+        lamp,
+        mode: str,
+        index: int,
+        *,
+        max_tilt: float = None,
+        offset: float = None,
+        wall_clearance: float = None,
+        angle: float = None,
+    ) -> PlacementResult:
+        """Place lamp at a specific ranked position for interactive cycling.
+
+        Like place_lamp() but uses place_at_index() instead of place(),
+        so the lamp goes to the Nth-ranked position regardless of occupancy.
+
+        Mutates the lamp's position, aim, and rotation.
+        Returns PlacementResult with resolved index and count.
+        """
+        if self.z is None:
+            raise ValueError("z must be set to use place_lamp_at_index (use for_room or for_dims)")
+
+        config_angle = 0
+        if max_tilt is None or angle is None:
+            try:
+                _, config = resolve_keyword(lamp.lamp_id)
+                placement = config.get("placement", {})
+                if max_tilt is None:
+                    max_tilt = placement.get("max_tilt")
+                config_angle = placement.get("angle", 0)
+            except KeyError:
+                pass
+        fixture_angle = angle if angle is not None else config_angle
+
+        if offset is None:
+            offset = self.ceiling_offset(lamp)
+        if wall_clearance is None:
+            wall_clearance = self.wall_clearance(lamp)
+
+        beam_angle = self._get_beam_angle(lamp)
+        result = self.place_at_index(
+            mode, index, beam_angle=beam_angle, wall_offset=wall_clearance
+        )
+
+        lamp_z = self.z - offset
+        lamp.move(result.position[0], result.position[1], lamp_z)
+
+        if mode == "horizontal":
+            aim_z = lamp_z
+        else:
+            aim_z = 0.0
+
+        if mode in ("corner", "edge"):
+            aim_xy = self._apply_tilt(lamp.position, result.aim, None, max_tilt)
+        else:
+            aim_xy = result.aim
+
+        lamp.aim(aim_xy[0], aim_xy[1], aim_z)
+        if fixture_angle:
+            lamp.rotate(fixture_angle)
+        self._nudge_into_bounds(lamp)
+
+        return result
+
+    def _ranked_corner(self, index: int, **kwargs) -> PlacementResult:
+        """Return placement for the Nth-ranked corner."""
+        wall_offset = kwargs.get("wall_offset", 0.05)
+        beam_angle = kwargs.get("beam_angle", 30.0)
+
+        corners = get_corners(self.polygon)
+        ranked = _rank_corners_by_visibility(self.polygon)
+        count = len(ranked)
+        idx = index % count
+
+        corner = corners[ranked[idx]]
+        inward = _get_corner_inward_direction(corner, self.polygon)
+        position = _offset_inward(corner, inward, offset=wall_offset)
+
+        if not self.polygon.contains_point(*position):
+            position = _offset_inward(corner, inward, offset=min(wall_offset, 0.01))
+        if not self.polygon.contains_point(*position):
+            position = corner
+
+        aim = _calculate_corner_aim(position, self.polygon, beam_angle)
+        return PlacementResult(position=position, aim=aim, index=idx, count=count)
+
+    def _ranked_edge(self, index: int, **kwargs) -> PlacementResult:
+        """Return placement for the Nth-ranked edge."""
+        wall_offset = kwargs.get("wall_offset", 0.05)
+
+        ranked = _rank_edges_by_sightline(self.polygon)
+        count = len(ranked)
+        idx = index % count
+        chosen_edge_idx = ranked[idx]
+
+        best_pos, _ = _best_position_on_edge(chosen_edge_idx, self.polygon)
+        outward = self.polygon.edge_normals[chosen_edge_idx]
+        inward = (-outward[0], -outward[1])
+        position = _offset_inward(best_pos, inward, offset=wall_offset)
+
+        aim = _calculate_edge_perpendicular_aim(position, chosen_edge_idx, self.polygon)
+        return PlacementResult(position=position, aim=aim, index=idx, count=count)
 
     def _get_beam_angle(self, lamp, default: float = 30.0) -> float:
         """Extract beam angle from lamp photometry."""
@@ -888,6 +1016,22 @@ def _best_position_on_edge(
 
     best_pos = (x1 + center_t * (x2 - x1), y1 + center_t * (y2 - y1))
     return best_pos, best_sightline
+
+
+def _rank_edges_by_sightline(polygon: Polygon2D) -> list[int]:
+    """Rank edge indices by sightline distance (longest first).
+
+    Primary key is midpoint sightline; tiebreaker is best-position sightline
+    (matching the ranking used in new_lamp_position_edge).
+    """
+    edges = get_edge_centers(polygon)
+    scored = []
+    for _, (mx, my, edge_idx) in enumerate(edges):
+        mid_sight = _calculate_sightline_distance((mx, my), edge_idx, polygon)
+        _, best_sight = _best_position_on_edge(edge_idx, polygon)
+        scored.append((edge_idx, mid_sight, best_sight))
+    scored.sort(key=lambda x: (-x[1], -x[2]))
+    return [s[0] for s in scored]
 
 
 def new_lamp_position_edge(

@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Method on lamp to clear spectrum but preserve wavelength/guv_type
+- place_at_index and place_lamp_at_index API in lamp_placement module
 
 ### Fixed
 
