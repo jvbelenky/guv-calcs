@@ -21,6 +21,7 @@ All notable changes to this project will be documented in this file.
 - CalcPlane/CalcVol can no longer be constructed with legacy constructors--use from_legacy instead
 - Lamp now stores preset_id if loaded from keyword
 - Old CalcZone API no longer accepts x1/x2 etc constructors--migration logic added to _serialization
+- Cleanup of how SceneRegistry handles object position checking
 
 ## [0.6.5] - 2026-03-06
 

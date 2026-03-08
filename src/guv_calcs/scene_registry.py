@@ -79,31 +79,28 @@ class Registry(Generic[T], MutableMapping[str, T]):
         # Next free number
         return f"{base}-{max_suffix + 1}"
 
-    def _check_position(self, corners, obj):
-        """Check if all bounding box corners are within room boundaries."""
-        room_dims = self.dims()
-        for x, y, z in corners:
-            if not room_dims.contains_point(x, y):
-                msg = f"{obj.name} exceeds room boundaries!"
-                warnings.warn(msg, stacklevel=2)
-                return msg
-            if z < 0 or z > room_dims.z:
-                msg = f"{obj.name} exceeds room boundaries!"
-                warnings.warn(msg, stacklevel=2)
-                return msg
+    def _get_coords(self, obj: T) -> np.ndarray | None:
+        """Return (N, 3) world-space coordinates for boundary checking."""
         return None
 
-    def _extract_dimensions(self, obj: T) -> np.ndarray:
-        """Override to extract bounding box corners (N, 3) array from object."""
-        raise NotImplementedError
-
     def check_position(self, obj: T) -> str | None:
-        """Check object position against room dimensions."""
-        try:
-            corners = self._extract_dimensions(obj)
-            return self._check_position(corners, obj)
-        except NotImplementedError:
+        """Check object coordinates against room bounding box."""
+        if self.dims is None:
             return None
+        coords = self._get_coords(obj)
+        if coords is None or len(coords) == 0:
+            return None
+        room_dims = self.dims()
+        tol = 1e-9
+        x, y, z = coords.T
+        rx_min, ry_min, rx_max, ry_max = room_dims.polygon.bounding_box
+        if (x.min() < rx_min - tol or x.max() > rx_max + tol or
+                y.min() < ry_min - tol or y.max() > ry_max + tol or
+                z.min() < -tol or z.max() > room_dims.z + tol):
+            msg = f"{obj.name} exceeds room boundaries!"
+            warnings.warn(msg, stacklevel=2)
+            return msg
+        return None
 
     def get_position_warnings(self):
         dct = {}
@@ -159,7 +156,7 @@ class LampRegistry(Registry["Lamp"]):
     base_id = "Lamp"
     expected_type: type | None = Lamp
 
-    def _extract_dimensions(self, lamp):
+    def _get_coords(self, lamp):
         return lamp.geometry.get_bounding_box_corners()
 
     def _validate(self, lamp):
@@ -180,24 +177,8 @@ class ZoneRegistry(Registry["CalcZone"]):
     base_id = "CalcZone"
     expected_type: type | None = CalcZone
 
-    def check_position(self, zone) -> str | None:
-        """Check zone bbox against room bbox (avoids false positives for polygon rooms)."""
-        if self.dims is None:
-            return None
-        room_dims = self.dims()
-        coords = zone.coords
-        if coords is None or len(coords) == 0:
-            return None
-        tol = 1e-9
-        x, y, z = coords.T
-        rx_min, ry_min, rx_max, ry_max = room_dims.polygon.bounding_box
-        if (x.min() < rx_min - tol or x.max() > rx_max + tol or
-                y.min() < ry_min - tol or y.max() > ry_max + tol or
-                z.min() < -tol or z.max() > room_dims.z + tol):
-            msg = f"{zone.name} exceeds room boundaries!"
-            warnings.warn(msg, stacklevel=2)
-            return msg
-        return None
+    def _get_coords(self, zone):
+        return zone.coords
 
 
 @dataclass(eq=False)
@@ -205,24 +186,8 @@ class SurfaceRegistry(Registry["Surface"]):
     base_id = "Surface"
     expected_type: type | None = Surface
 
-    def check_position(self, surface) -> str | None:
-        """Check surface bbox against room bbox (avoids false positives for polygon rooms)."""
-        if self.dims is None:
-            return None
-        room_dims = self.dims()
-        coords = surface.plane.coords
-        if coords is None or len(coords) == 0:
-            return None
-        tol = 1e-9
-        x, y, z = coords.T
-        rx_min, ry_min, rx_max, ry_max = room_dims.polygon.bounding_box
-        if (x.min() < rx_min - tol or x.max() > rx_max + tol or
-                y.min() < ry_min - tol or y.max() > ry_max + tol or
-                z.min() < -tol or z.max() > room_dims.z + tol):
-            msg = f"{surface.name} exceeds room boundaries!"
-            warnings.warn(msg, stacklevel=2)
-            return msg
-        return None
+    def _get_coords(self, surface):
+        return surface.plane.coords
 
 
 @dataclass(eq=False)
@@ -237,6 +202,3 @@ class RoomRegistry(Registry["Room"]):
             from .room import Room
             self.expected_type = Room
         return super()._validate(room)
-
-    def _extract_dimensions(self, obj):
-        raise NotImplementedError
