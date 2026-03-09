@@ -119,12 +119,18 @@ def migrate_room_dict(data: dict, saved_version: str) -> dict:
 
 
 def migrate_zone_dict(data: dict) -> dict:
-    """Migrate old 'hours' key to 'seconds' for CalcZone init."""
+    """Apply legacy migrations to a zone dict."""
     data = dict(data)
     if "hours" in data and "exposure_time" not in data:
         data["seconds"] = data.pop("hours") * 3600
     elif "exposure_time" in data:
         data["seconds"] = data.pop("exposure_time")
+    # Migrate legacy show_values -> display_mode
+    if "show_values" in data and "display_mode" not in data:
+        data["display_mode"] = "heatmap" if data["show_values"] else "none"
+    data.pop("show_values", None)
+    # colormap is no longer a zone param (room-level only)
+    data.pop("colormap", None)
     return data
 
 

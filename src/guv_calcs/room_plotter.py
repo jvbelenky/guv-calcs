@@ -40,13 +40,17 @@ class RoomPlotter:
             if lamp.ies is not None:
                 fig = self._plot_lamp(lamp=lamp, fig=fig, select_id=select_id)
         for zone_id, zone in self.room.calc_zones.items():
+            show = getattr(zone, 'display_mode', 'heatmap') != 'none'
             if isinstance(zone, CalcPlane):
-                if zone.show_values and zone.values is not None:
+                if show and zone.values is not None:
                     fig = self._plot_plane_values(zone=zone, fig=fig)
                 else:
                     fig = self._plot_plane(zone=zone, fig=fig, select_id=select_id)
             elif isinstance(zone, CalcVol):
-                fig = self._plot_vol(zone=zone, fig=fig, select_id=select_id)
+                fig = self._plot_vol(
+                    zone=zone, fig=fig, select_id=select_id,
+                    show_isosurfaces=show,
+                )
 
         # for filter_id, filt in self.room.filters.items():
         # fig = self._plot_filter(filt=filt, fig=fig, select_id=select_id)
@@ -410,7 +414,7 @@ class RoomPlotter:
             )
         return fig
 
-    def _plot_vol(self, zone, fig, select_id=None):
+    def _plot_vol(self, zone, fig, select_id=None, show_isosurfaces=True):
 
         # Check if this is a polygon volume
         if not zone.geometry.is_rectangular:
@@ -445,7 +449,7 @@ class RoomPlotter:
                 line=dict(color=zonecolor, width=5, dash="dot"),
             )
         # fluence isosurface
-        if zone.values is not None and zone.show_values:
+        if zone.values is not None and show_isosurfaces:
             values = zone.values.flatten()
 
             # For polygon volumes, use full grid with -inf masking for proper isosurface

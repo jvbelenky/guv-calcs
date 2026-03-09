@@ -4,10 +4,17 @@ import numpy as np
 import warnings
 
 
-def plot_volume(zone, title=None):
+def plot_volume(zone, title=None, colormap=None):
     """
     Plot the fluence values as an isosurface using Plotly.
+
+    Args:
+        zone: CalcVol instance
+        title: Optional plot title
+        colormap: Plotly colorscale name (defaults to "plasma")
     """
+    if colormap is None:
+        colormap = "plasma"
 
     fig = go.Figure()
 
@@ -28,7 +35,7 @@ def plot_volume(zone, title=None):
                 opacity=0.25,
                 showscale=False,
                 colorbar=None,
-                colorscale=zone.colormap,
+                colorscale=colormap,
                 caps=dict(x_show=False, y_show=False, z_show=False),
                 name=zone.name + " Values",
             )
@@ -51,11 +58,17 @@ def plot_volume(zone, title=None):
     return fig
 
 
-def plot_plane(zone, fig=None, ax=None, vmin=None, vmax=None, title=None):
+def plot_plane(zone, fig=None, ax=None, vmin=None, vmax=None, title=None, colormap=None):
     """
     Plot the image of the radiation pattern.
     Works for any plane orientation (axis-aligned or arbitrary).
+
+    Args:
+        zone: CalcPlane instance
+        colormap: Matplotlib colormap name (defaults to "plasma")
     """
+    if colormap is None:
+        colormap = "plasma"
     if fig is None:
         if ax is None:
             fig, ax = plt.subplots()
@@ -119,7 +132,7 @@ def plot_plane(zone, fig=None, ax=None, vmin=None, vmax=None, title=None):
             extent=extent,
             vmin=vmin,
             vmax=vmax,
-            cmap=zone.colormap,
+            cmap=colormap,
             origin='lower',
             aspect='equal'
         )

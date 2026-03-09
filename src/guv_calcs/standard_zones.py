@@ -60,7 +60,7 @@ def create_standard_zones(standard, dims):
     return [
         CalcVol.from_dims(
             dims=dims, zone_id=WHOLE_ROOM_FLUENCE, name="Whole Room Fluence",
-            show_values=False, num_points=(25, 25, 25),
+            num_points=(25, 25, 25), display_mode="none",
         ),
         CalcPlane.from_face(
             dims=dims, wall="floor", normal_offset=height,

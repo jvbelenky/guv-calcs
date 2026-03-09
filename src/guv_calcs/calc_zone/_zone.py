@@ -76,16 +76,14 @@ class CalcZone(ABC):
         minutes=None,
         seconds=None,
         enabled=True,
-        show_values=True,
-        colormap=None,
+        display_mode="heatmap",
     ):
         self._zone_id = zone_id
         self.name = str(zone_id) if name is None else str(name)
         self.dose = False if dose is None else dose
         self._exposure_time = self._parse_exposure_time(hours, minutes, seconds)
         self.enabled = enabled
-        self.show_values = show_values
-        self.colormap = colormap
+        self.display_mode = display_mode
 
         # these will all be calculated after spacing is set, which is set in the subclass
         self._geometry = None
@@ -180,8 +178,7 @@ class CalcZone(ABC):
         data["dose"] = self.dose
         data["exposure_time"] = self._exposure_time.total_seconds()
         data["enabled"] = self.enabled
-        data["show_values"] = self.show_values
-        data["colormap"] = self.colormap
+        data["display_mode"] = self.display_mode
         if self.geometry is not None:
             data["geometry"] = self.geometry.to_dict()
 
@@ -429,8 +426,7 @@ class CalcVol(CalcZone):
         minutes: int | float | None = None,
         seconds: int | float | None = None,
         enabled: bool = True,
-        show_values: bool = True,
-        colormap: str | None = None,
+        display_mode: str = "heatmap",
     ):
 
         super().__init__(
@@ -441,8 +437,7 @@ class CalcVol(CalcZone):
             minutes=minutes,
             seconds=seconds,
             enabled=enabled,
-            show_values=show_values,
-            colormap=colormap,
+            display_mode=display_mode,
         )
         if geometry is None:
             geometry = VolumeGrid.from_legacy(
@@ -517,8 +512,7 @@ class CalcPlane(CalcZone):
         minutes: int | float | None = None,
         seconds: int | float | None = None,
         enabled: bool = True,
-        show_values: bool = True,
-        colormap: str | None = None,
+        display_mode: str = "heatmap",
         fov_vert: int | float = 180,
         fov_horiz: int | float = 360,
         vert: bool = False,
@@ -534,8 +528,7 @@ class CalcPlane(CalcZone):
             minutes=minutes,
             seconds=seconds,
             enabled=enabled,
-            show_values=show_values,
-            colormap=colormap,
+            display_mode=display_mode,
         )
 
         if geometry is None:

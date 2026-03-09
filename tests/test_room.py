@@ -488,6 +488,17 @@ class TestPolygonRoom:
         assert "polygon=" in repr_str
         assert "6 vertices" in repr_str
 
+    def test_polygon_room_standard_zones_no_boundary_warnings(self):
+        """Polygon rooms should not produce false boundary warnings."""
+        import warnings
+        l_shape = Polygon2D(vertices=[
+            (0, 0), (4, 0), (4, 2), (2, 2), (2, 4), (0, 4)
+        ])
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            room = Room(polygon=l_shape, z=2.7)
+            room.add_standard_zones()
+
 
 class TestEstimateCalculationTime:
     """Tests for Room.estimate_calculation_time()."""

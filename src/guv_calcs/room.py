@@ -563,7 +563,6 @@ class Room:
         return self
 
     def add_calc_zone(self, calc_zone, **kwargs):
-        calc_zone.colormap = self.colormap
         self.calc_zones.add(calc_zone, **kwargs)
         return self
 
@@ -579,7 +578,6 @@ class Room:
         return self
 
     def add_surface(self, surface, **kwargs):
-        surface.plane.colormap = self.colormap
         self.surfaces.add(surface, **kwargs)
         return self
 
@@ -592,10 +590,6 @@ class Room:
         if colormap not in list(colormaps):
             raise ValueError(f"{colormap} is not a valid colormap.")
         self.colormap = colormap
-        for zone in self.calc_zones.values():
-            zone.colormap = self.colormap
-        for surface in self.surfaces.values():
-            surface.plane.colormap = self.colormap
         return self
 
     def check_positions(self):
@@ -760,8 +754,16 @@ class Room:
         return data.plot_survival(species=species, **kwargs)
 
     def plot(self, fig=None, select_id=None, title=""):
-        """Return a plotly figure of all the room's components."""
-        return self._plotter.plotly(fig=fig, select_id=select_id, title=title)
+        """Return a plotly figure of all the room's components.
+
+        Args:
+            fig: Existing plotly figure to update, or None to create new
+            select_id: ID of selected element (highlighted in purple)
+            title: Plot title
+        """
+        return self._plotter.plotly(
+            fig=fig, select_id=select_id, title=title,
+        )
 
     def check_lamps(self) -> "SafetyCheckResult":
         """Check all lamps for safety compliance with skin and eye TLVs."""
