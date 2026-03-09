@@ -10,19 +10,10 @@ from ._serialization import init_from_dict
 
 class ReflectanceManager:
     """
-    Class for managing reflective surfaces and their interactions
+    Interreflection solver: computes incident irradiance on room surfaces
+    and iterates surface-to-surface bounces until convergence.
 
-    Attributes:
-    surfaces: dict, default = {}
-    max_num_passes: int, default=100
-        When calculating interreflections, the maximum number of passes before
-        the calculation concludes.
-    threshold: float in [0,1], default=0.02
-        When calculating interreflections, the threshold below which additional
-        reflection contributions are no longer calculated. Interreflection
-        calculation will step when the number of loops reaches max_num_passes
-        or when the contributions fall below the threshold times the initial value,
-        whichever happens first.
+    Zone-level reflected contributions are computed by LightingCalculator.
     """
 
     def __init__(
@@ -39,8 +30,6 @@ class ReflectanceManager:
         self.enabled = bool(enabled)
         if self.threshold < 0 or self.threshold > 1:
             raise ValueError("threshold must be a float between 0 and 1")
-
-        self.zone_dict = {}  # will contain all values from all contributions
 
     def __eq__(self, other):
         if not isinstance(other, ReflectanceManager):
@@ -92,21 +81,16 @@ class ReflectanceManager:
         return {key: val.plane.y_spacing for key, val in self.surfaces.items()}
 
     def calculate_incidence(self, lamps, hard=False):
-        """
-        calculate the incident irradiances on all reflective walls
-        """
+        """Calculate incident irradiance on all surfaces, then run interreflection."""
         if self.enabled:
-            # first pass
+            # first pass: direct lamp → surface
             for wall, surface in self.surfaces.items():
                 surface.calculate_incidence(lamps, hard=hard)
-            # subsequent passes - runs once, and whenever reflectance changes
+            # subsequent passes: surface ↔ surface bounces
             self._interreflectance(lamps, hard=hard)
 
     def _interreflectance(self, lamps, hard=False):
-        """
-        calculate additional interreflectance
-        """
-        # create dict of ref managers for each wall
+        """Iterate surface-to-surface reflections until convergence."""
         managers = self._create_managers()
 
         i = 0  # increases to self.max_num_passes
@@ -140,9 +124,7 @@ class ReflectanceManager:
         return managers  # Updated in place
 
     def _create_managers(self):
-        """
-        create a dict of reflection managers for each wall
-        """
+        """Create a per-wall reflection manager (self minus that wall)."""
         managers = {}
         for wall, surface in self.surfaces.items():
             ref_manager = copy.deepcopy(self)
@@ -155,46 +137,15 @@ class ReflectanceManager:
             managers[wall] = ref_manager
         return managers
 
-    def calculate_reflectance(self, zv, hard=False):
-        """
-        calculate the reflectance contribution to a calc zone from each surface
-        """
-        if self.enabled:
-            threshold = 0  # zone.base_values.mean() * 0.01  # 1% of total value
-
-            total_values = {}
-            for wall, surface in self.surfaces.items():
-                # first make sure incident irradiance is calculated
-                if surface.plane.values is None:
-                    raise ValueError("Incidence must be calculated before reflectance")
-                if surface.R * surface.plane.values.mean() > threshold:
-                    surface.calculate_reflectance(zv, hard=hard)
-                    total_values[wall] = surface.zone_dict[zv.zone_id].values
-                else:
-                    total_values[wall] = np.zeros(zv.num_points)
-            self.zone_dict[zv.zone_id] = total_values
-            return self._get_total_reflectance(zv)
-        else:
-            return np.zeros(zv.num_points).astype("float32")
-
-    def _get_total_reflectance(self, zv):
-        """sum over all surfaces to get the total reflected values for that calc zone"""
-        dct = self.zone_dict[zv.zone_id]
-        values = np.zeros(zv.num_points).astype("float32")
-        for wall, surface_vals in dct.items():
-            if surface_vals is not None:
-                values += surface_vals * self.reflectances[wall]
-        return values
-
 
 class Surface:
     """
-    Class that represents a single surface defined by a calculation plane
-    and optical properties R (reflectance) and T (transmittance).
+    A surface defined by a calculation plane and optical properties
+    R (reflectance) and T (transmittance). R + T <= 1; the remainder is absorbed.
 
-    Constraints:
-        - R and T must each be in [0, 1]
-        - R + T must be <= 1 (the remainder is absorbed)
+    The surface provides two roles:
+    - Reflector: contributes reflected light to calc zones (via R and incidence values)
+    - Occluder: blocks direct/reflected light paths (via T and boundary geometry)
     """
 
     def __init__(self, R: float, plane: CalcPlane, T: float = 0.0):
@@ -220,7 +171,6 @@ class Surface:
         self.R = R
         self.T = T
         self.plane = plane
-        self.zone_dict: dict[str, SurfaceZoneCache] = {}
 
     def __getattr__(self, name):
         """passthrough to plane attributes"""
@@ -301,47 +251,7 @@ class Surface:
             lamps=lamps, surfaces=surfaces, hard=hard
         )
 
-    def calculate_reflectance(self, zv, hard=False):
-        """
-        calculate the reflective contribution of this reflective surface
-        to a provided calculation zone
-
-        Arguments:
-            zone: a view of the calculation zone onto which reflectance is calculated
-            lamp: optional. if provided, and incidence not yet calculated, uses this
-            lamp to calculate incidence. mostly this is just for
-        """
-
-        if self.zone_dict.get(zv.zone_id) is None:
-            self.zone_dict[zv.zone_id] = SurfaceZoneCache()
-
-        cache = self.zone_dict[zv.zone_id]
-
-        RECALCULATE = cache.needs_recalc(zv.calc_state, self.calc_state) or hard
-        UPDATE = cache.needs_update(zv.update_state, self.update_state) or RECALCULATE
-
-        if RECALCULATE:
-            form_factors, theta_zone = self._calculate_coordinates(zv)
-        else:
-            form_factors = cache.form_factors
-            theta_zone = cache.theta_zone
-        if UPDATE:
-            values = self._calculate_values(form_factors, theta_zone, zv)
-        else:
-            values = cache.values
-
-        # update the state
-        self.zone_dict[zv.zone_id] = SurfaceZoneCache(
-            zone_calc_state=zv.calc_state,
-            zone_update_state=zv.update_state,
-            surface_calc_state=self.calc_state,
-            surface_update_state=self.update_state,
-            form_factors=form_factors,
-            theta_zone=theta_zone,
-            values=values,
-        )
-
-        return (values * self.R).astype("float32")
+    # -- stateless computation, called by LightingCalculator --
 
     def _calculate_values(self, form_factors, theta_zone, zv):
 
@@ -362,12 +272,7 @@ class Surface:
         return values.reshape(*zv.num_points)
 
     def _calculate_coordinates(self, zv):
-        """
-        return the angles and distances between the points of the reflective
-        surface and the calculation zone
-
-        this is the expensive step!
-        """
+        """Compute form factors and angles between this surface and a zone."""
         surface_points = self.plane.coords.reshape(*self.plane.num_points, 3)
         zone_points = zv.coords.reshape(*zv.num_points, 3)
 
@@ -377,23 +282,21 @@ class Surface:
         x, y, z = differences.reshape(-1, 3).T
         distances = np.sqrt(x ** 2 + y ** 2 + z ** 2)
         distances = distances.reshape(differences.shape[0:-1])
-        # distances = np.linalg.norm(differences, axis=-1) # notably slower!
 
         # mask out coincident points (zero distance) to avoid division by zero
         zero_mask = distances == 0
         safe_distances = np.where(zero_mask, 1.0, distances)
 
-        # angles relative to reflective surface -- always between 0 and 90 unless the calc zone has been misspecified
+        # angles relative to reflective surface
         rel_surface = differences @ self.plane.basis
         cos_theta_surface = -rel_surface[..., 2] / safe_distances
         cos_theta_surface[cos_theta_surface < 0] = 0
         cos_theta_surface[zero_mask] = 0
-        # theta_surface = np.arccos(cos_theta_surface)
         form_factors = cos_theta_surface / (np.pi * safe_distances ** 2)
         form_factors[zero_mask] = 0
         form_factors = form_factors.astype("float32")
 
-        #  angles relative to calculation zone. only relevant for planes
+        # angles relative to calculation zone (only relevant for planes)
         if zv.is_plane():
             rel_zone = differences @ zv.basis
             cos_theta_zone = rel_zone[..., 2] / safe_distances
@@ -402,46 +305,7 @@ class Surface:
         else:
             theta_zone = None
 
-        # # ? absolute? angles
-        # cos_theta = -differences[..., 2] / distances
-        # theta = np.arccos(cos_theta)
-
         return form_factors, theta_zone
-
-
-@dataclass
-class SurfaceZoneCache:
-    zone_calc_state: tuple | None = None  # (zone_calc_state, surface_calc_state)
-    zone_update_state: tuple | None = None  # (zone_update_state, surface_update_state)
-    surface_calc_state: tuple | None = None  # (zone_calc_state, surface_calc_state)
-    surface_update_state: tuple | None = (
-        None  # (zone_update_state, surface_update_state)
-    )
-    form_factors: np.ndarray | None = None
-    theta_zone: np.ndarray | None = None
-    values: np.ndarray | None = None
-
-    def needs_recalc(self, zone_calc_state, surface_calc_state):
-        if self.zone_calc_state != zone_calc_state:
-            return True
-        if self.surface_calc_state != surface_calc_state:
-            return True
-        if self.new_zone:
-            return True
-        return False
-
-    def needs_update(self, zone_update_state, surface_update_state):
-        if self.zone_update_state != zone_update_state:
-            return True
-        if self.surface_update_state != surface_update_state:
-            return True
-        return False
-
-    @property
-    def new_zone(self):
-        if self.values is None:
-            return True
-        return False
 
 
 def init_room_surfaces(
