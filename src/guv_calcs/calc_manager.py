@@ -2,6 +2,7 @@ import numpy as np
 from dataclasses import dataclass, field
 import warnings
 from .units import convert_units, LengthUnits
+from .geometry.occlusion import compute_transmission
 
 np.seterr(divide="ignore", invalid="ignore")
 
@@ -15,10 +16,21 @@ class LampCacheEntry:
 
 
 @dataclass(frozen=True)
+class SurfaceCacheEntry:
+    form_factors: np.ndarray | None
+    theta_zone: np.ndarray | None
+    values: np.ndarray | None
+    surface_calc_state: tuple | None
+    surface_update_state: tuple | None
+
+
+@dataclass(frozen=True)
 class ZoneCache:
     lamp_cache: dict = field(default_factory=dict)
+    surface_cache: dict = field(default_factory=dict)
     calc_state: tuple | None = None
     update_state: tuple | None = None
+    scene_geometry_state: tuple | None = None
 
     def needs_recalc(self, calc_state, lamp_id, lamp_calc_state):
         if calc_state != self.calc_state:
@@ -35,6 +47,29 @@ class ZoneCache:
         if self.lamp_cache.get(lamp_id) is None:
             return True  # new lamp
         if self.lamp_cache.get(lamp_id).update_state != lamp_update_state:
+            return True
+        return False
+
+    def needs_surface_recalc(self, surface_id, surface_calc_state, zone_calc_state,
+                             scene_geometry_state):
+        """Check if form factors need recomputing for a surface→zone pair."""
+        if zone_calc_state != self.calc_state:
+            return True
+        if scene_geometry_state != self.scene_geometry_state:
+            return True  # some surface moved → occlusion changed
+        entry = self.surface_cache.get(surface_id)
+        if entry is None:
+            return True
+        if entry.surface_calc_state != surface_calc_state:
+            return True
+        return False
+
+    def needs_surface_update(self, surface_id, surface_update_state):
+        """Check if reflected values need recomputing (surface incidence changed)."""
+        entry = self.surface_cache.get(surface_id)
+        if entry is None:
+            return True
+        if entry.surface_update_state != surface_update_state:
             return True
         return False
 
@@ -71,15 +106,16 @@ class ZoneCache:
 
 class LightingCalculator:
     """
-    Performs all computations for a calculation zone
+    Performs all computations for a calculation zone: direct irradiance,
+    occlusion, and reflected contributions.
     """
 
     def __init__(self):
         self.cache = ZoneCache()
 
-    def compute(self, lamps, zv, hard=False):
+    def compute(self, lamps, zv, surfaces=None, hard=False):
         """
-        Calculate and return irradiance values at all coordinate points within the zone.
+        Calculate and return direct irradiance values at all coordinate points.
         """
 
         if len(lamps) == 0:
@@ -89,7 +125,7 @@ class LightingCalculator:
         lamp_cache = {}
         for lamp_id, lamp in lamps.items():
             # potentially expensive
-            base_values = self.calculate_lamp(lamp, zv, hard=hard)
+            base_values = self.calculate_lamp(lamp, zv, surfaces=surfaces, hard=hard)
             # always cheap
             values = self.apply_filters(lamp, base_values.copy(), zv)
             lamp_cache[lamp_id] = LampCacheEntry(
@@ -98,15 +134,82 @@ class LightingCalculator:
                 calc_state=lamp.calc_state,
                 update_state=lamp.update_state,
             )
+
+        # build scene geometry state for occlusion cache invalidation
+        scene_geo = None
+        if surfaces:
+            scene_geo = tuple(s.calc_state for s in surfaces.values())
+
         # update cache
         self.cache = ZoneCache(
             lamp_cache=lamp_cache,
+            surface_cache=self.cache.surface_cache,  # preserve across compute calls
             calc_state=zv.calc_state,
             update_state=zv.update_state,
+            scene_geometry_state=scene_geo,
         )
 
         # sum across lamp values
         return self.aggregate(lamps, zv)
+
+    def compute_reflectance(self, surfaces, zv, hard=False):
+        """Compute total reflected contribution from all surfaces to a zone."""
+        if not surfaces:
+            return np.zeros(zv.num_points, dtype="float32")
+
+        scene_geo = self.cache.scene_geometry_state
+
+        surface_cache = {}
+        total = np.zeros(zv.num_points, dtype="float32")
+
+        for surface_id, surface in surfaces.items():
+            if surface.R == 0 or surface.plane.values is None:
+                continue
+
+            RECALC = self.cache.needs_surface_recalc(
+                surface_id, surface.calc_state, zv.calc_state, scene_geo
+            ) or hard
+            UPDATE = self.cache.needs_surface_update(
+                surface_id, surface.update_state
+            ) or RECALC
+
+            if RECALC:
+                form_factors, theta_zone = surface._calculate_coordinates(zv)
+                # apply occlusion: exclude self
+                transmission = compute_transmission(
+                    surface.plane.coords, zv.coords, surfaces, exclude=surface_id
+                )
+                form_factors = form_factors * transmission.reshape(form_factors.shape)
+            else:
+                entry = self.cache.surface_cache[surface_id]
+                form_factors = entry.form_factors
+                theta_zone = entry.theta_zone
+
+            if UPDATE:
+                values = surface._calculate_values(form_factors, theta_zone, zv)
+            else:
+                values = self.cache.surface_cache[surface_id].values
+
+            surface_cache[surface_id] = SurfaceCacheEntry(
+                form_factors=form_factors,
+                theta_zone=theta_zone,
+                values=values,
+                surface_calc_state=surface.calc_state,
+                surface_update_state=surface.update_state,
+            )
+
+            total += (values * surface.R).reshape(*zv.num_points).astype("float32")
+
+        # update cache with new surface entries
+        self.cache = ZoneCache(
+            lamp_cache=self.cache.lamp_cache,
+            surface_cache=surface_cache,
+            calc_state=self.cache.calc_state,
+            update_state=self.cache.update_state,
+            scene_geometry_state=scene_geo,
+        )
+
+        return total.astype("float32")
 
     def _to_meters(self, R, lamp):
         """Convert distance array to meters for inverse-square calculation."""
@@ -114,10 +217,8 @@ class LightingCalculator:
             return np.array(convert_units(lamp.surface.units, "meters", *R))
         return R
 
-    def calculate_lamp(self, lamp, zv, hard: bool):
-        """
-        Calculate the zone values for a single lamp
-        """
+    def calculate_lamp(self, lamp, zv, surfaces=None, hard=False):
+        """Calculate the zone values for a single lamp."""
 
         RECALC = self.cache.needs_recalc(
             calc_state=zv.calc_state,
@@ -136,6 +237,13 @@ class LightingCalculator:
             # near field only if necessary
             if lamp.surface.source_density > 0 and lamp.surface.photometric_distance:
                 values = self.calculate_nearfield(lamp, R, values, zv)
+
+            # apply occlusion from room surfaces
+            if surfaces:
+                transmission = compute_transmission(
+                    lamp.surface.position, zv.coords, surfaces
+                )
+                values *= transmission.reshape(values.shape)
 
             if any(~np.isfinite(values)):  # mask any nans and infs near light source
                 values = np.ma.masked_invalid(values)
@@ -184,8 +292,6 @@ class LightingCalculator:
 
             phot = lamp.ies.photometry.interpolated()
             near_values = phot.get_intensity(Theta_n, Phi_n) / R_n ** 2
-            # interpdict = lamp.lampdict["interp_vals"]
-            # near_values = get_intensity(Theta_n, Phi_n, interpdict) / R_n ** 2
             near_values = near_values * val / num_points
             values[near_idx] += near_values
 

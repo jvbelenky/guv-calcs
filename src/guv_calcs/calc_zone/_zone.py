@@ -334,18 +334,19 @@ class CalcZone(ABC):
     def _coalesce(value, default):
         return default if value is None else value
 
-    def calculate_values(self, lamps, ref_manager=None, hard=False):
-        """Calculate all the values for all the lamps"""
+    def calculate_values(self, lamps, surfaces=None, hard=False):
+        """Calculate all the values for all the lamps."""
 
         if self.enabled:
+            zv = self.to_view()
 
             self.result.base_values = self.calculator.compute(
-                lamps=lamps, zv=self.to_view(), hard=hard
+                lamps=lamps, zv=zv, surfaces=surfaces, hard=hard
             )
-            if ref_manager is not None:
-                # calculate reflectance -- warning, may be expensive!
-                self.result.reflected_values = ref_manager.calculate_reflectance(
-                    self.to_view(), hard=hard
+
+            if surfaces:
+                self.result.reflected_values = self.calculator.compute_reflectance(
+                    surfaces=surfaces, zv=zv, hard=hard
                 )
 
         return self.get_values()

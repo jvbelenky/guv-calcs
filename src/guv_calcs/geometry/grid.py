@@ -326,6 +326,13 @@ class SurfaceGrid(_GridBase):
             + self.v_hat * self._spans[1]
         )
 
+    @property
+    def boundary_vertices(self) -> np.ndarray:
+        """Return (K, 3) array of 3D vertices defining the surface boundary."""
+        origin = np.asarray(self.origin, float)
+        return np.array([origin + s * self.u_hat + t * self.v_hat
+                         for s, t in self.polygon.vertices])
+
     # ---- legacy properties (height, ref_surface, direction) ----
 
     @property

@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Method on lamp to clear spectrum but preserve wavelength/guv_type
 - place_at_index and place_lamp_at_index API in lamp_placement module
+- Major occlusion/shadowing module
 
 ### Fixed
 
@@ -23,6 +24,9 @@ All notable changes to this project will be documented in this file.
 - Old CalcZone API no longer accepts x1/x2 etc constructors--migration logic added to _serialization
 - Cleanup of how SceneRegistry handles object position checking
 - CalcZone's show_values is now display_mode + zones no longer have individual colormaps
+- CalcZone/LightingCalculator restructured to accept surfaces instead of the ref_manager
+- Reflectance calculation moved to LightingCalculator
+
 
 ## [0.6.5] - 2026-03-06
 

@@ -606,13 +606,13 @@ class Room:
         """Triggers calculation of lighting values in each calculation zone."""
 
         valid_lamps = self.lamps.valid()
-        # calculate incidence on the surfaces if the reflectances or lamps have changed
+        # calculate incidence on the surfaces (for reflectance)
         if self.recalculate_incidence or hard:
             self.ref_manager.calculate_incidence(valid_lamps, hard=hard)
 
         for name, zone in self.calc_zones.items():
             zone.calculate_values(
-                lamps=valid_lamps, ref_manager=self.ref_manager, hard=hard
+                lamps=valid_lamps, surfaces=self.surfaces, hard=hard
             )
 
         # update calc states.
@@ -634,7 +634,7 @@ class Room:
             if self.recalculate_incidence or hard:
                 self.ref_manager.calculate_incidence(valid_lamps, hard=hard)
             self.calc_zones[zone_id].calculate_values(
-                lamps=valid_lamps, ref_manager=self.ref_manager, hard=hard
+                lamps=valid_lamps, surfaces=self.surfaces, hard=hard
             )
             self.calc_state = self.get_calc_state()
             self.update_state = self.get_update_state()

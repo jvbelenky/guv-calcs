@@ -296,8 +296,9 @@ class Surface:
 
     def calculate_incidence(self, lamps, ref_manager=None, hard=False):
         """calculate incoming radiation onto all surfaces"""
+        surfaces = ref_manager.surfaces if ref_manager else None
         return self.plane.calculate_values(
-            lamps=lamps, ref_manager=ref_manager, hard=hard
+            lamps=lamps, surfaces=surfaces, hard=hard
         )
 
     def calculate_reflectance(self, zv, hard=False):
