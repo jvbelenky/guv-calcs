@@ -258,6 +258,33 @@ class Polygon2D:
 
         return inside
 
+    @property
+    def is_convex(self) -> bool:
+        """Check if the polygon is convex."""
+        if "is_convex" in self._cache:
+            return self._cache["is_convex"]
+        n = len(self.vertices)
+        if n < 4:
+            result = True  # triangles are always convex
+        else:
+            # All cross products of consecutive edges must have the same sign
+            sign = None
+            result = True
+            for i in range(n):
+                x1, y1 = self.vertices[i]
+                x2, y2 = self.vertices[(i + 1) % n]
+                x3, y3 = self.vertices[(i + 2) % n]
+                cross = (x2 - x1) * (y3 - y2) - (y2 - y1) * (x3 - x2)
+                if abs(cross) < 1e-12:
+                    continue  # collinear edges, skip
+                if sign is None:
+                    sign = cross > 0
+                elif (cross > 0) != sign:
+                    result = False
+                    break
+        self._cache["is_convex"] = result
+        return result
+
     def is_valid(self) -> bool:
         """Check if the polygon is valid (simple, at least 3 vertices)."""
         return len(self.vertices) >= 3 and self._is_simple()

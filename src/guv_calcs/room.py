@@ -602,6 +602,21 @@ class Room:
 
     # -------------------------- Calculation ---------------------------
 
+    def _needs_occlusion(self, lamps):
+        """Check if occlusion calculations can be skipped.
+
+        Occlusion is unnecessary when the room polygon is convex and all lamps
+        are inside it — no room surface can block line-of-sight between any
+        interior lamp and any interior point.
+        """
+        if not self.dim.polygon.is_convex:
+            return True
+        for lamp in lamps.values():
+            x, y = lamp.surface.position[0], lamp.surface.position[1]
+            if not self.dim.polygon.contains_point_inclusive(x, y):
+                return True
+        return False
+
     def calculate(self, hard=False):
         """Triggers calculation of lighting values in each calculation zone."""
 
@@ -610,9 +625,12 @@ class Room:
         if self.recalculate_incidence or hard:
             self.ref_manager.calculate_incidence(valid_lamps, hard=hard)
 
+        enable_occlusion = self._needs_occlusion(valid_lamps)
+
         for name, zone in self.calc_zones.items():
             zone.calculate_values(
-                lamps=valid_lamps, surfaces=self.surfaces, hard=hard
+                lamps=valid_lamps, surfaces=self.surfaces,
+                enable_occlusion=enable_occlusion, hard=hard
             )
 
         # update calc states.
@@ -633,8 +651,10 @@ class Room:
         if len(valid_lamps) > 0:
             if self.recalculate_incidence or hard:
                 self.ref_manager.calculate_incidence(valid_lamps, hard=hard)
+            enable_occlusion = self._needs_occlusion(valid_lamps)
             self.calc_zones[zone_id].calculate_values(
-                lamps=valid_lamps, surfaces=self.surfaces, hard=hard
+                lamps=valid_lamps, surfaces=self.surfaces,
+                enable_occlusion=enable_occlusion, hard=hard
             )
             self.calc_state = self.get_calc_state()
             self.update_state = self.get_update_state()

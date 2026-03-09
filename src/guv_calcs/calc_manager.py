@@ -113,7 +113,7 @@ class LightingCalculator:
     def __init__(self):
         self.cache = ZoneCache()
 
-    def compute(self, lamps, zv, surfaces=None, hard=False):
+    def compute(self, lamps, zv, surfaces=None, enable_occlusion=True, hard=False):
         """
         Calculate and return direct irradiance values at all coordinate points.
         """
@@ -122,10 +122,12 @@ class LightingCalculator:
             self.cache = ZoneCache()
             return np.zeros(zv.num_points, dtype="float32")
 
+        occluders = surfaces if enable_occlusion else None
+
         lamp_cache = {}
         for lamp_id, lamp in lamps.items():
             # potentially expensive
-            base_values = self.calculate_lamp(lamp, zv, surfaces=surfaces, hard=hard)
+            base_values = self.calculate_lamp(lamp, zv, surfaces=occluders, hard=hard)
             # always cheap
             values = self.apply_filters(lamp, base_values.copy(), zv)
             lamp_cache[lamp_id] = LampCacheEntry(
@@ -152,7 +154,7 @@ class LightingCalculator:
         # sum across lamp values
         return self.aggregate(lamps, zv)
 
-    def compute_reflectance(self, surfaces, zv, hard=False):
+    def compute_reflectance(self, surfaces, zv, enable_occlusion=True, hard=False):
         """Compute total reflected contribution from all surfaces to a zone."""
         if not surfaces:
             return np.zeros(zv.num_points, dtype="float32")
@@ -175,11 +177,11 @@ class LightingCalculator:
 
             if RECALC:
                 form_factors, theta_zone = surface._calculate_coordinates(zv)
-                # apply occlusion: exclude self
-                transmission = compute_transmission(
-                    surface.plane.coords, zv.coords, surfaces, exclude=surface_id
-                )
-                form_factors = form_factors * transmission.reshape(form_factors.shape)
+                if enable_occlusion:
+                    transmission = compute_transmission(
+                        surface.plane.coords, zv.coords, surfaces, exclude=surface_id
+                    )
+                    form_factors = form_factors * transmission.reshape(form_factors.shape)
             else:
                 entry = self.cache.surface_cache[surface_id]
                 form_factors = entry.form_factors

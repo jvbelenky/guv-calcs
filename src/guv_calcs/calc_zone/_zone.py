@@ -334,19 +334,21 @@ class CalcZone(ABC):
     def _coalesce(value, default):
         return default if value is None else value
 
-    def calculate_values(self, lamps, surfaces=None, hard=False):
+    def calculate_values(self, lamps, surfaces=None, enable_occlusion=True, hard=False):
         """Calculate all the values for all the lamps."""
 
         if self.enabled:
             zv = self.to_view()
 
             self.result.base_values = self.calculator.compute(
-                lamps=lamps, zv=zv, surfaces=surfaces, hard=hard
+                lamps=lamps, zv=zv, surfaces=surfaces,
+                enable_occlusion=enable_occlusion, hard=hard
             )
 
             if surfaces:
                 self.result.reflected_values = self.calculator.compute_reflectance(
-                    surfaces=surfaces, zv=zv, hard=hard
+                    surfaces=surfaces, zv=zv,
+                    enable_occlusion=enable_occlusion, hard=hard
                 )
 
         return self.get_values()
