@@ -388,29 +388,70 @@ class RoomPlotter:
         return fig
 
     def _plot_object(self, obj, fig, select_id=None):
-        """Plot object as wireframe from surface boundary vertices."""
+        """Plot object with filled faces colored by transmittance."""
+        trace_ids = [t.customdata[0] if t.customdata else None for t in fig.data]
+        color = self._set_color(select_id, obj.id, obj.enabled)
+        legend_group = f"object_{obj.id}"
+
+        # Wireframe edges
         all_x, all_y, all_z = [], [], []
         for surface in obj.surfaces.values():
             verts = surface.plane.geometry.boundary_vertices
-            # close the polygon
             verts = np.vstack([verts, verts[0:1]])
             all_x.extend(list(verts[:, 0]) + [None])
             all_y.extend(list(verts[:, 1]) + [None])
             all_z.extend(list(verts[:, 2]) + [None])
 
-        color = self._set_color(select_id, obj.id, obj.enabled)
-        trace = go.Scatter3d(
+        wire_id = f"object_{obj.id}_wire"
+        wire_trace = go.Scatter3d(
             x=all_x, y=all_y, z=all_z,
             mode="lines",
-            line=dict(color=color, width=3),
+            line=dict(color=color, width=2),
             name=obj.name,
-            customdata=["object_" + obj.id],
+            customdata=[wire_id],
+            legendgroup=legend_group,
             showlegend=True,
         )
-        traces = [t.customdata[0] if t.customdata else None for t in fig.data]
-        if trace.customdata[0] not in traces:
-            fig.add_trace(trace)
+        if wire_id not in trace_ids:
+            fig.add_trace(wire_trace)
+
+        # Filled faces with opacity based on transmittance
+        for face_key, surface in obj.surfaces.items():
+            face_id = f"object_{face_key}"
+            verts = surface.plane.geometry.boundary_vertices
+            if len(verts) < 3:
+                continue
+
+            # Triangulate the planar polygon by projecting to 2D
+            i, j, k = self._triangulate_face(verts)
+
+            # T=0 (opaque) → 0.7, T=1 (transparent) → 0.05
+            opacity = 0.05 + 0.65 * (1.0 - surface.T)
+
+            face_trace = go.Mesh3d(
+                x=verts[:, 0], y=verts[:, 1], z=verts[:, 2],
+                i=i, j=j, k=k,
+                color=color,
+                opacity=opacity,
+                name=obj.name,
+                customdata=[face_id],
+                legendgroup=legend_group,
+                showlegend=False,
+            )
+            if face_id not in trace_ids:
+                fig.add_trace(face_trace)
+
         return fig
+
+    @staticmethod
+    def _triangulate_face(verts):
+        """Triangulate a planar 3D polygon. Returns (i, j, k) index arrays."""
+        # Drop the axis with least variance for 2D triangulation
+        variances = np.var(verts, axis=0)
+        drop = np.argmin(variances)
+        axes = [a for a in range(3) if a != drop]
+        tri = Delaunay(verts[:, axes])
+        return tri.simplices[:, 0], tri.simplices[:, 1], tri.simplices[:, 2]
 
     def _plot_vol(self, zone, fig, select_id=None, show_isosurfaces=True):
 
