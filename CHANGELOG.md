@@ -29,7 +29,7 @@ All notable changes to this project will be documented in this file.
 - CalcZone/LightingCalculator restructured to accept surfaces instead of the ref_manager
 - Reflectance calculation moved to LightingCalculator
 - calculate_nearfield method in LightingCalculator extracted to _irradiance_at method
-
+- LampSurface position computation simplified
 
 ## [0.6.5] - 2026-03-06
 

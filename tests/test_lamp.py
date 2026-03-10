@@ -397,56 +397,6 @@ class TestIntensityMap:
         assert im.original is None
 
 
-class TestLazyCaching:
-    """Tests for lazy caching behavior in LampSurface."""
-
-    def test_grid_not_computed_until_accessed(self, basic_lamp):
-        """Grid should not be computed until properties are accessed."""
-        # After initialization, the grid should be marked dirty but not computed yet
-        # We can test this by checking that accessing surface_points triggers computation
-        surface = basic_lamp.surface
-        surface._grid_dirty = True
-        surface._surface_points_cache = None
-
-        # Access should trigger computation
-        _ = surface.surface_points
-        assert not surface._grid_dirty
-        assert surface._surface_points_cache is not None
-
-    def test_position_not_recomputed_if_clean(self, basic_lamp):
-        """Position should not be recomputed if cache is clean."""
-        surface = basic_lamp.surface
-        # Access to ensure computed
-        pos1 = surface.position
-
-        # Modify cache directly (would not happen in normal use)
-        surface._position_cache = np.array([999, 999, 999])
-
-        # Should return cached value since dirty flag is False
-        pos2 = surface.position
-        np.testing.assert_array_equal(pos2, np.array([999, 999, 999]))
-
-    def test_set_width_invalidates_grid(self, basic_lamp):
-        """Setting width should invalidate grid cache."""
-        surface = basic_lamp.surface
-        # Ensure grid is computed
-        _ = surface.surface_points
-        assert not surface._grid_dirty
-
-        # Set width should invalidate
-        basic_lamp.set_width(0.5)
-        assert surface._grid_dirty
-
-    def test_move_invalidates_position(self, basic_lamp):
-        """Moving lamp should invalidate surface position cache."""
-        surface = basic_lamp.surface
-        # Ensure position is computed
-        _ = surface.position
-        assert not surface._position_dirty
-
-        # Move lamp should invalidate surface position (via geometry)
-        basic_lamp.move(1.0, 2.0, 3.0)
-        assert surface._position_dirty
 
 
 class TestLampCopy:

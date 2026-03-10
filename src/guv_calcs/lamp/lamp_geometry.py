@@ -63,19 +63,19 @@ class LampGeometry:
     def move(self, x=None, y=None, z=None) -> "LampGeometry":
         """Move lamp to new position, maintaining aim direction."""
         self._pose = self._pose.move(x=x, y=y, z=z)
-        self._surface._invalidate_grid()
+        self._surface._recompute()
         return self
 
     def rotate(self, angle) -> "LampGeometry":
         """Rotate lamp around its axis."""
         self._pose = self._pose.rotate(angle)
-        self._surface._invalidate_grid()
+        self._surface._recompute()
         return self
 
     def aim(self, x=None, y=None, z=None) -> "LampGeometry":
         """Aim lamp at a point in cartesian space."""
         self._pose = self._pose.aim(x=x, y=y, z=z)
-        self._surface._invalidate_grid()
+        self._surface._recompute()
         return self
 
     def recalculate_aim_point(self, heading=None, bank=None, dimensions=None, distance=None):
@@ -83,7 +83,7 @@ class LampGeometry:
         self._pose = self._pose.recalculate_aim_point(
             heading=heading, bank=bank, dimensions=dimensions, distance=distance
         )
-        self._surface._invalidate_grid()
+        self._surface._recompute()
         return self
 
     # --- Computed positions ---

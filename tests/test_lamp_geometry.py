@@ -253,15 +253,12 @@ class TestSurfaceBackReference:
         pose = basic_lamp.surface._pose
         assert pose is basic_lamp.pose
 
-    def test_surface_invalidates_on_move(self, basic_lamp):
-        """Surface caches should invalidate when lamp moves."""
-        # Compute initial position
-        _ = basic_lamp.surface.position
-        assert not basic_lamp.surface._position_dirty
-
-        # Move lamp
+    def test_surface_recomputes_on_move(self, basic_lamp):
+        """Surface caches should recompute when lamp moves."""
+        old_pos = basic_lamp.surface.position.copy()
         basic_lamp.move(5, 5, 5)
-        assert basic_lamp.surface._position_dirty
+        new_pos = basic_lamp.surface.position
+        np.testing.assert_array_equal(new_pos, np.array([5.0, 5.0, 5.0]))
 
 
 class TestSurfacePositionEqualsLampPosition:

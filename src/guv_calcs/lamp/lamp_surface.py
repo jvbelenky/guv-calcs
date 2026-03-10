@@ -39,15 +39,13 @@ class LampSurface:
         self._source_density = source_density
         self._intensity_map = IntensityMap(intensity_map)
 
-        # Dirty flags
-        self._position_dirty = True
-        self._grid_dirty = True
-
         # Cached values
         self._position_cache = None
         self._surface_points_cache = None
         self._num_points_cache = None
         self._intensity_map_cache = None
+
+        self._recompute()
 
         self.plotter = LampSurfacePlotter(self)
 
@@ -64,7 +62,7 @@ class LampSurface:
     def set_geometry(self, geometry: "LampGeometry"):
         """Set back-reference to parent LampGeometry. Called by LampGeometry.__init__."""
         self._geometry = geometry
-        self._invalidate_grid()
+        self._recompute()
 
     @property
     def _pose(self):
@@ -73,44 +71,31 @@ class LampSurface:
             raise RuntimeError("LampSurface requires geometry back-reference. Use LampGeometry.")
         return self._geometry.pose
 
-    # ---- Public properties with lazy computation ----
+    # ---- Public properties ----
 
     @property
     def position(self):
         """Surface center position in world coordinates."""
-        if self._geometry is None:
-            return np.array([0.0, 0.0, 0.0])
-        if self._position_dirty:
-            self._position_cache = self._geometry.surface_position
-            self._position_dirty = False
         return self._position_cache
 
     @property
     def surface_points(self):
         """Grid points on the lamp surface in world coordinates."""
-        if self._grid_dirty:
-            self._recompute_grid()
         return self._surface_points_cache
 
     @property
     def num_points_width(self):
         """Number of grid points along width dimension."""
-        if self._grid_dirty:
-            self._recompute_grid()
         return self._num_points_cache[1]
 
     @property
     def num_points_length(self):
         """Number of grid points along length dimension."""
-        if self._grid_dirty:
-            self._recompute_grid()
         return self._num_points_cache[0]
 
     @property
     def intensity_map(self):
         """Current resampled intensity map."""
-        if self._grid_dirty:
-            self._recompute_grid()
         return self._intensity_map_cache
 
     @property
@@ -133,7 +118,7 @@ class LampSurface:
     @source_density.setter
     def source_density(self, value):
         self._source_density = value
-        self._invalidate_grid()
+        self._recompute()
 
     # ---- Setters ----
 
@@ -147,7 +132,7 @@ class LampSurface:
             raise ValueError(f"width must be non-negative, got {width}")
         self._user_width = width
         self.width = width if width is not None else 0.0
-        self._invalidate_grid()
+        self._recompute()
 
     def set_length(self, length):
         """Change y-axis extent of lamp emissive surface."""
@@ -155,7 +140,7 @@ class LampSurface:
             raise ValueError(f"length must be non-negative, got {length}")
         self._user_length = length
         self.length = length if length is not None else 0.0
-        self._invalidate_grid()
+        self._recompute()
 
     def set_height(self, height):
         """Set z-axis extent of luminous opening (for 3D sources like cylinders)."""
@@ -163,7 +148,7 @@ class LampSurface:
             raise ValueError(f"height must be non-negative, got {height}")
         self._user_height = height
         self.height = height if height is not None else 0.0
-        self._invalidate_grid()
+        self._recompute()
 
     def set_units(self, units):
         """Set units and convert all values."""
@@ -174,7 +159,7 @@ class LampSurface:
             )
             self._user_units = units
             self.units = units
-            self._invalidate_grid()
+            self._recompute()
 
     def set_ies(self, ies, override=False):
         """
@@ -192,12 +177,12 @@ class LampSurface:
             if self._user_height is None or override:
                 self.height = abs(ies.height)
 
-            self._invalidate_grid()
+            self._recompute()
 
     def load_intensity_map(self, intensity_map):
         """Load a new intensity map after instantiation."""
         self._intensity_map = IntensityMap(intensity_map)
-        self._invalidate_grid()
+        self._recompute()
 
     # ---- Serialization ----
 
@@ -231,21 +216,17 @@ class LampSurface:
         """Combined grid points and intensity map plot."""
         return self.plotter.plot_surface(fig_width=fig_width)
 
-    # ---- Invalidation helpers ----
+    # ---- Computation ----
 
-    def _invalidate_position(self):
-        """Mark position cache as stale."""
-        self._position_dirty = True
+    def _recompute(self):
+        """Recompute all cached values."""
+        # position
+        if self._geometry is None:
+            self._position_cache = np.array([0.0, 0.0, 0.0])
+        else:
+            self._position_cache = self._geometry.surface_position
 
-    def _invalidate_grid(self):
-        """Mark grid-related caches as stale."""
-        self._grid_dirty = True
-        self._invalidate_position()
-
-    # ---- Lazy computation ----
-
-    def _recompute_grid(self):
-        """Lazily compute grid-related values."""
+        # grid
         num_u, num_v = self._get_num_points()
         self._num_points_cache = (num_u, num_v)
 
@@ -261,12 +242,11 @@ class LampSurface:
             surface_points = self._pose.transform_to_world(local).T
             self._surface_points_cache = surface_points[::-1]
         else:
-            self._surface_points_cache = self.position
+            self._surface_points_cache = self._position_cache
 
         self._intensity_map_cache = self._intensity_map.resample(
             num_u, num_v, self._generate_raw_points
         )
-        self._grid_dirty = False
 
     def _make_points_1d(self, extent, num_points):
         """Generate evenly-spaced points centered at origin."""
