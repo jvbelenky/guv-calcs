@@ -9,6 +9,7 @@ from .geometry import RoomDimensions
 from .lamp import Lamp
 from .calc_zone import CalcZone
 from .reflectance import Surface
+from .object import Object
 
 
 T = TypeVar("T")
@@ -188,6 +189,21 @@ class SurfaceRegistry(Registry["Surface"]):
 
     def _get_coords(self, surface):
         return surface.plane.coords
+
+
+@dataclass(eq=False)
+class ObjectRegistry(Registry[Object]):
+    """Registry for Object instances within a Room."""
+    base_id = "Object"
+    expected_type: type | None = Object
+
+    def _get_coords(self, obj):
+        all_verts = []
+        for surface in obj.surfaces.values():
+            all_verts.append(surface.plane.geometry.boundary_vertices)
+        if all_verts:
+            return np.vstack(all_verts)
+        return None
 
 
 @dataclass(eq=False)

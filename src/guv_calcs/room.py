@@ -15,7 +15,8 @@ from .safety import PhotStandard, check_lamps, SafetyCheckResult
 from .standard_zones import create_standard_zones, get_zone_config, WHOLE_ROOM_FLUENCE
 from .units import LengthUnits, convert_length
 from .efficacy import InactivationData
-from .scene_registry import LampRegistry, ZoneRegistry, SurfaceRegistry
+from .scene_registry import LampRegistry, ZoneRegistry, SurfaceRegistry, ObjectRegistry
+from .object import Object
 from ._serialization import init_from_dict, migrate_room_dict
 
 DEFAULT_DIMS = {}
@@ -102,6 +103,7 @@ class Room:
         self.lamps = LampRegistry(dims=dims_getter, on_collision=on_collision)
         self.calc_zones = ZoneRegistry(dims=dims_getter, on_collision=on_collision)
         self.surfaces = SurfaceRegistry(dims=dims_getter, on_collision=on_collision)
+        self.objects = ObjectRegistry(dims=dims_getter, on_collision=on_collision)
 
         # May be overridden if loaded serially
         self._init_standard_surfaces()
@@ -139,6 +141,7 @@ class Room:
         result.lamps.dims = lambda: result.dim
         result.calc_zones.dims = lambda: result.dim
         result.surfaces.dims = lambda: result.dim
+        result.objects.dims = lambda: result.dim
 
         return result
 
@@ -219,6 +222,7 @@ class Room:
         data["surfaces"] = {k: v.to_dict() for k, v in dct["surfaces"].items()}
         data["lamps"] = {k: v.to_dict() for k, v in dct["lamps"].items()}
         data["calc_zones"] = {k: v.to_dict() for k, v in dct["calc_zones"].items()}
+        data["objects"] = {k: v.to_dict() for k, v in dct["objects"].items()}
         return data
 
     @classmethod
@@ -271,6 +275,9 @@ class Room:
             elif zone["calctype"] == "Volume":
                 room.add_calc_zone(CalcVol.from_dict(zone))
 
+        for obj_id, obj_data in data.get("objects", {}).items():
+            room.add_object(Object.from_dict(obj_data))
+
         return room
 
     def export_zip(
@@ -316,10 +323,16 @@ class Room:
             if zone.enabled:
                 zone_state[key] = hash(zone.calc_state)
 
+        object_state = {}
+        for key, obj in self.objects.items():
+            if obj.enabled:
+                object_state[key] = hash(obj.calc_state)
+
         return {
             "lamps": hash(tuple(sorted(lamp_state.items()))),
             "calc_zones": zone_state,
             "reflectance": hash(self.ref_manager.calc_state),
+            "objects": hash(tuple(sorted(object_state.items()))),
         }
 
     def get_update_state(self):
@@ -363,7 +376,8 @@ class Room:
         REF_UPDATE = self.update_state.get("reflectance") != new_update_state.get(
             "reflectance"
         )
-        return LAMP_RECALC or REF_RECALC or REF_UPDATE
+        OBJ_RECALC = self.calc_state.get("objects") != new_calc_state.get("objects")
+        return LAMP_RECALC or REF_RECALC or REF_UPDATE or OBJ_RECALC
 
     # --------------------- Misc flags -----------------------
 
@@ -450,6 +464,9 @@ class Room:
         # Zone geometry (origin, spans, spacing, polygon vertices, etc.)
         for zone in self.calc_zones.values():
             zone.convert_units(old_units, new_units)
+        # Objects
+        for obj in self.objects.values():
+            obj.convert_units(old_units, new_units)
         # Surfaces (rebuild from new room dims, preserving reflectances)
         if self.surfaces:
             self._update_standard_surfaces()
@@ -510,13 +527,24 @@ class Room:
     def zone(self, zone_id):
         return self.calc_zones[zone_id]
 
+    @property
+    def all_surfaces(self):
+        """All surfaces for calculation: room walls + object faces."""
+        merged = dict(self.surfaces)
+        for obj in self.objects.values():
+            if obj.enabled:
+                merged.update(obj.surfaces)
+        return merged
+
     def add(self, *args, on_collision=None):
-        """Add objects to the Room (Lamp, CalcZone, Surface, or iterables thereof)."""
+        """Add objects to the Room (Lamp, CalcZone, Surface, Object, or iterables thereof)."""
         for obj in args:
             if isinstance(obj, Lamp):
                 self.add_lamp(obj, on_collision=on_collision)
             elif isinstance(obj, CalcZone):
                 self.add_calc_zone(obj, on_collision=on_collision)
+            elif isinstance(obj, Object):
+                self.add_object(obj, on_collision=on_collision)
             elif isinstance(obj, Surface):
                 self.add_surface(obj, on_collision=on_collision)
             elif isinstance(obj, dict):
@@ -585,6 +613,14 @@ class Room:
         self.surfaces.remove(surface_id)
         return self
 
+    def add_object(self, obj, **kwargs):
+        self.objects.add(obj, **kwargs)
+        return self
+
+    def remove_object(self, object_id):
+        self.objects.remove(object_id)
+        return self
+
     def set_colormap(self, colormap):
         """Set the room colormap."""
         if colormap not in list(colormaps):
@@ -598,6 +634,7 @@ class Room:
         msgs["lamps"] = self.lamps.get_position_warnings()
         msgs["calc_zones"] = self.calc_zones.get_position_warnings()
         msgs["surfaces"] = self.surfaces.get_position_warnings()
+        msgs["objects"] = self.objects.get_position_warnings()
         return msgs
 
     # -------------------------- Calculation ---------------------------
@@ -605,10 +642,11 @@ class Room:
     def _needs_occlusion(self, lamps):
         """Check if occlusion calculations can be skipped.
 
-        Occlusion is unnecessary when the room polygon is convex and all lamps
-        are inside it — no room surface can block line-of-sight between any
-        interior lamp and any interior point.
+        Occlusion is unnecessary when the room polygon is convex, all lamps
+        are inside it, and no objects are present.
         """
+        if len(self.objects) > 0:
+            return True
         if not self.dim.polygon.is_convex:
             return True
         for lamp in lamps.values():
@@ -621,15 +659,18 @@ class Room:
         """Triggers calculation of lighting values in each calculation zone."""
 
         valid_lamps = self.lamps.valid()
+        all_surfs = self.all_surfaces
+
         # calculate incidence on the surfaces (for reflectance)
         if self.recalculate_incidence or hard:
+            self.ref_manager.surfaces = all_surfs
             self.ref_manager.calculate_incidence(valid_lamps, hard=hard)
 
         enable_occlusion = self._needs_occlusion(valid_lamps)
 
         for name, zone in self.calc_zones.items():
             zone.calculate_values(
-                lamps=valid_lamps, surfaces=self.surfaces,
+                lamps=valid_lamps, surfaces=all_surfs,
                 enable_occlusion=enable_occlusion, hard=hard
             )
 
@@ -649,11 +690,13 @@ class Room:
         """Calculate just the calc zone selected."""
         valid_lamps = self.lamps.valid()
         if len(valid_lamps) > 0:
+            all_surfs = self.all_surfaces
             if self.recalculate_incidence or hard:
+                self.ref_manager.surfaces = all_surfs
                 self.ref_manager.calculate_incidence(valid_lamps, hard=hard)
             enable_occlusion = self._needs_occlusion(valid_lamps)
             self.calc_zones[zone_id].calculate_values(
-                lamps=valid_lamps, surfaces=self.surfaces,
+                lamps=valid_lamps, surfaces=all_surfs,
                 enable_occlusion=enable_occlusion, hard=hard
             )
             self.calc_state = self.get_calc_state()

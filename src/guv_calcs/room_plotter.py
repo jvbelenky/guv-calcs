@@ -52,11 +52,8 @@ class RoomPlotter:
                     show_isosurfaces=show,
                 )
 
-        # for filter_id, filt in self.room.filters.items():
-        # fig = self._plot_filter(filt=filt, fig=fig, select_id=select_id)
-
-        # for obs_id, obs in self.room.obstacles.items():
-        # fig = self._plot_obstacle(obs=obs, fig=fig)
+        for obj_id, obj in self.room.objects.items():
+            fig = self._plot_object(obj=obj, fig=fig, select_id=select_id)
 
         # Draw room outline for polygon rooms
         if self.room.is_polygon:
@@ -390,28 +387,29 @@ class RoomPlotter:
                 )
         return fig
 
-    def _plot_obstacle(self, obs, fig):
-        x_coords, y_coords, z_coords = self._get_box_coords(obs.lo, obs.hi)
-        obs_trace = go.Scatter3d(
-            x=x_coords,
-            y=y_coords,
-            z=z_coords,
+    def _plot_object(self, obj, fig, select_id=None):
+        """Plot object as wireframe from surface boundary vertices."""
+        all_x, all_y, all_z = [], [], []
+        for surface in obj.surfaces.values():
+            verts = surface.plane.geometry.boundary_vertices
+            # close the polygon
+            verts = np.vstack([verts, verts[0:1]])
+            all_x.extend(list(verts[:, 0]) + [None])
+            all_y.extend(list(verts[:, 1]) + [None])
+            all_z.extend(list(verts[:, 2]) + [None])
+
+        color = self._set_color(select_id, obj.id, obj.enabled)
+        trace = go.Scatter3d(
+            x=all_x, y=all_y, z=all_z,
             mode="lines",
-            line=dict(color="#000000", width=3),
-            name=obs.name,
-            customdata=["obstacle_" + obs.obs_id],
+            line=dict(color=color, width=3),
+            name=obj.name,
+            customdata=["object_" + obj.id],
+            showlegend=True,
         )
-        traces = [trace.name for trace in fig.data]
-        if obs_trace.name not in traces:
-            fig.add_trace(obs_trace)
-        else:
-            self._update_trace_by_id(
-                fig,
-                obs.obs_id,
-                x=x_coords,
-                y=y_coords,
-                z=z_coords,
-            )
+        traces = [t.customdata[0] if t.customdata else None for t in fig.data]
+        if trace.customdata[0] not in traces:
+            fig.add_trace(trace)
         return fig
 
     def _plot_vol(self, zone, fig, select_id=None, show_isosurfaces=True):

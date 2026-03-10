@@ -1,5 +1,6 @@
 from .room import Room, DEFAULT_DIMS
 from .project import Project
+from .object import Object
 from .lamp import Lamp, LampType, GUVType, LampPlacer, Spectrum, sum_spectrum
 from .calc_zone import CalcVol, CalcPlane
 from .geometry import Polygon2D, to_polar, to_cartesian, attitude
@@ -16,6 +17,7 @@ __all__ = [
     "Room",
     "DEFAULT_DIMS",
     "Project",
+    "Object",
     "Lamp",
     "LampType",
     "GUVType",
