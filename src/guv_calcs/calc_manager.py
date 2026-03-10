@@ -219,6 +219,76 @@ class LightingCalculator:
             return np.array(convert_units(lamp.surface.units, "meters", *R))
         return R
 
+    def _irradiance_at(self, lamp, coords):
+        """Compute raw irradiance at arbitrary coordinates for a single lamp."""
+        rel_coords = coords - lamp.surface.position
+        Theta, Phi, R = lamp.transform_to_lamp(rel_coords, which="polar")
+        R = self._to_meters(R, lamp)
+        phot = lamp.ies.photometry.interpolated()
+        values = phot.get_intensity(Theta, Phi) / R ** 2
+
+        if lamp.surface.source_density > 0 and lamp.surface.photometric_distance:
+            phot_dist_m = float(self._to_meters(
+                np.array([lamp.surface.photometric_distance]), lamp
+            ).ravel()[0])
+            near_idx = np.where(R < phot_dist_m)
+            if len(near_idx[0]) > 0:
+                values[near_idx] = 0
+                points = lamp.surface.surface_points
+                imap = lamp.surface.intensity_map.reshape(-1)
+                n_src = len(points)
+                for point, val in zip(points, imap):
+                    rel = coords - point
+                    Th, Ph, Rn = lamp.transform_to_lamp(rel, which="polar")
+                    Rn_m = self._to_meters(Rn[near_idx], lamp)
+                    nv = phot.get_intensity(Th[near_idx], Ph[near_idx]) / Rn_m ** 2
+                    values[near_idx] += nv * val / n_src
+
+        return values, R
+
+    def _cell_average_near_lamp(self, lamp, values, zv, R):
+        """Replace near-lamp point-samples with median of cell sub-samples."""
+        spacings = []
+        for axis in range(3):
+            u = np.unique(zv.coords[:, axis])
+            if len(u) > 1:
+                spacings.append(np.min(np.diff(u)))
+        if not spacings:
+            return values
+        min_spacing = min(spacings)
+        min_spacing_m = float(self._to_meters(
+            np.array([min_spacing]), lamp
+        ).ravel()[0])
+
+        close_idx = np.where(R < min_spacing_m)[0]
+        if len(close_idx) == 0:
+            return values
+
+        # Generate sub-sample offsets within each cell (5 per active dimension)
+        n_sub = 5
+        offset_arrays = []
+        for axis in range(3):
+            u = np.unique(zv.coords[:, axis])
+            if len(u) > 1:
+                s = np.min(np.diff(u))
+                offset_arrays.append(
+                    np.linspace(-s / 2, s / 2, n_sub, endpoint=False) + s / (2 * n_sub)
+                )
+            else:
+                offset_arrays.append(np.array([0.0]))
+
+        grids = np.meshgrid(*offset_arrays, indexing='ij')
+        sub_offsets = np.column_stack([g.ravel() for g in grids])
+
+        for idx in close_idx:
+            sub_coords = zv.coords[idx] + sub_offsets
+            sub_vals, _ = self._irradiance_at(lamp, sub_coords)
+            valid = np.isfinite(sub_vals)
+            if np.any(valid):
+                values[idx] = np.median(sub_vals[valid])
+
+        return values
+
     def calculate_lamp(self, lamp, zv, surfaces=None, hard=False):
         """Calculate the zone values for a single lamp."""
 
@@ -228,17 +298,10 @@ class LightingCalculator:
             lamp_calc_state=lamp.calc_state,
         )
         if hard or RECALC:
-            # get coords
-            rel_coords = zv.coords - lamp.surface.position
-            Theta, Phi, R = lamp.transform_to_lamp(rel_coords, which="polar")
-            R = self._to_meters(R, lamp)
-            # fetch intensity values from photometric data
-            phot = lamp.ies.photometry.interpolated()
-            values = phot.get_intensity(Theta, Phi) / R ** 2
+            values, R = self._irradiance_at(lamp, zv.coords)
 
-            # near field only if necessary
-            if lamp.surface.source_density > 0 and lamp.surface.photometric_distance:
-                values = self.calculate_nearfield(lamp, R, values, zv)
+            # Cell-average near-lamp points to prevent grid-alignment spikes
+            values = self._cell_average_near_lamp(lamp, values, zv, R)
 
             # apply occlusion from room surfaces
             if surfaces:
@@ -271,33 +334,6 @@ class LightingCalculator:
         values = values * lamp.intensity_units.factor
 
         return values.reshape(*zv.num_points)
-
-    def calculate_nearfield(self, lamp, R, values, zv):
-        """
-        calculate the values within the photometric distance
-        over a discretized source
-        """
-        near_idx = np.where(R < lamp.surface.photometric_distance)
-        # set current values to zero
-        values[near_idx] = 0
-        # redo calculation in a loop
-        num_points = len(lamp.surface.surface_points)
-        points = lamp.surface.surface_points
-        intensity_values = lamp.surface.intensity_map.reshape(-1)
-        for point, val in zip(points, intensity_values):
-
-            rel_coords = zv.coords - point
-            Theta, Phi, R = lamp.transform_to_lamp(rel_coords, which="polar")
-            Theta_n, Phi_n, R_n = Theta[near_idx], Phi[near_idx], R[near_idx]
-
-            R_n = self._to_meters(R_n, lamp)
-
-            phot = lamp.ies.photometry.interpolated()
-            near_values = phot.get_intensity(Theta_n, Phi_n) / R_n ** 2
-            near_values = near_values * val / num_points
-            values[near_idx] += near_values
-
-        return values
 
     def aggregate(self, lamps, zv):
         """sum across lamp_values"""

@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - room.set_units() early return is now self, not None
 - lamp_types with no default wavelength will now return an explicitly set wavelength
 - subset() in InactivationData now non-mutating
+- LightingCalculator will now subsample in grid points that are too close to light sources
 
 ### Changed
 
@@ -26,6 +27,7 @@ All notable changes to this project will be documented in this file.
 - CalcZone's show_values is now display_mode + zones no longer have individual colormaps
 - CalcZone/LightingCalculator restructured to accept surfaces instead of the ref_manager
 - Reflectance calculation moved to LightingCalculator
+- calculate_nearfield method in LightingCalculator extracted to _irradiance_at method
 
 
 ## [0.6.5] - 2026-03-06
