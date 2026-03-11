@@ -113,7 +113,11 @@ def migrate_room_dict(data: dict, saved_version: str) -> dict:
             x_spacings=data.get("x_spacings"),
             y_spacings=data.get("y_spacings"),
         )
-        data["surfaces"] = {k: v.to_dict() for k, v in surfaces.items()}
+        data["surfaces"] = {
+            k: {"R": v.R, "T": v.T,
+                "x_spacing": v.plane.x_spacing, "y_spacing": v.plane.y_spacing}
+            for k, v in surfaces.items()
+        }
 
     return data
 

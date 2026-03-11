@@ -6,7 +6,10 @@ from .polygon import Polygon2D
 
 
 class RectFace(NamedTuple):
-    """Face data for axis-aligned rectangular rooms (floor, ceiling, walls)."""
+    """Legacy face data for axis-aligned rectangular rooms.
+
+    Only used by deserialization/migration paths (from_legacy).
+    """
     x1: float
     x2: float
     y1: float
@@ -16,20 +19,23 @@ class RectFace(NamedTuple):
     direction: int
 
 
-class PolygonFloorCeilingFace(NamedTuple):
-    """Face data for polygon room floor/ceiling."""
-    x_min: float
-    x_max: float
-    y_min: float
-    y_max: float
+class FloorCeilingFace(NamedTuple):
+    """Horizontal face (floor or ceiling)."""
     height: float
-    ref_surface: str
     direction: int
     polygon: object
 
+    def to_grid(self, normal_offset=0.0, **kwargs):
+        from .grid import SurfaceGrid
+        height = self.height + normal_offset * self.direction
+        return SurfaceGrid.from_polygon(
+            polygon=self.polygon, height=height,
+            direction=self.direction, **kwargs,
+        )
+
 
 class WallFace(NamedTuple):
-    """Face data for polygon room walls."""
+    """Vertical face (wall)."""
     x1: float
     y1: float
     x2: float
@@ -37,6 +43,17 @@ class WallFace(NamedTuple):
     edge_length: float
     z_height: float
     normal_2d: tuple
+
+    def to_grid(self, normal_offset=0.0, **kwargs):
+        from .grid import SurfaceGrid
+        nx, ny = self.normal_2d
+        dx = -nx * normal_offset
+        dy = -ny * normal_offset
+        return SurfaceGrid.from_wall(
+            p1=(self.x1 + dx, self.y1 + dy),
+            p2=(self.x2 + dx, self.y2 + dy),
+            z_height=self.z_height, **kwargs,
+        )
 
 
 @dataclass(frozen=True, repr=False)
@@ -113,27 +130,21 @@ class RoomDimensions:
         if "faces" in self._cache:
             return self._cache["faces"]
 
-        x_min, y_min, x_max, y_max = self.polygon.bounding_box
+        result = {
+            "floor": FloorCeilingFace(0, 1, self.polygon),
+            "ceiling": FloorCeilingFace(self.z, -1, self.polygon),
+        }
 
-        if self.is_polygon:
-            result = {
-                "floor": PolygonFloorCeilingFace(x_min, x_max, y_min, y_max, 0, "xy", 1, self.polygon),
-                "ceiling": PolygonFloorCeilingFace(x_min, x_max, y_min, y_max, self.z, "xy", -1, self.polygon),
-            }
-            for i, ((x1, y1), (x2, y2)) in enumerate(self.polygon.edges):
-                edge_length = self.polygon.edge_lengths[i]
-                normal_2d = self.polygon.edge_normals[i]
-                result[f"wall_{i}"] = WallFace(x1, y1, x2, y2, edge_length, self.z, normal_2d)
-        else:
-            # Axis-aligned rectangle: use actual bounding box values
-            result = {
-                "floor": RectFace(x_min, x_max, y_min, y_max, 0, "xy", 1),
-                "ceiling": RectFace(x_min, x_max, y_min, y_max, self.z, "xy", -1),
-                "south": RectFace(x_min, x_max, 0, self.z, y_min, "xz", 1),
-                "north": RectFace(x_min, x_max, 0, self.z, y_max, "xz", -1),
-                "west": RectFace(y_min, y_max, 0, self.z, x_min, "yz", 1),
-                "east": RectFace(y_min, y_max, 0, self.z, x_max, "yz", -1),
-            }
+        # Rectangular rooms use cardinal names, polygon rooms use wall_N
+        wall_names = (
+            ["south", "east", "north", "west"]
+            if not self.is_polygon
+            else [f"wall_{i}" for i in range(len(self.polygon.edges))]
+        )
+        for i, ((x1, y1), (x2, y2)) in enumerate(self.polygon.edges):
+            edge_length = self.polygon.edge_lengths[i]
+            normal_2d = self.polygon.edge_normals[i]
+            result[wall_names[i]] = WallFace(x1, y1, x2, y2, edge_length, self.z, normal_2d)
 
         self._cache["faces"] = result
         return result
