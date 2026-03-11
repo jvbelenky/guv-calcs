@@ -244,9 +244,12 @@ class LampSurface:
         else:
             self._surface_points_cache = self._position_cache
 
-        self._intensity_map_cache = self._intensity_map.resample(
-            num_u, num_v, self._generate_raw_points
-        )
+        if num_u <= 1 and num_v <= 1:
+            self._intensity_map_cache = np.ones((num_u, num_v))
+        else:
+            self._intensity_map_cache = self._intensity_map.resample(
+                num_u, num_v, self._generate_raw_points
+            )
 
     def _make_points_1d(self, extent, num_points):
         """Generate evenly-spaced points centered at origin."""
