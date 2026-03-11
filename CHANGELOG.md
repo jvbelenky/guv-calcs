@@ -20,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - subset() in InactivationData now non-mutating
 - LightingCalculator will now subsample in grid points that are too close to light sources
 - Bug in loading an intensity map while width/length are 0
+- Bug in update_managers call preventing interreflections from being calculated
 
 ### Changed
 

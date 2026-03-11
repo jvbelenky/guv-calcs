@@ -109,10 +109,10 @@ def _update_managers(managers, surfaces):
     """Update all manager copies with newly calculated surface incidences."""
     for wall, manager_surfaces in managers.items():
         for subwall, sub_surface in manager_surfaces.items():
-            old_values = sub_surface.plane.result.reflected_values
-            new_values = surfaces[subwall].plane.result.reflected_values
-            if old_values is not None:
-                np.copyto(old_values, new_values)
+            # Copy current total values into the manager copy's base_values
+            # so that the next pass sees updated irradiance for reflection
+            np.copyto(sub_surface.plane.result.base_values,
+                      surfaces[subwall].plane.values)
 
 
 class Surface:
