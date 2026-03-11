@@ -254,6 +254,11 @@ class Room:
         room_dict = migrate_room_dict(room_dict, saved_version)
 
         return cls.from_dict(room_dict)
+        
+    @classmethod
+    def from_file(cls, filedata):
+        """alias for load"""
+        return cls.load(filedata)
 
     @classmethod
     def from_dict(cls, data: dict):
@@ -881,7 +886,7 @@ class Room:
             num_y=num_y,
         )
         for key, val in room_surfaces.items():
-            self.add_surface(val)
+            self.add_surface(val, on_collision="overwrite")
 
     def _update_standard_surfaces(self):
         """Update surfaces to match current dimensions."""
