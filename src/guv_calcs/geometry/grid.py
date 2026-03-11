@@ -433,12 +433,16 @@ class SurfaceGrid(_GridBase):
 
     @classmethod
     def from_wall(cls, p1, p2, z_height, **kwargs):
-        """Create a vertical wall plane from two 2D vertices."""
+        """Create a vertical wall plane from two 2D vertices.
+
+        The normal points inward (for CCW polygon winding) so that
+        use_normal=True correctly accepts light from the room interior.
+        """
         dx, dy = p2[0] - p1[0], p2[1] - p1[1]
         edge_length = np.sqrt(dx * dx + dy * dy)
-        origin = (p1[0], p1[1], 0.0)
+        origin = (p1[0], p1[1], z_height)
         u_vec = (dx, dy, 0.0)
-        v_vec = (0.0, 0.0, 1.0)
+        v_vec = (0.0, 0.0, -1.0)
         polygon = Polygon2D.rectangle(edge_length, z_height)
         return cls(
             polygon=polygon,

@@ -219,7 +219,11 @@ class Room:
         data["colormap"] = self.colormap
 
         dct = self.__dict__.copy()
-        data["surfaces"] = {k: v.to_dict() for k, v in dct["surfaces"].items()}
+        data["surfaces"] = {
+            k: {"R": v.R, "T": v.T,
+                "x_spacing": v.plane.x_spacing, "y_spacing": v.plane.y_spacing}
+            for k, v in dct["surfaces"].items()
+        }
         data["lamps"] = {k: v.to_dict() for k, v in dct["lamps"].items()}
         data["calc_zones"] = {k: v.to_dict() for k, v in dct["calc_zones"].items()}
         data["objects"] = {k: v.to_dict() for k, v in dct["objects"].items()}
@@ -262,9 +266,18 @@ class Room:
 
         room = init_from_dict(cls, init_data)
 
-        for surface_id, surface in data.get("surfaces", {}).items():
-            surf = Surface.from_dict(surface)
-            room.add_surface(surf, on_collision="overwrite")
+        surface_data = data.get("surfaces", {})
+        if surface_data:
+            reflectances = {k: v.get("R", 0.0) for k, v in surface_data.items()}
+            transmittances = {k: v.get("T", 0.0) for k, v in surface_data.items()}
+            x_spacings = {k: v.get("x_spacing") for k, v in surface_data.items()}
+            y_spacings = {k: v.get("y_spacing") for k, v in surface_data.items()}
+            room._init_standard_surfaces(
+                reflectances=reflectances,
+                transmittances=transmittances,
+                x_spacings=x_spacings,
+                y_spacings=y_spacings,
+            )
 
         for lampid, lamp in data.get("lamps", {}).items():
             room.add_lamp(Lamp.from_dict(lamp))
@@ -671,7 +684,9 @@ class Room:
         for name, zone in self.calc_zones.items():
             zone.calculate_values(
                 lamps=valid_lamps, surfaces=all_surfs,
-                enable_occlusion=enable_occlusion, hard=hard
+                enable_occlusion=enable_occlusion,
+                enable_reflectance=self.ref_manager.enabled,
+                hard=hard
             )
 
         # update calc states.
@@ -697,7 +712,9 @@ class Room:
             enable_occlusion = self._needs_occlusion(valid_lamps)
             self.calc_zones[zone_id].calculate_values(
                 lamps=valid_lamps, surfaces=all_surfs,
-                enable_occlusion=enable_occlusion, hard=hard
+                enable_occlusion=enable_occlusion,
+                enable_reflectance=self.ref_manager.enabled,
+                hard=hard
             )
             self.calc_state = self.get_calc_state()
             self.update_state = self.get_update_state()
@@ -850,12 +867,14 @@ class Room:
             if zone.zone_id in self.calc_zones:
                 self.calc_zones[zone.zone_id] = zone
 
-    def _init_standard_surfaces(self, reflectances=None, x_spacings=None,
-                                 y_spacings=None, num_x=None, num_y=None):
+    def _init_standard_surfaces(self, reflectances=None, transmittances=None,
+                                 x_spacings=None, y_spacings=None,
+                                 num_x=None, num_y=None):
         """Add surfaces to the room corresponding to the faces of the room."""
         room_surfaces = init_room_surfaces(
             dims=self.dim,
             reflectances=reflectances,
+            transmittances=transmittances,
             x_spacings=x_spacings,
             y_spacings=y_spacings,
             num_x=num_x,

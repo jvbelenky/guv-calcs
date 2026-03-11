@@ -334,7 +334,8 @@ class CalcZone(ABC):
     def _coalesce(value, default):
         return default if value is None else value
 
-    def calculate_values(self, lamps, surfaces=None, enable_occlusion=True, hard=False):
+    def calculate_values(self, lamps, surfaces=None, enable_occlusion=True,
+                         enable_reflectance=True, hard=False):
         """Calculate all the values for all the lamps."""
 
         if self.enabled:
@@ -345,11 +346,13 @@ class CalcZone(ABC):
                 enable_occlusion=enable_occlusion, hard=hard
             )
 
-            if surfaces:
+            if surfaces and enable_reflectance:
                 self.result.reflected_values = self.calculator.compute_reflectance(
                     surfaces=surfaces, zv=zv,
                     enable_occlusion=enable_occlusion, hard=hard
                 )
+            else:
+                self.result.reflected_values = None
 
         return self.get_values()
 
@@ -443,10 +446,8 @@ class CalcVol(CalcZone):
             display_mode=display_mode,
         )
         if geometry is None:
-            geometry = VolumeGrid.from_legacy(
-                mins=(0.0, 0.0, 0.0),
-                maxs=(6.0, 4.0, 2.7),
-                offset=True,
+            geometry = VolumeGrid.from_polygon(
+                Polygon2D.rectangle(6.0, 4.0), z_height=2.7, offset=True,
             )
         self.geometry = geometry
 
@@ -535,13 +536,8 @@ class CalcPlane(CalcZone):
         )
 
         if geometry is None:
-            geometry = SurfaceGrid.from_legacy(
-                mins=(0.0, 0.0),
-                maxs=(6.0, 4.0),
-                offset=True,
-                height=0,
-                ref_surface="xy",
-                direction=1,
+            geometry = SurfaceGrid.from_polygon(
+                Polygon2D.rectangle(6.0, 4.0), height=0, direction=1, offset=True,
             )
         self.geometry = geometry
 
@@ -610,43 +606,12 @@ class CalcPlane(CalcZone):
             )
 
         face = dims.faces[wall]
-
-        # Handle polygon room dimensions
-        if dims.is_polygon:
-            if wall in ("floor", "ceiling"):
-                height = face.height + normal_offset * face.direction
-
-                geometry = SurfaceGrid.from_polygon(
-                    polygon=face.polygon,
-                    height=height,
-                    spacing_init=spacing,
-                    num_points_init=num_points,
-                    offset=offset,
-                    direction=face.direction,
-                )
-            else:
-                geometry = SurfaceGrid.from_wall(
-                    p1=(face.x1, face.y1),
-                    p2=(face.x2, face.y2),
-                    z_height=face.z_height,
-                    spacing_init=spacing,
-                    num_points_init=num_points,
-                    offset=offset,
-                )
-        else:
-            # Rectangular room - original behavior
-            height = face.height + normal_offset * face.direction
-
-            geometry = SurfaceGrid.from_legacy(
-                mins=(face.x1, face.y1),
-                maxs=(face.x2, face.y2),
-                height=height,
-                ref_surface=face.ref_surface,
-                spacing_init=spacing,
-                num_points_init=num_points,
-                offset=offset,
-            )
-
+        geometry = face.to_grid(
+            normal_offset=normal_offset,
+            spacing_init=spacing,
+            num_points_init=num_points,
+            offset=offset,
+        )
         return cls(geometry=geometry, **kwargs)
 
     @classmethod
