@@ -247,7 +247,15 @@ class LightingCalculator:
         return values, R
 
     def _cell_average_near_lamp(self, lamp, values, zv, R):
-        """Replace near-lamp point-samples with median of cell sub-samples."""
+        """
+        Replace near-lamp point-samples with median of cell sub-samples.
+        NOTE: This is an improvement over Visual, which does not do any management of
+        source-to-course-point blowups; which makes sense since Visual is rarely used
+        with the average room fluence rate volume, where this fix actually matters.
+        This note is here to clarify that because of this patch, guv-calcs outputs for
+        fluence rate will often be lower compared to Visual--however, we currently believe
+        that the guv-calcs solution is correct.
+        """
         spacings = []
         for axis in range(3):
             u = np.unique(zv.coords[:, axis])
