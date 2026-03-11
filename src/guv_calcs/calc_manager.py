@@ -227,7 +227,7 @@ class LightingCalculator:
         phot = lamp.ies.photometry.interpolated()
         values = phot.get_intensity(Theta, Phi) / R ** 2
 
-        if lamp.surface.source_density > 0 and lamp.surface.photometric_distance:
+        if lamp.nearfield:
             phot_dist_m = float(self._to_meters(
                 np.array([lamp.surface.photometric_distance]), lamp
             ).ravel()[0])
@@ -237,12 +237,12 @@ class LightingCalculator:
                 points = lamp.surface.surface_points
                 imap = lamp.surface.intensity_map.reshape(-1)
                 n_src = len(points)
-                for point, val in zip(points, imap):
+                for point, mult in zip(points, imap):
                     rel = coords - point
                     Th, Ph, Rn = lamp.transform_to_lamp(rel, which="polar")
                     Rn_m = self._to_meters(Rn[near_idx], lamp)
                     nv = phot.get_intensity(Th[near_idx], Ph[near_idx]) / Rn_m ** 2
-                    values[near_idx] += nv * val / n_src
+                    values[near_idx] += nv * mult / n_src
 
         return values, R
 

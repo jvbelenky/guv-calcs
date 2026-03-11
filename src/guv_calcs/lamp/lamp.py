@@ -714,6 +714,24 @@ class Lamp:
             raise AttributeError("Lamp has no photometry")
         return self.photometry.total_optical_power() * self.intensity_units.factor * 10
 
+    def irradiance_at(self, theta, phi, r):
+        phot = self.photometry.interpolated()
+        
+        if self.nearfield and r < self.surface.photometric_distance:
+            points = self.surface.surface_points
+            imap = self.surface.intensity_map.reshape(-1)
+            n_src = len(points)
+            vals = []
+            for point, mult in zip(points, imap):
+                a, b, c = point+np.array([0, 0, r])
+                r_n = np.sqrt(a**2+b**2+c**2)
+                val = phot.get_intensity(theta, phi) / r_n ** 2
+                vals.append(val * mult / n_src)
+            return sum(vals)
+        else:
+            return phot.get_intensity(theta, phi) / r ** 2            
+        
+
     def get_tlvs(self, standard=0):
         """
         get the threshold limit values for this lamp. Returns tuple
@@ -859,7 +877,11 @@ class Lamp:
     def depth(self):
         """Backward-compatible alias for housing_height."""
         return self.fixture.housing_height
-
+        
+    @property
+    def nearfield(self)->bool:
+        return self.surface.source_density > 0 and self.surface.photometric_distance
+            
     def set_source_density(self, source_density):
         """Change source discretization."""
         self.surface.set_source_density(source_density)
