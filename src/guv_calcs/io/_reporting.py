@@ -38,7 +38,7 @@ def _build_room_rows(room):
     rows += [["", "Reflectance"]]
     rows += [["", "", "Floor", "Ceiling", "North", "South", "East", "West", "Enabled"]]
     rows += [
-        ["", "", *room.ref_manager.reflectances.values(), room.ref_manager.enabled]
+        ["", "", *[v.R for v in room.surfaces.values()], room.ref_manager.enabled]
     ]
     rows += [[""]]
 

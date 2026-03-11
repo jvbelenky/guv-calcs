@@ -116,7 +116,6 @@ class Room:
 
         ### Reflectance
         self.ref_manager = ReflectanceManager(
-            surfaces=self.surfaces,
             max_num_passes=reflectance_max_num_passes,
             threshold=reflectance_threshold,
             enabled=enable_reflectance,
@@ -163,12 +162,13 @@ class Room:
             dim_str = f"polygon={self.polygon.n_vertices} vertices, z={self.dim.z}"
         else:
             dim_str = f"x={self.dim.x}, y={self.dim.y}, z={self.dim.z}"
+        reflectances = {k: v.R for k, v in self.surfaces.items()}
         return (
             f"Room(room_id='{self._room_id}', {dim_str}, "
             f"units='{self.units}', lamps={[k for k,v in self.lamps.items()]}, "
             f"calc_zones={[k for k,v in self.calc_zones.items()]}), "
             f"enable_reflectance={self.ref_manager.enabled}, "
-            f"reflectances={self.ref_manager.reflectances}"
+            f"reflectances={reflectances}"
         )
 
     @property
@@ -349,7 +349,7 @@ class Room:
         return {
             "lamps": hash(tuple(sorted(lamp_state.items()))),
             "calc_zones": zone_state,
-            "reflectance": hash(self.ref_manager.calc_state),
+            "reflectance": hash(self.ref_manager.calc_state + self.surfaces.calc_state),
             "objects": hash(tuple(sorted(object_state.items()))),
         }
 
@@ -372,7 +372,7 @@ class Room:
             zone_state[key] = hash(zone.update_state)
 
         ref_state = (
-            tuple(self.ref_manager.reflectances.values()),
+            tuple(v.R for v in self.surfaces.values()),
             self.units,
         )
 
@@ -681,8 +681,7 @@ class Room:
 
         # calculate incidence on the surfaces (for reflectance)
         if self.recalculate_incidence or hard:
-            self.ref_manager.surfaces = all_surfs
-            self.ref_manager.calculate_incidence(valid_lamps, hard=hard)
+            self.ref_manager.calculate_incidence(valid_lamps, all_surfs, hard=hard)
 
         enable_occlusion = self._needs_occlusion(valid_lamps)
 
@@ -712,8 +711,7 @@ class Room:
         if len(valid_lamps) > 0:
             all_surfs = self.all_surfaces
             if self.recalculate_incidence or hard:
-                self.ref_manager.surfaces = all_surfs
-                self.ref_manager.calculate_incidence(valid_lamps, hard=hard)
+                self.ref_manager.calculate_incidence(valid_lamps, all_surfs, hard=hard)
             enable_occlusion = self._needs_occlusion(valid_lamps)
             self.calc_zones[zone_id].calculate_values(
                 lamps=valid_lamps, surfaces=all_surfs,
@@ -748,8 +746,9 @@ class Room:
 
         # Reflectance cost (only if enabled AND needs recalculation)
         if self.ref_manager.enabled and self.recalculate_incidence:
-            refl_points = sum(prod(s.plane.num_points) for s in self.ref_manager.surfaces.values())
-            num_surfaces = len(self.ref_manager.surfaces)
+            all_surfs = self.all_surfaces
+            refl_points = sum(prod(s.plane.num_points) for s in all_surfs.values())
+            num_surfaces = len(all_surfs)
 
             # Phase 1: incidence (lamp → surface + interreflection passes)
             incidence_time = lamp_count * refl_points * 0.00003

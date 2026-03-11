@@ -18,13 +18,11 @@ class ReflectanceManager:
 
     def __init__(
         self,
-        surfaces=None,
         max_num_passes: int = 100,
         threshold: float = 0.02,
         enabled: bool = True,
     ):
 
-        self.surfaces = {} if surfaces is None else surfaces
         self.max_num_passes = int(max_num_passes)
         self.threshold = float(threshold)
         self.enabled = bool(enabled)
@@ -37,14 +35,11 @@ class ReflectanceManager:
         return self.to_dict() == other.to_dict()
 
     def __repr__(self):
-        surface_rep = "(\n"
-        for key, surf in self.surfaces.items():
-            surface_rep += surf.__repr__() + "\n"
         return (
             f"ReflectanceManager("
             f"max_num_passes={self.max_num_passes}, "
             f"threshold={self.threshold}, "
-            f"surfaces={surface_rep})"
+            f"enabled={self.enabled})"
         )
 
     @classmethod
@@ -61,46 +56,29 @@ class ReflectanceManager:
 
     @property
     def calc_state(self):
-        tpl = tuple((key,) + val.calc_state for key, val in self.surfaces.items())
-        return (self.max_num_passes, self.threshold, self.enabled) + tpl
+        return (self.max_num_passes, self.threshold, self.enabled)
 
-    @property
-    def keys(self):
-        return self.surfaces.keys()
-
-    @property
-    def reflectances(self):
-        return {key: val.R for key, val in self.surfaces.items()}
-
-    @property
-    def x_spacings(self):
-        return {key: val.plane.x_spacing for key, val in self.surfaces.items()}
-
-    @property
-    def y_spacings(self):
-        return {key: val.plane.y_spacing for key, val in self.surfaces.items()}
-
-    def calculate_incidence(self, lamps, hard=False):
+    def calculate_incidence(self, lamps, surfaces, hard=False):
         """Calculate incident irradiance on all surfaces, then run interreflection."""
         if self.enabled:
             # first pass: direct lamp → surface
-            for wall, surface in self.surfaces.items():
+            for wall, surface in surfaces.items():
                 surface.calculate_incidence(lamps, hard=hard)
             # subsequent passes: surface ↔ surface bounces
-            self._interreflectance(lamps, hard=hard)
+            self._interreflectance(lamps, surfaces, hard=hard)
 
-    def _interreflectance(self, lamps, hard=False):
+    def _interreflectance(self, lamps, surfaces, hard=False):
         """Iterate surface-to-surface reflections until convergence."""
-        managers = self._create_managers()
+        managers = _create_managers(surfaces)
 
         i = 0  # increases to self.max_num_passes
         percent = 1  # falls to self.threshold
         while percent > self.threshold and i < self.max_num_passes:
             pc = []
-            for wall, surface in self.surfaces.items():
+            for wall, surface in surfaces.items():
                 init = surface.plane.values.mean()
                 surface.calculate_incidence(
-                    lamps, ref_manager=managers[wall], hard=hard
+                    lamps, surfaces=managers[wall], hard=hard
                 )
                 final = surface.plane.values.mean()
                 if final > 0:
@@ -108,34 +86,33 @@ class ReflectanceManager:
                 else:
                     pc.append(0)
             percent = np.mean(pc)
-            managers = self._update_managers(managers)
+            _update_managers(managers, surfaces)
             i = i + 1
 
-    def _update_managers(self, managers: dict) -> dict:
-        """Update all interreflection managers with newly calculated surface incidences"""
-        for wall, manager in managers.items():
-            subwalls = list(manager.surfaces.keys())
-            for subwall in subwalls:
-                # update reflected values
-                old_values = manager.surfaces[subwall].plane.result.reflected_values
-                new_values = self.surfaces[subwall].plane.result.reflected_values
-                if old_values is not None:
-                    np.copyto(old_values, new_values)
-        return managers  # Updated in place
 
-    def _create_managers(self):
-        """Create a per-wall reflection manager (self minus that wall)."""
-        managers = {}
-        for wall, surface in self.surfaces.items():
-            ref_manager = copy.deepcopy(self)
-            # assign planes
-            for subwall, surface in ref_manager.surfaces.items():
-                new_plane = copy.deepcopy(self.surfaces[subwall].plane)
-                ref_manager.surfaces[subwall].plane = new_plane
-            # remove the surface being reflected upon
-            del ref_manager.surfaces[wall]
-            managers[wall] = ref_manager
-        return managers
+def _create_managers(surfaces):
+    """Create per-wall surface dicts (all surfaces minus that wall, deep-copied)."""
+    managers = {}
+    for wall in surfaces:
+        manager_surfaces = {}
+        for subwall, surface in surfaces.items():
+            if subwall != wall:
+                new_plane = copy.deepcopy(surface.plane)
+                manager_surfaces[subwall] = Surface(
+                    R=surface.R, T=surface.T, plane=new_plane,
+                )
+        managers[wall] = manager_surfaces
+    return managers
+
+
+def _update_managers(managers, surfaces):
+    """Update all manager copies with newly calculated surface incidences."""
+    for wall, manager_surfaces in managers.items():
+        for subwall, sub_surface in manager_surfaces.items():
+            old_values = sub_surface.plane.result.reflected_values
+            new_values = surfaces[subwall].plane.result.reflected_values
+            if old_values is not None:
+                np.copyto(old_values, new_values)
 
 
 class Surface:
@@ -244,9 +221,8 @@ class Surface:
     def set_num_points(self, num_x=None, num_y=None):
         self.plane.set_num_points(num_x=num_x, num_y=num_y)
 
-    def calculate_incidence(self, lamps, ref_manager=None, hard=False):
+    def calculate_incidence(self, lamps, surfaces=None, hard=False):
         """calculate incoming radiation onto all surfaces"""
-        surfaces = ref_manager.surfaces if ref_manager else None
         return self.plane.calculate_values(
             lamps=lamps, surfaces=surfaces, hard=hard
         )

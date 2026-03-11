@@ -33,6 +33,7 @@ All notable changes to this project will be documented in this file.
 - Reflectance calculation moved to LightingCalculator
 - calculate_nearfield method in LightingCalculator extracted to _irradiance_at method
 - LampSurface position computation simplified
+- ReflectanceManager no longer mirrors room surfaces
 
 ## [0.6.5] - 2026-03-06
 
