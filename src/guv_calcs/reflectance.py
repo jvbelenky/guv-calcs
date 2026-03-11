@@ -4,7 +4,7 @@ import hashlib
 from dataclasses import dataclass
 from .calc_zone import CalcPlane
 from .calc_manager import apply_plane_filters
-from .geometry import RoomDimensions, SurfaceGrid
+from .geometry import RoomDimensions
 from ._serialization import init_from_dict
 
 
@@ -256,9 +256,8 @@ class Surface:
     def _calculate_values(self, form_factors, theta_zone, zv):
 
         I_r = self.plane.values[:, :, np.newaxis, np.newaxis, np.newaxis]
-        element_size = self.plane.x_spacing * self.plane.y_spacing
 
-        values = (I_r * element_size * form_factors).astype("float32")
+        values = (I_r * form_factors).astype("float32")
 
         # clean nans
         if (~np.isfinite(values)).any():
@@ -272,32 +271,54 @@ class Surface:
         return values.reshape(*zv.num_points)
 
     def _calculate_coordinates(self, zv):
-        """Compute form factors and angles between this surface and a zone."""
+        """Compute analytical patch-to-point form factors and angles.
+
+        Uses the closed-form integral of cos(theta)/(pi*d^2) over each
+        rectangular surface element, eliminating grid-resolution artifacts
+        that appear when zone points are close to coarse surface elements.
+        """
         surface_points = self.plane.coords.reshape(*self.plane.num_points, 3)
         zone_points = zv.coords.reshape(*zv.num_points, 3)
 
         differences = (
             surface_points[:, :, np.newaxis, np.newaxis, np.newaxis, :] - zone_points
         )
-        x, y, z = differences.reshape(-1, 3).T
-        distances = np.sqrt(x ** 2 + y ** 2 + z ** 2)
-        distances = distances.reshape(differences.shape[0:-1])
 
-        # mask out coincident points (zero distance) to avoid division by zero
-        zero_mask = distances == 0
-        safe_distances = np.where(zero_mask, 1.0, distances)
-
-        # angles relative to reflective surface
+        # project into surface local frame: [u, v, normal]
         rel_surface = differences @ self.plane.basis
-        cos_theta_surface = -rel_surface[..., 2] / safe_distances
-        cos_theta_surface[cos_theta_surface < 0] = 0
-        cos_theta_surface[zero_mask] = 0
-        form_factors = cos_theta_surface / (np.pi * safe_distances ** 2)
-        form_factors[zero_mask] = 0
+        # h = perpendicular distance from zone point to surface (positive = correct side)
+        h = -rel_surface[..., 2]
+        safe_h = np.where(h > 0, h, 1.0)
+
+        # analytical form factor: integrate cos(theta)/(pi*d^2) over each element
+        # each element spans [-a/2, a/2] x [-b/2, b/2] centered at the element point
+        a = self.plane.x_spacing
+        b = self.plane.y_spacing
+
+        form_factors = np.zeros(h.shape, dtype="float64")
+        for du, dv, sign in [
+            (+a / 2, +b / 2, +1),
+            (-a / 2, +b / 2, -1),
+            (+a / 2, -b / 2, -1),
+            (-a / 2, -b / 2, +1),
+        ]:
+            xi = rel_surface[..., 0] + du
+            eta = rel_surface[..., 1] + dv
+            r = np.sqrt(xi ** 2 + eta ** 2 + h ** 2)
+            form_factors += sign * np.arctan2(xi * eta, safe_h * r)
+
+        form_factors /= np.pi
+        form_factors[h <= 0] = 0
         form_factors = form_factors.astype("float32")
 
         # angles relative to calculation zone (only relevant for planes)
         if zv.is_plane():
+            x, y, z = differences.reshape(-1, 3).T
+            distances = np.sqrt(x ** 2 + y ** 2 + z ** 2)
+            distances = distances.reshape(differences.shape[0:-1])
+            zero_mask = distances == 0
+            safe_distances = np.where(zero_mask, 1.0, distances)
+
             rel_zone = differences @ zv.basis
             cos_theta_zone = rel_zone[..., 2] / safe_distances
             cos_theta_zone[zero_mask] = 0
@@ -311,6 +332,7 @@ class Surface:
 def init_room_surfaces(
     dims: "RoomDimensions",
     reflectances: dict = None,
+    transmittances: dict = None,
     x_spacings: dict = None,
     y_spacings: dict = None,
     num_x: dict = None,
@@ -320,10 +342,12 @@ def init_room_surfaces(
     keys = dims.faces.keys()
     # build defaults
     default_reflectances = {surface: 0.0 for surface in keys}
+    default_transmittances = {surface: 0.0 for surface in keys}
     default_spacings = {surface: None for surface in keys}
     default_nums = {surface: 10 for surface in keys}
     # build what gets used
     reflectances = {**default_reflectances, **(reflectances or {})}
+    transmittances = {**default_transmittances, **(transmittances or {})}
     x_spacings = {**default_spacings, **(x_spacings or {})}
     y_spacings = {**default_spacings, **(y_spacings or {})}
     num_x = {**default_nums, **(num_x or {})}
@@ -331,44 +355,14 @@ def init_room_surfaces(
 
     surfaces = {}
 
-    if dims.is_polygon:
-        # Polygon room: floor/ceiling use SurfaceGrid.from_polygon, walls use SurfaceGrid.from_wall
-        for face_id in ["floor", "ceiling"]:
-            face = dims.faces[face_id]
-
-            geometry = SurfaceGrid.from_polygon(
-                polygon=face.polygon,
-                height=face.height,
-                spacing_init=(x_spacings[face_id], y_spacings[face_id]),
-                num_points_init=(num_x[face_id], num_y[face_id]),
-                direction=face.direction,
-            )
-            plane = CalcPlane(zone_id=face_id, geometry=geometry, horiz=True)
-            surfaces[face_id] = Surface(R=reflectances[face_id], plane=plane)
-
-        for wall_id in dims.wall_ids:
-            wall = dims.faces[wall_id]
-
-            geometry = SurfaceGrid.from_wall(
-                p1=(wall.x1, wall.y1),
-                p2=(wall.x2, wall.y2),
-                z_height=wall.z_height,
-                spacing_init=(x_spacings[wall_id], y_spacings[wall_id]),
-                num_points_init=(num_x[wall_id], num_y[wall_id]),
-            )
-            plane = CalcPlane(zone_id=wall_id, geometry=geometry, horiz=True)
-            surfaces[wall_id] = Surface(R=reflectances[wall_id], plane=plane)
-    else:
-        # Rectangular room: all faces use CalcPlane.from_face()
-        for wall, reflectance in reflectances.items():
-            plane = CalcPlane.from_face(
-                zone_id=wall,
-                wall=wall,
-                dims=dims,
-                spacing=(x_spacings[wall], y_spacings[wall]),
-                num_points=(num_x[wall], num_y[wall]),
-                horiz=True,
-            )
-            surfaces[wall] = Surface(R=reflectance, plane=plane)
+    for face_id, face in dims.faces.items():
+        geometry = face.to_grid(
+            spacing_init=(x_spacings[face_id], y_spacings[face_id]),
+            num_points_init=(num_x[face_id], num_y[face_id]),
+        )
+        plane = CalcPlane(zone_id=face_id, geometry=geometry, horiz=True)
+        surfaces[face_id] = Surface(
+            R=reflectances[face_id], T=transmittances[face_id], plane=plane,
+        )
 
     return surfaces
