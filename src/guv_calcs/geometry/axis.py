@@ -6,9 +6,10 @@ from dataclasses import dataclass
 class Axis1D:
     """1D axis with evenly spaced points over a span.
 
-    Resolution priority when both spacing_init and num_points_init are provided:
-    spacing_init wins for .spacing, num_points_init wins for .num_points.
-    If both are provided, the caller is responsible for consistency.
+    Spacing is authoritative: span and spacing fully determine the grid.
+    num_points_init is a convenience setter — when provided without spacing,
+    the spacing is derived from span / num_points.  When both are provided,
+    spacing wins and num_points is derived from span / spacing.
     """
 
     span: float = 1.0
@@ -22,7 +23,6 @@ class Axis1D:
 
     @property
     def default_spacing(self):
-        # define a
         if self.span == 0.0:
             return 0.0
         n = max(1, min(int(self.span * 10), 30))
@@ -37,28 +37,27 @@ class Axis1D:
 
     @property
     def spacing(self):
-        """
-        either initial value passsed, derived from initial num_points value,
-        or from default num_points value
+        """Spacing between grid points.
+
+        Priority: spacing_init > derived from num_points_init > default.
         """
         if self.span == 0:
             return 0.0
-        if self.spacing_init is None or self.spacing_init == 0:
-            # if not provided (or zero from a previous zero-span rebuild),
-            # derive from num_points (or default num_points)
-            num_points = self.num_points_init or self.default_num_points
-            return self._set_spacing(num_points, self.default_spacing)
-        return self.spacing_init
+        if self.spacing_init is not None and self.spacing_init != 0:
+            return self.spacing_init
+        # derive from num_points (or default num_points)
+        num_points = self.num_points_init or self.default_num_points
+        return self._set_spacing(num_points, self.default_spacing)
 
     @property
     def num_points(self):
+        """Number of grid points — always derived from span / spacing.
+
+        Uses floor division so the grid never exceeds the span.
+        """
         if self.span == 0:
             return 1
-        if self.num_points_init is not None:
-            return self.num_points_init
-        if self.spacing_init is not None and self.spacing_init != 0:
-            return int(round(self.span / self.spacing_init))
-        return self.default_num_points
+        return max(1, int(self.span / self.spacing))
 
     @property
     def points(self):
