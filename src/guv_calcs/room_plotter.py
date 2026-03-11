@@ -55,23 +55,13 @@ class RoomPlotter:
         for obj_id, obj in self.room.objects.items():
             fig = self._plot_object(obj=obj, fig=fig, select_id=select_id)
 
-        # Draw room outline for polygon rooms
-        if self.room.is_polygon:
-            fig = self._plot_polygon_room_outline(fig=fig)
+        fig = self._plot_room_outline(fig=fig)
 
-        # Get axis ranges - for polygon rooms, use bounding box coordinates
-        if self.room.is_polygon:
-            x_min, y_min, x_max, y_max = self.room.polygon.bounding_box
-            x_range = [x_min, x_max]
-            y_range = [y_min, y_max]
-            x_span = x_max - x_min
-            y_span = y_max - y_min
-        else:
-            x_min, y_min, x_max, y_max = self.room.dim.polygon.bounding_box
-            x_range = [x_min, x_max]
-            y_range = [y_min, y_max]
-            x_span = x_max - x_min
-            y_span = y_max - y_min
+        x_min, y_min, x_max, y_max = self.room.dim.polygon.bounding_box
+        x_range = [x_min, x_max]
+        y_range = [y_min, y_max]
+        x_span = x_max - x_min
+        y_span = y_max - y_min
 
         z = self.room.dim.z
 
@@ -657,9 +647,9 @@ class RoomPlotter:
 
         return x_coords, y_coords, z_coords
 
-    def _plot_polygon_room_outline(self, fig):
-        """Draw the outline of a polygon room (floor, ceiling, and vertical edges)."""
-        polygon = self.room.polygon
+    def _plot_room_outline(self, fig):
+        """Draw the room outline (floor, ceiling, and vertical edges)."""
+        polygon = self.room.dim.polygon
         z = self.room.dim.z
 
         # Get polygon vertices
