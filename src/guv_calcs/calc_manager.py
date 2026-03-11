@@ -304,11 +304,16 @@ class LightingCalculator:
             values = self._cell_average_near_lamp(lamp, values, zv, R)
 
             # apply occlusion from room surfaces
+            # use all surface points as sources for soft (penumbral) shadows
             if surfaces:
+                source_pts = lamp.surface.surface_points
+                if source_pts.ndim == 1:
+                    source_pts = source_pts[None, :]
                 transmission = compute_transmission(
-                    lamp.surface.position, zv.coords, surfaces
+                    source_pts, zv.coords, surfaces
                 )
-                values *= transmission.reshape(values.shape)
+                avg_transmission = transmission.mean(axis=0)
+                values *= avg_transmission.reshape(values.shape)
 
             if any(~np.isfinite(values)):  # mask any nans and infs near light source
                 values = np.ma.masked_invalid(values)
