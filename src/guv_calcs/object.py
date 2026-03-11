@@ -6,7 +6,6 @@ from .reflectance import Surface
 from .geometry import Polygon2D, SurfaceGrid
 from .units import convert_length, convert_length_tuple
 
-_BOX_WALL_NAMES = ["south", "east", "north", "west"]
 
 
 class Object:
@@ -71,8 +70,16 @@ class Object:
     def _assign_id(self, value):
         if self.name == self._object_id:
             self.name = value
+        old_id = self._object_id
         self._object_id = value
-        self._rebuild_world_surfaces()
+        if old_id != value:
+            rekeyed = {}
+            for old_key, surface in self._world_surfaces.items():
+                face_id = old_key.split(":", 1)[1]
+                new_key = f"{self._object_id}:{face_id}"
+                surface.plane._zone_id = new_key
+                rekeyed[new_key] = surface
+            self._world_surfaces = rekeyed
 
     # ---- factories ----
 
@@ -221,10 +228,7 @@ class Object:
             wall_geom = SurfaceGrid.from_wall(
                 (x1, y1), (x2, y2), z_height=h, num_points_init=np_init
             )
-            if shape_type == "box" and i < len(_BOX_WALL_NAMES):
-                face_id = _BOX_WALL_NAMES[i]
-            else:
-                face_id = f"wall_{i}"
+            face_id = f"wall_{i}"
             surfaces[face_id] = Surface(
                 R=self.R, T=self.T,
                 plane=CalcPlane(zone_id=face_id, geometry=wall_geom, horiz=True),
@@ -262,7 +266,6 @@ class Object:
     @property
     def calc_state(self):
         return (
-            self._object_id,
             tuple(self.position),
             self._yaw, self._pitch, self._roll,
             self.enabled,
@@ -274,7 +277,7 @@ class Object:
 
     @property
     def update_state(self):
-        return self.calc_state
+        return ()
 
     # ---- serialization ----
 
