@@ -913,14 +913,14 @@ class Lamp:
         return self
 
     def set_width(self, width):
-        """Change x-axis extent of lamp emissive surface."""
+        """Change y-axis extent of lamp emissive surface."""
         if self.ies is not None:
             self.ies.update(width=width)
         self.surface.set_width(width)
         return self
 
     def set_length(self, length):
-        """Change y-axis extent of lamp emissive surface."""
+        """Change x-axis extent of lamp emissive surface."""
         if self.ies is not None:
             self.ies.update(length=length)
         self.surface.set_length(length)

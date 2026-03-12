@@ -708,25 +708,25 @@ def _assert_bbox_inside(lamp, placer):
 class TestFixtureAngle:
     """Tests for explicit fixture angle in lamp placement."""
 
-    def test_config_angle_90_applied(self):
-        """Lamp with config angle=90 gets rotated after placement."""
-        from guv_calcs import Lamp
-        from guv_calcs.lamp.lamp_placement import LampPlacer
-
-        lamp = Lamp.from_keyword("nukit_torch")  # config angle=90
-        placer = LampPlacer.for_room(x=5, y=5, z=3)
-        placer.place_lamp(lamp)
-        assert lamp.angle == 90
-
-    def test_config_angle_0_applied(self):
+    def test_config_angle_0_applied_nukit(self):
         """Lamp with config angle=0 keeps angle=0 after placement."""
         from guv_calcs import Lamp
         from guv_calcs.lamp.lamp_placement import LampPlacer
 
-        lamp = Lamp.from_keyword("aerolamp")  # config angle=0
+        lamp = Lamp.from_keyword("nukit_torch")  # config angle=0
         placer = LampPlacer.for_room(x=5, y=5, z=3)
         placer.place_lamp(lamp)
         assert lamp.angle == 0
+
+    def test_config_angle_90_applied_aerolamp(self):
+        """Lamp with config angle=90 gets rotated after placement."""
+        from guv_calcs import Lamp
+        from guv_calcs.lamp.lamp_placement import LampPlacer
+
+        lamp = Lamp.from_keyword("aerolamp")  # config angle=90
+        placer = LampPlacer.for_room(x=5, y=5, z=3)
+        placer.place_lamp(lamp)
+        assert lamp.angle == 90
 
     def test_explicit_angle_overrides_config(self):
         """Explicit angle parameter overrides config value."""

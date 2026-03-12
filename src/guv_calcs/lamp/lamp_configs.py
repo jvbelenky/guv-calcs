@@ -11,7 +11,7 @@ LAMP_CONFIGS = {
         "peak_wavelength": 222,
         "placement": {
             "mode": "edge",
-            "angle": 0,
+            "angle": 90,
         },
         "fixture": {
             "housing_width": 0.1,
@@ -61,7 +61,7 @@ LAMP_CONFIGS = {
         "peak_wavelength": 222,
         "placement": {
             "mode": "edge",
-            "angle": 90,
+            "angle": 0,
         },
         "fixture": {
             "housing_width": 0.086,
@@ -78,11 +78,11 @@ LAMP_CONFIGS = {
         "placement": {
             # "mode": "corner",
             # "max_tilt": 45,
-            "angle": 90,
+            "angle": 0,
         },
         "fixture": {
-            "housing_width": 0.154,
-            "housing_length": 0.042,
+            "housing_width": 0.042,
+            "housing_length": 0.154,
             "housing_height": 0.05,
         },
     },
@@ -94,7 +94,7 @@ LAMP_CONFIGS = {
         "peak_wavelength": 222,
         "placement": {
             "mode": "horizontal",
-            "angle": 90,
+            "angle": 0,
         },
         "fixture": {
             "housing_width": 0.60,
@@ -128,13 +128,13 @@ LAMP_CONFIGS = {
         "placement": {
             "mode": "corner",
             "max_tilt": 45,
-            "angle": 90,
+            "angle": 0,
         },
-        "fixture": {
-            "housing_width": 0.18,
-            "housing_length": 0.10,
-            "housing_height": 0.07,
-        },
+        # "fixture": {
+            # "housing_width": 0.18,
+            # "housing_length": 0.10,
+            # "housing_height": 0.07,
+        # },
     },
     "uvpro222_b1": {
         "ies_file": "uvpro222_b1.ies",
@@ -145,12 +145,12 @@ LAMP_CONFIGS = {
         "placement": {
             "mode": "corner",
             # "max_tilt": 45,
-            "angle": 90,
+            "angle": 0,
         },
         "fixture": {
-            "housing_width": 0.15,
-            "housing_length": 0.08,
-            "housing_height": 0.06,
+            "housing_width": 0.1,
+            "housing_length": 0.155,
+            "housing_height": 0.105,
         },
     },
     "uvpro222_b2": {
@@ -162,12 +162,12 @@ LAMP_CONFIGS = {
         "placement": {
             "mode": "edge",
             # "max_tilt": 45,
-            "angle": 90,
+            "angle": 0,
         },
         "fixture": {
-            "housing_width": 0.20,
-            "housing_length": 0.12,
-            "housing_height": 0.08,
+            "housing_width": 0.1,
+            "housing_length": 0.155,
+            "housing_height": 0.105,
         },
     },
     "visium": {

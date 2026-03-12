@@ -48,8 +48,8 @@ class Fixture:
     Housing extends "behind" the surface (in -Z direction, opposite to aim).
 
     Attributes:
-        housing_width: X-axis extent of physical housing
-        housing_length: Y-axis extent of physical housing
+        housing_width: Y-axis extent of physical housing
+        housing_length: X-axis extent of physical housing
         housing_height: How far fixture extends behind the luminous surface
         shape: Physical shape of the housing
     """

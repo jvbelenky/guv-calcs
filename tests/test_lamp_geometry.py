@@ -118,8 +118,8 @@ class TestLampGeometryBoundingBox:
         corners = lamp.geometry.get_bounding_box_corners()
         # All corners should be within fixture dimensions of lamp position
         for corner in corners:
-            assert abs(corner[0] - lamp.x) <= 0.5  # housing_width/2
-            assert abs(corner[1] - lamp.y) <= 0.3  # housing_length/2
+            assert abs(corner[0] - lamp.x) <= 0.3  # housing_length/2
+            assert abs(corner[1] - lamp.y) <= 0.5  # housing_width/2
 
     def test_get_bounding_box_zero_dimensions(self, basic_lamp):
         """Bounding box with zero dimensions should return degenerate box."""

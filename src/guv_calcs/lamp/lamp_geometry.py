@@ -106,30 +106,27 @@ class LampGeometry:
         Returns:
             (8, 3) array of corner coordinates
         """
-        hw = self._fixture.housing_width / 2
         hl = self._fixture.housing_length / 2
+        hw = self._fixture.housing_width / 2
         hh = self._fixture.housing_height
 
         # Surface z-extent (for 3D luminous openings like cylinders)
         surface_z = self._surface.height / 2
 
-        # Local coordinate system: +Z points OPPOSITE to aim direction
-        # (away from where light goes, i.e., behind the lamp)
-        # Local bounding box:
-        # - XY: symmetric around origin (surface center)
-        # - Z: from -surface_z (front, toward aim) to +housing_height (behind, away from aim)
+        # Local coordinate system: length along X, width along Y,
+        # +Z points OPPOSITE to aim direction (away from where light goes)
         z_min = -surface_z
         z_max = hh
 
         local_corners = np.array([
-            [-hw, -hl, z_min],
-            [hw, -hl, z_min],
-            [hw, hl, z_min],
-            [-hw, hl, z_min],
-            [-hw, -hl, z_max],
-            [hw, -hl, z_max],
-            [hw, hl, z_max],
-            [-hw, hl, z_max],
+            [-hl, -hw, z_min],
+            [hl, -hw, z_min],
+            [hl, hw, z_min],
+            [-hl, hw, z_min],
+            [-hl, -hw, z_max],
+            [hl, -hw, z_max],
+            [hl, hw, z_max],
+            [-hl, hw, z_max],
         ])
 
         # Transform to world coordinates

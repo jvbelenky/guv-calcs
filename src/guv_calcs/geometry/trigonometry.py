@@ -13,7 +13,7 @@ def to_polar(x, y, z, units="degrees"):
         theta = np.arccos(-z / r)
 
     theta = np.nan_to_num(theta, nan=0)
-    phi = np.arctan2(x, y)
+    phi = np.arctan2(y, x)
     phi[np.where(phi < 0)] = phi[np.where(phi < 0)] + 2 * np.pi
 
     if units == "degrees":
@@ -29,8 +29,8 @@ def to_cartesian(theta, phi, r):
     """
     theta_rad = np.radians(theta)
     phi_rad = np.radians(phi)
-    x = r * np.sin(theta_rad) * np.sin(phi_rad)
-    y = r * np.sin(theta_rad) * np.cos(phi_rad)
+    x = r * np.sin(theta_rad) * np.cos(phi_rad)
+    y = r * np.sin(theta_rad) * np.sin(phi_rad)
     z = r * np.cos(theta_rad)
 
     return np.array((x, y, z))

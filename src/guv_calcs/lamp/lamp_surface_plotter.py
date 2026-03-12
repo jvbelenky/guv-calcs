@@ -31,12 +31,12 @@ class LampSurfacePlotter:
             self.surface.num_points_length, self.surface.num_points_width
         )
         vv, uu = np.meshgrid(v_points, u_points)
-        points = np.array([vv.flatten(), uu.flatten()[::-1]])
+        points = np.array([uu.flatten(), vv.flatten()[::-1]])
         ax.scatter(*points)
-        if self.surface.width:
-            ax.set_xlim(-self.surface.width / 2, self.surface.width / 2)
         if self.surface.length:
-            ax.set_ylim(-self.surface.length / 2, self.surface.length / 2)
+            ax.set_xlim(-self.surface.length / 2, self.surface.length / 2)
+        if self.surface.width:
+            ax.set_ylim(-self.surface.width / 2, self.surface.width / 2)
         if title is None:
             title = "Source density = " + str(self.surface.source_density)
         ax.set_title(title)
@@ -49,10 +49,10 @@ class LampSurfacePlotter:
 
         if self.surface.width and self.surface.length:
             extent = [
-                -self.surface.width / 2,
-                self.surface.width / 2,
                 -self.surface.length / 2,
                 self.surface.length / 2,
+                -self.surface.width / 2,
+                self.surface.width / 2,
             ]
             img = ax.imshow(self.surface.intensity_map, extent=extent)
         else:

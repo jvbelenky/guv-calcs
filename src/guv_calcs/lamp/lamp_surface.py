@@ -127,7 +127,7 @@ class LampSurface:
         self.source_density = source_density
 
     def set_width(self, width):
-        """Change x-axis extent of lamp emissive surface."""
+        """Change y-axis extent of lamp emissive surface."""
         if width is not None and width < 0:
             raise ValueError(f"width must be non-negative, got {width}")
         self._user_width = width
@@ -135,7 +135,7 @@ class LampSurface:
         self._recompute()
 
     def set_length(self, length):
-        """Change y-axis extent of lamp emissive surface."""
+        """Change x-axis extent of lamp emissive surface."""
         if length is not None and length < 0:
             raise ValueError(f"length must be non-negative, got {length}")
         self._user_length = length
@@ -234,8 +234,8 @@ class LampSurface:
             u_points, v_points = self._generate_raw_points(num_u, num_v)
             vv, uu = np.meshgrid(v_points, u_points)
 
-            x_local = vv.ravel()
-            y_local = uu.ravel()
+            x_local = uu.ravel()
+            y_local = vv.ravel()
             z_local = np.full_like(x_local, 0)
 
             local = np.vstack([x_local, y_local, z_local]).T

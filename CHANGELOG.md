@@ -21,6 +21,7 @@ All notable changes to this project will be documented in this file.
 - LightingCalculator will now subsample in grid points that are too close to light sources
 - Bug in loading an intensity map while width/length are 0
 - Bug in update_managers call preventing interreflections from being calculated
+- x/y coordinate swap in photometry
 
 ### Changed
 
