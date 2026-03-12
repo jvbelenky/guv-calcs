@@ -761,9 +761,7 @@ class Room:
 
     # ------------------- Ozone ----------------------
 
-    OZONE_GENERATION_CONSTANT = 10.0
-
-    def estimate_ozone_increase(self, ozone_generation_constant=None):
+    def estimate_ozone_increase(self, ozone_generation_constant=10.0):
         """Estimate steady-state ozone increase (ppb) from 222nm UV.
 
         Uses simple steady-state model:
@@ -771,15 +769,11 @@ class Room:
 
         Returns None if WholeRoomFluence zone has no calculated values.
         """
-        if ozone_generation_constant is None:
-            ozone_generation_constant = self.OZONE_GENERATION_CONSTANT
         wrf = self.calc_zones.get(WHOLE_ROOM_FLUENCE)
         if wrf is None:
             return None
-        stats = wrf.get_statistics()
-        if stats is None:
-            return None
-        avg_fluence = stats.get("mean", 0)
+        by_wv = wrf.calculator.cache.by_wavelength(self.lamps, reduce=np.mean)
+        avg_fluence = by_wv.get(222, 0)
         denominator = self.air_changes + self.ozone_decay_constant
         if denominator <= 0:
             return None
@@ -790,10 +784,7 @@ class Room:
     def get_efficacy_data(self, zone_id: str = WHOLE_ROOM_FLUENCE, **kwargs) -> InactivationData:
         """Create Data instance from this room's fluence values."""
         zone = self.zone(zone_id)
-        fluence_dict = {wv: 0.0 for wv in self.lamps.wavelengths.values()}
-        for k, v in self.lamps.wavelengths.items():
-            if k in zone.lamp_cache.keys():
-                fluence_dict[v] = fluence_dict[v] + zone.lamp_cache[k].values.mean()
+        fluence_dict = zone.calculator.cache.by_wavelength(self.lamps, reduce=np.mean)
         if len(fluence_dict) == 0:
             warnings.warn("Fluence not available; returning base table.", stacklevel=2)
             data = InactivationData()

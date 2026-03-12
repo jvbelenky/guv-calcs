@@ -87,21 +87,32 @@ class ZoneCache:
             return entry.values
         return None
 
-    def by_lamp_type(self, lamps):
+    def by_wavelength(self, lamps, reduce=None):
+        """Return {wavelength: summed values} for cached lamps.
+
+        If reduce is given (e.g. np.mean, np.max), apply it to each
+        wavelength's summed array before returning.
         """
-        TODO: under construction! for replacing much of the stuff in disinfection_calculator
-        return a dict of lamp contributions to the zone by wavelength/GUV type
-        """
-        # gather wavelengths
-        wavelengths = []
+        result = {}
         for key, lamp in lamps.items():
-            if key in self.lamp_cache.keys():
-                if lamp.wavelength is not None:
-                    wavelengths.append(lamp.wavelength)
-                else:
-                    msg = f"{lamp.name} ({key}) has an undefined wavelength. Its fluence contribution will not be counted."
-                    warnings.warn(msg, stacklevel=3)
-        wavelengths = np.unique(wavelengths)
+            entry = self.lamp_cache.get(key)
+            if entry is None or entry.values is None:
+                continue
+            if lamp.wavelength is None:
+                msg = (
+                    f"{lamp.name} ({key}) has an undefined wavelength. "
+                    f"Its contribution will not be counted."
+                )
+                warnings.warn(msg, stacklevel=2)
+                continue
+            wv = lamp.wavelength
+            if wv in result:
+                result[wv] = result[wv] + entry.values
+            else:
+                result[wv] = entry.values.copy()
+        if reduce is not None:
+            result = {wv: reduce(vals) for wv, vals in result.items()}
+        return result
 
 
 class LightingCalculator:
