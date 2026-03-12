@@ -15,9 +15,9 @@ class StandardZoneConfig:
     """Per-standard zone configuration. Only values that vary between standards."""
     height_m: float
     height_ft: float
-    eye_calc_type: str = "eye_worst_case"
+    eye_calc_mode: str = "eye_worst_case"
     eye_fov_horiz: float | None = None  # Override for eye zone FOV horiz
-    skin_calc_type: str = "planar_normal"
+    skin_calc_mode: str = "planar_normal"
 
 
 # height_ft values are deliberately rounded to user-friendly numbers
@@ -25,14 +25,14 @@ class StandardZoneConfig:
 _ZONE_CONFIGS = {
     "ul8802": StandardZoneConfig(
         height_m=1.9, height_ft=6.25,
-        eye_calc_type="fluence_rate", eye_fov_horiz=180,
-        skin_calc_type="planar_max",
+        eye_calc_mode="fluence_rate", eye_fov_horiz=180,
+        skin_calc_mode="planar_max",
     ),
 }
 _DEFAULT_CONFIG = StandardZoneConfig(
     height_m=1.8, height_ft=5.9,
-    eye_calc_type="eye_worst_case",
-    skin_calc_type="planar_normal",
+    eye_calc_mode="eye_worst_case",
+    skin_calc_mode="planar_normal",
 )
 
 
@@ -78,14 +78,14 @@ def create_standard_zones(standard, dims):
         CalcPlane.from_face(
             dims=dims, wall="floor", normal_offset=height,
             zone_id=EYE_LIMITS, name="Eye Dose (8 Hours)",
-            calc_type=cfg.eye_calc_type,
+            calc_mode=cfg.eye_calc_mode,
             dose=True, hours=8, spacing=spacing,
             **eye_kwargs,
         ),
         CalcPlane.from_face(
             dims=dims, wall="floor", normal_offset=height,
             zone_id=SKIN_LIMITS, name="Skin Dose (8 Hours)",
-            calc_type=cfg.skin_calc_type,
+            calc_mode=cfg.skin_calc_mode,
             dose=True, hours=8, spacing=spacing,
         ),
     ]

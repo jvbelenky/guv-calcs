@@ -26,7 +26,7 @@ class PlaneCalcSpec:
         )
 
 
-class PlaneCalcType(StrEnum):
+class PlaneCalcMode(StrEnum):
     FLUENCE_RATE = "fluence_rate"
     PLANAR_NORMAL = "planar_normal"
     PLANAR_MAX = "planar_max"
@@ -38,7 +38,7 @@ class PlaneCalcType(StrEnum):
     CUSTOM = "custom"
 
     @classmethod
-    def from_token(cls, token: str) -> "PlaneCalcType":
+    def from_token(cls, token: str) -> "PlaneCalcMode":
         token = re.sub(r"[\s_\-]+", "_", str(token).strip().lower())
         aliases = {
             "fluence": cls.FLUENCE_RATE,
@@ -61,7 +61,7 @@ class PlaneCalcType(StrEnum):
         try:
             return aliases[token]
         except KeyError:
-            raise ValueError(f"Unknown plane calc_type {token!r}")
+            raise ValueError(f"Unknown plane calc_mode {token!r}")
 
     @classmethod
     def from_flags(
@@ -73,7 +73,7 @@ class PlaneCalcType(StrEnum):
         fov_horiz: float,
         view_direction: tuple | None = None,
         view_target: tuple | None = None,
-    ) -> "PlaneCalcType":
+    ) -> "PlaneCalcMode":
         current = PlaneCalcSpec(
             horiz=bool(horiz),
             vert=bool(vert),
@@ -93,36 +93,36 @@ class PlaneCalcType(StrEnum):
     @property
     def spec(self) -> PlaneCalcSpec:
         specs = {
-            PlaneCalcType.FLUENCE_RATE: PlaneCalcSpec(
+            PlaneCalcMode.FLUENCE_RATE: PlaneCalcSpec(
                 horiz=False, vert=False, use_normal=False,
                 fov_vert=180.0, fov_horiz=360.0,
             ),
-            PlaneCalcType.PLANAR_NORMAL: PlaneCalcSpec(
+            PlaneCalcMode.PLANAR_NORMAL: PlaneCalcSpec(
                 horiz=True, vert=False, use_normal=True,
                 fov_vert=180.0, fov_horiz=360.0,
             ),
-            PlaneCalcType.PLANAR_MAX: PlaneCalcSpec(
+            PlaneCalcMode.PLANAR_MAX: PlaneCalcSpec(
                 horiz=False, vert=False, use_normal=True,
                 fov_vert=180.0, fov_horiz=360.0,
             ),
-            PlaneCalcType.VERTICAL: PlaneCalcSpec(
+            PlaneCalcMode.VERTICAL: PlaneCalcSpec(
                 horiz=False, vert=True, use_normal=False,
                 fov_vert=180.0, fov_horiz=360.0,
             ),
-            PlaneCalcType.VERTICAL_DIR: PlaneCalcSpec(
+            PlaneCalcMode.VERTICAL_DIR: PlaneCalcSpec(
                 horiz=False, vert=True, use_normal=True,
                 fov_vert=180.0, fov_horiz=360.0,
             ),
-            PlaneCalcType.EYE_WORST_CASE: PlaneCalcSpec(
+            PlaneCalcMode.EYE_WORST_CASE: PlaneCalcSpec(
                 horiz=False, vert=True, use_normal=False,
                 fov_vert=80.0, fov_horiz=120.0,
             ),
-            PlaneCalcType.EYE_DIRECTIONAL: PlaneCalcSpec(
+            PlaneCalcMode.EYE_DIRECTIONAL: PlaneCalcSpec(
                 horiz=True, vert=False, use_normal=True,
                 fov_vert=80.0, fov_horiz=120.0,
                 view_direction=(0.0, 1.0, 0.0),
             ),
-            PlaneCalcType.EYE_TARGET: PlaneCalcSpec(
+            PlaneCalcMode.EYE_TARGET: PlaneCalcSpec(
                 horiz=True, vert=False, use_normal=True,
                 fov_vert=80.0, fov_horiz=120.0,
                 view_target=(0.0, 0.0, 0.0),

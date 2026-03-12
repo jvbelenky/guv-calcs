@@ -10,7 +10,7 @@ from ._plot import plot_plane, plot_volume
 from ..geometry import RoomDimensions
 from ..geometry import Polygon2D
 from .._serialization import init_from_dict, deserialize_geometry, migrate_zone_dict, migrate_legacy_zone_geometry
-from ..plane_calc_type import PlaneCalcType
+from ..plane_calc_mode import PlaneCalcMode
 
 
 @dataclass(frozen=True)
@@ -532,7 +532,7 @@ class CalcPlane(CalcZone):
 
     _grid_cls = SurfaceGrid
 
-    # Backward-compatible defaults when no calc_type is provided
+    # Backward-compatible defaults when no calc_mode is provided
     _DEFAULT_HORIZ = False
     _DEFAULT_VERT = False
     _DEFAULT_USE_NORMAL = True
@@ -550,7 +550,7 @@ class CalcPlane(CalcZone):
         seconds: int | float | None = None,
         enabled: bool = True,
         display_mode: str = "heatmap",
-        calc_type: str | None = None,
+        calc_mode: str | None = None,
         fov_vert: int | float | None = None,
         fov_horiz: int | float | None = None,
         vert: bool | None = None,
@@ -586,9 +586,9 @@ class CalcPlane(CalcZone):
         self.view_direction = view_direction
         self.view_target = view_target
 
-        # Resolve flags: calc_type spec → explicit overrides → defaults
-        if calc_type is not None:
-            ct = PlaneCalcType.from_token(calc_type)
+        # Resolve flags: calc_mode spec → explicit overrides → defaults
+        if calc_mode is not None:
+            ct = PlaneCalcMode.from_token(calc_mode)
             spec = ct.spec
             self.horiz = horiz if horiz is not None else spec.horiz
             self.vert = vert if vert is not None else spec.vert
@@ -620,13 +620,13 @@ class CalcPlane(CalcZone):
         return None
 
     @property
-    def calc_type(self) -> str:
-        """Derive the calculation type from current flags.
+    def calc_mode(self) -> str:
+        """Derive the calculation mode from current flags.
 
-        Returns the matching PlaneCalcType value if flags match a known type,
+        Returns the matching PlaneCalcMode value if flags match a known mode,
         otherwise returns "custom".
         """
-        return PlaneCalcType.from_flags(
+        return PlaneCalcMode.from_flags(
             horiz=self.horiz,
             vert=self.vert,
             use_normal=self.use_normal,
@@ -636,16 +636,16 @@ class CalcPlane(CalcZone):
             view_target=self.view_target,
         ).value
 
-    def set_calc_type(self, value: str):
-        """Set all calculation flags from a named calc type.
+    def set_calc_mode(self, value: str):
+        """Set all calculation flags from a named calc mode.
 
         After calling this, individual flags can be overridden, which may
-        cause the derived calc_type to become "custom".
+        cause the derived calc_mode to become "custom".
         """
-        ct = PlaneCalcType.from_token(value)
-        if ct is PlaneCalcType.CUSTOM:
+        ct = PlaneCalcMode.from_token(value)
+        if ct is PlaneCalcMode.CUSTOM:
             raise ValueError(
-                "Cannot set calc_type to 'custom' — set individual flags instead"
+                "Cannot set calc_mode to 'custom' — set individual flags instead"
             )
         spec = ct.spec
         self.horiz = spec.horiz
@@ -659,7 +659,7 @@ class CalcPlane(CalcZone):
 
     def _extra_dict(self):
         return {
-            "calc_type": self.calc_type,
+            "calc_mode": self.calc_mode,
             "fov_vert": self.fov_vert,
             "fov_horiz": self.fov_horiz,
             "use_normal": self.use_normal,
