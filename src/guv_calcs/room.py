@@ -1,6 +1,7 @@
 import warnings
 import copy
 from math import prod
+import numpy as np
 from collections.abc import Iterable
 from matplotlib import colormaps
 from .lamp import Lamp, LampPlacer
