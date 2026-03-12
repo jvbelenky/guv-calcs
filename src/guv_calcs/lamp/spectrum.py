@@ -220,6 +220,10 @@ class Spectrum:
         yscale: str = "linear",
         label: str | None = None,
         weights: bool | str = False,
+        xmin: int | float | None = None,
+        xmax: int | float | None = None,
+        ymin: int | float | None = None,
+        ymax: int | float | None = None,
     ):
         """
         Plot the spectrum.
@@ -266,6 +270,8 @@ class Spectrum:
         ax.set_ylabel("Relative intensity [%]")
         ax.set_yscale(yscale)
         ax.set_title(title)
+        ax.set_xlim(xmin,xmax)
+        ax.set_ylim(ymin,ymax)
         return fig, ax
 
 
