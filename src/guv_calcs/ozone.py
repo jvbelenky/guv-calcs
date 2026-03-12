@@ -122,9 +122,11 @@ def ozone_generation_constant(spectrum, T=293.15, P=101325.0):
         return 0.0
     s_norm = ints / total
 
-    # interpolate O2 cross-sections onto spectrum wavelength grid
-    # (zero outside the tabulated range)
-    sigma = np.interp(wv, _O2_WAVELENGTHS, _O2_CROSS_SECTIONS, left=0, right=0)
+    # interpolate O2 cross-sections onto spectrum wavelength grid in log space
+    # (cross-sections span orders of magnitude, so log-interp is appropriate)
+    log_sigma = np.interp(wv, _O2_WAVELENGTHS, np.log(_O2_CROSS_SECTIONS),
+                          left=-np.inf, right=-np.inf)
+    sigma = np.where(np.isfinite(log_sigma), np.exp(log_sigma), 0.0)
 
     # spectral integral: ∫ σ(λ) × S_norm(λ) × λ dλ  [cm² · nm]
     integrand = sigma * s_norm * wv
