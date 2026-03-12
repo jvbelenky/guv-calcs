@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - irradiance_at method for Lamp
 - nearfield convenience property for Lamp
 - Ozone calculation method
+- PlaneCalcType fully implemented
 
 ### Fixed
 

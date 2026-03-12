@@ -97,25 +97,24 @@ class TestPhotStandardProperties:
         cfg = get_zone_config(PhotStandard.ACGIH)
         assert cfg.height_m == 1.8
         assert cfg.height_ft == 5.9
-        assert cfg.eye_vert is True
-        assert cfg.eye_fov_vert == 80
-        assert cfg.skin_horiz is True
+        assert cfg.eye_calc_type == "eye_worst_case"
+        assert cfg.skin_calc_type == "planar_normal"
 
     def test_zone_config_ul8802(self):
         """UL8802 zone config should differ from ACGIH."""
         cfg = get_zone_config(PhotStandard.UL8802)
         assert cfg.height_m == 1.9
         assert cfg.height_ft == 6.25
-        assert cfg.eye_fov_vert == 180
-        assert cfg.eye_vert is False
-        assert cfg.skin_horiz is False
+        assert cfg.eye_calc_type == "fluence_rate"
+        assert cfg.eye_fov_horiz == 180
+        assert cfg.skin_calc_type == "planar_max"
 
     def test_zone_config_icnirp_uses_default(self):
         """ICNIRP should use default config (same as ACGIH)."""
         cfg = get_zone_config(PhotStandard.ICNIRP)
         assert cfg.height_m == 1.8
         assert cfg.height_ft == 5.9
-        assert cfg.eye_fov_vert == 80
+        assert cfg.eye_calc_type == "eye_worst_case"
 
 
 class TestPhotStandardClassMethods:

@@ -10,6 +10,7 @@ from ._plot import plot_plane, plot_volume
 from ..geometry import RoomDimensions
 from ..geometry import Polygon2D
 from .._serialization import init_from_dict, deserialize_geometry, migrate_zone_dict, migrate_legacy_zone_geometry
+from ..plane_calc_type import PlaneCalcType
 
 
 @dataclass(frozen=True)
@@ -506,6 +507,13 @@ class CalcPlane(CalcZone):
 
     _grid_cls = SurfaceGrid
 
+    # Backward-compatible defaults when no calc_type is provided
+    _DEFAULT_HORIZ = False
+    _DEFAULT_VERT = False
+    _DEFAULT_USE_NORMAL = True
+    _DEFAULT_FOV_VERT = 180
+    _DEFAULT_FOV_HORIZ = 360
+
     def __init__(
         self,
         zone_id: str | None = None,
@@ -517,11 +525,12 @@ class CalcPlane(CalcZone):
         seconds: int | float | None = None,
         enabled: bool = True,
         display_mode: str = "heatmap",
-        fov_vert: int | float = 180,
-        fov_horiz: int | float = 360,
-        vert: bool = False,
-        horiz: bool = False,
-        use_normal: bool = True,
+        calc_type: str | None = None,
+        fov_vert: int | float | None = None,
+        fov_horiz: int | float | None = None,
+        vert: bool | None = None,
+        horiz: bool | None = None,
+        use_normal: bool | None = None,
     ):
 
         super().__init__(
@@ -541,18 +550,63 @@ class CalcPlane(CalcZone):
             )
         self.geometry = geometry
 
-        self.fov_vert = fov_vert
-        self.fov_horiz = fov_horiz
-        self.use_normal = use_normal
-        self.vert = vert
-        self.horiz = horiz
+        # Resolve flags: calc_type spec → explicit overrides → defaults
+        if calc_type is not None:
+            ct = PlaneCalcType.from_token(calc_type)
+            spec = ct.spec
+            self.horiz = horiz if horiz is not None else spec.horiz
+            self.vert = vert if vert is not None else spec.vert
+            self.use_normal = use_normal if use_normal is not None else spec.use_normal
+            self.fov_vert = fov_vert if fov_vert is not None else spec.fov_vert
+            self.fov_horiz = fov_horiz if fov_horiz is not None else spec.fov_horiz
+        else:
+            self.horiz = horiz if horiz is not None else self._DEFAULT_HORIZ
+            self.vert = vert if vert is not None else self._DEFAULT_VERT
+            self.use_normal = use_normal if use_normal is not None else self._DEFAULT_USE_NORMAL
+            self.fov_vert = fov_vert if fov_vert is not None else self._DEFAULT_FOV_VERT
+            self.fov_horiz = fov_horiz if fov_horiz is not None else self._DEFAULT_FOV_HORIZ
 
     @property
     def calctype(self):
         return "Plane"
 
+    @property
+    def calc_type(self) -> str:
+        """Derive the calculation type from current flags.
+
+        Returns the matching PlaneCalcType value if flags match a known type,
+        otherwise returns "custom".
+        """
+        return PlaneCalcType.from_flags(
+            horiz=self.horiz,
+            vert=self.vert,
+            use_normal=self.use_normal,
+            fov_vert=float(self.fov_vert),
+            fov_horiz=float(self.fov_horiz),
+        ).value
+
+    def set_calc_type(self, value: str):
+        """Set all calculation flags from a named calc type.
+
+        After calling this, individual flags can be overridden, which may
+        cause the derived calc_type to become "custom".
+        """
+        ct = PlaneCalcType.from_token(value)
+        if ct is PlaneCalcType.CUSTOM:
+            raise ValueError(
+                "Cannot set calc_type to 'custom' — set individual flags instead"
+            )
+        spec = ct.spec
+        self.horiz = spec.horiz
+        self.vert = spec.vert
+        self.use_normal = spec.use_normal
+        self.fov_vert = spec.fov_vert
+        self.fov_horiz = spec.fov_horiz
+        return self
+
     def _extra_dict(self):
         return {
+            "calc_type": self.calc_type,
             "fov_vert": self.fov_vert,
             "fov_horiz": self.fov_horiz,
             "use_normal": self.use_normal,

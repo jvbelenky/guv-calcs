@@ -13,24 +13,29 @@ class PlaneCalcSpec:
 
 
 class PlaneCalcType(StrEnum):
-    FLUENCE = "fluence"
+    FLUENCE_RATE = "fluence_rate"
     PLANAR_NORMAL = "planar_normal"
     PLANAR_MAX = "planar_max"
-    EYE_EXPOSURE = "eye_exposure"
+    VERTICAL = "vertical"
+    VERTICAL_DIR = "vertical_dir"
+    EYE_WORST_CASE = "eye_worst_case"
     CUSTOM = "custom"
 
     @classmethod
     def from_token(cls, token: str) -> "PlaneCalcType":
         token = re.sub(r"[\s_\-]+", "_", str(token).strip().lower())
         aliases = {
-            "fluence": cls.FLUENCE,
-            "all_angles": cls.FLUENCE,
+            "fluence": cls.FLUENCE_RATE,
+            "fluence_rate": cls.FLUENCE_RATE,
+            "all_angles": cls.FLUENCE_RATE,
             "normal": cls.PLANAR_NORMAL,
             "planar_normal": cls.PLANAR_NORMAL,
             "planar_max": cls.PLANAR_MAX,
             "max": cls.PLANAR_MAX,
-            "eye": cls.EYE_EXPOSURE,
-            "eye_exposure": cls.EYE_EXPOSURE,
+            "vertical": cls.VERTICAL,
+            "vertical_dir": cls.VERTICAL_DIR,
+            "eye": cls.EYE_WORST_CASE,
+            "eye_worst_case": cls.EYE_WORST_CASE,
             "custom": cls.CUSTOM,
         }
         try:
@@ -38,41 +43,58 @@ class PlaneCalcType(StrEnum):
         except KeyError:
             raise ValueError(f"Unknown plane calc_type {token!r}")
 
+    @classmethod
+    def from_flags(
+        cls,
+        horiz: bool,
+        vert: bool,
+        use_normal: bool,
+        fov_vert: float,
+        fov_horiz: float,
+    ) -> "PlaneCalcType":
+        current = PlaneCalcSpec(
+            horiz=bool(horiz),
+            vert=bool(vert),
+            use_normal=bool(use_normal),
+            fov_vert=float(fov_vert),
+            fov_horiz=float(fov_horiz),
+        )
+        for pct in cls:
+            if pct is cls.CUSTOM:
+                continue
+            if pct.spec == current:
+                return pct
+        return cls.CUSTOM
+
     @property
     def spec(self) -> PlaneCalcSpec:
-        if self is PlaneCalcType.FLUENCE:
-            return PlaneCalcSpec(
-                horiz=False,
-                vert=False,
-                use_normal=False,
-                fov_vert=180.0,
-                fov_horiz=360.0,
-            )
-        if self is PlaneCalcType.PLANAR_NORMAL:
-            return PlaneCalcSpec(
-                horiz=True,
-                vert=False,
-                use_normal=True,
-                fov_vert=180.0,
-                fov_horiz=360.0,
-            )
-        if self is PlaneCalcType.PLANAR_MAX:
-            return PlaneCalcSpec(
-                horiz=False,
-                vert=False,
-                use_normal=True,
-                fov_vert=180.0,
-                fov_horiz=360.0,
-            )
-        if self is PlaneCalcType.EYE_EXPOSURE:
-            return PlaneCalcSpec(
-                horiz=False,
-                vert=True,
-                use_normal=False,
-                fov_vert=80.0,
-                fov_horiz=180.0,
-            )
-        # CUSTOM has no spec
-        return PlaneCalcSpec(
-            horiz=False, vert=False, use_normal=True, fov_vert=180.0, fov_horiz=360.0
-        )
+        specs = {
+            PlaneCalcType.FLUENCE_RATE: PlaneCalcSpec(
+                horiz=False, vert=False, use_normal=False,
+                fov_vert=180.0, fov_horiz=360.0,
+            ),
+            PlaneCalcType.PLANAR_NORMAL: PlaneCalcSpec(
+                horiz=True, vert=False, use_normal=True,
+                fov_vert=180.0, fov_horiz=360.0,
+            ),
+            PlaneCalcType.PLANAR_MAX: PlaneCalcSpec(
+                horiz=False, vert=False, use_normal=True,
+                fov_vert=180.0, fov_horiz=360.0,
+            ),
+            PlaneCalcType.VERTICAL: PlaneCalcSpec(
+                horiz=False, vert=True, use_normal=False,
+                fov_vert=180.0, fov_horiz=360.0,
+            ),
+            PlaneCalcType.VERTICAL_DIR: PlaneCalcSpec(
+                horiz=False, vert=True, use_normal=True,
+                fov_vert=180.0, fov_horiz=360.0,
+            ),
+            PlaneCalcType.EYE_WORST_CASE: PlaneCalcSpec(
+                horiz=False, vert=True, use_normal=False,
+                fov_vert=80.0, fov_horiz=120.0,
+            ),
+        }
+        return specs.get(self, PlaneCalcSpec(
+            horiz=False, vert=False, use_normal=True,
+            fov_vert=180.0, fov_horiz=360.0,
+        ))
