@@ -10,6 +10,20 @@ class PlaneCalcSpec:
     use_normal: bool
     fov_vert: float
     fov_horiz: float
+    view_direction: tuple | None = None
+    view_target: tuple | None = None
+
+    def matches(self, other: "PlaneCalcSpec") -> bool:
+        """Check if flags match. For view params, only checks None vs not-None."""
+        return (
+            self.horiz == other.horiz
+            and self.vert == other.vert
+            and self.use_normal == other.use_normal
+            and self.fov_vert == other.fov_vert
+            and self.fov_horiz == other.fov_horiz
+            and (self.view_direction is None) == (other.view_direction is None)
+            and (self.view_target is None) == (other.view_target is None)
+        )
 
 
 class PlaneCalcType(StrEnum):
@@ -19,6 +33,8 @@ class PlaneCalcType(StrEnum):
     VERTICAL = "vertical"
     VERTICAL_DIR = "vertical_dir"
     EYE_WORST_CASE = "eye_worst_case"
+    EYE_DIRECTIONAL = "eye_directional"
+    EYE_TARGET = "eye_target"
     CUSTOM = "custom"
 
     @classmethod
@@ -36,6 +52,10 @@ class PlaneCalcType(StrEnum):
             "vertical_dir": cls.VERTICAL_DIR,
             "eye": cls.EYE_WORST_CASE,
             "eye_worst_case": cls.EYE_WORST_CASE,
+            "eye_directional": cls.EYE_DIRECTIONAL,
+            "directional": cls.EYE_DIRECTIONAL,
+            "eye_target": cls.EYE_TARGET,
+            "target": cls.EYE_TARGET,
             "custom": cls.CUSTOM,
         }
         try:
@@ -51,6 +71,8 @@ class PlaneCalcType(StrEnum):
         use_normal: bool,
         fov_vert: float,
         fov_horiz: float,
+        view_direction: tuple | None = None,
+        view_target: tuple | None = None,
     ) -> "PlaneCalcType":
         current = PlaneCalcSpec(
             horiz=bool(horiz),
@@ -58,11 +80,13 @@ class PlaneCalcType(StrEnum):
             use_normal=bool(use_normal),
             fov_vert=float(fov_vert),
             fov_horiz=float(fov_horiz),
+            view_direction=view_direction,
+            view_target=view_target,
         )
         for pct in cls:
             if pct is cls.CUSTOM:
                 continue
-            if pct.spec == current:
+            if pct.spec.matches(current):
                 return pct
         return cls.CUSTOM
 
@@ -92,6 +116,16 @@ class PlaneCalcType(StrEnum):
             PlaneCalcType.EYE_WORST_CASE: PlaneCalcSpec(
                 horiz=False, vert=True, use_normal=False,
                 fov_vert=80.0, fov_horiz=120.0,
+            ),
+            PlaneCalcType.EYE_DIRECTIONAL: PlaneCalcSpec(
+                horiz=True, vert=False, use_normal=True,
+                fov_vert=80.0, fov_horiz=120.0,
+                view_direction=(0.0, 1.0, 0.0),
+            ),
+            PlaneCalcType.EYE_TARGET: PlaneCalcSpec(
+                horiz=True, vert=False, use_normal=True,
+                fov_vert=80.0, fov_horiz=120.0,
+                view_target=(0.0, 0.0, 0.0),
             ),
         }
         return specs.get(self, PlaneCalcSpec(

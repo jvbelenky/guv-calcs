@@ -27,6 +27,8 @@ class ZoneView:
     horiz: bool | None = None
     use_normal: bool | None = None
     basis: np.ndarray | None = None
+    view_direction: tuple | None = None
+    view_target: tuple | None = None
 
     def is_plane(self):
         if self.calctype.lower() == "plane":
@@ -37,6 +39,29 @@ class ZoneView:
         if self.calctype.lower() == "volume":
             return True
         return False
+
+    def has_view_mode(self):
+        return self.view_direction is not None or self.view_target is not None
+
+    def compute_view_normals(self):
+        """Return (N, 3) normalized view direction vectors for each grid point.
+
+        For directional mode: broadcasts the single direction to all points.
+        For target mode: computes per-point direction toward the target.
+        Returns None if no view mode is active.
+        """
+        if self.view_direction is not None:
+            d = np.asarray(self.view_direction, dtype="float64")
+            d = d / np.linalg.norm(d)
+            return np.broadcast_to(d, self.coords.shape).copy()
+        if self.view_target is not None:
+            target = np.asarray(self.view_target, dtype="float64")
+            diff = target - self.coords
+            norms = np.linalg.norm(diff, axis=1, keepdims=True)
+            # Guard against coincident points (target == grid point)
+            norms = np.where(norms < 1e-12, 1.0, norms)
+            return diff / norms
+        return None
 
 
 @dataclass
@@ -531,6 +556,8 @@ class CalcPlane(CalcZone):
         vert: bool | None = None,
         horiz: bool | None = None,
         use_normal: bool | None = None,
+        view_direction: tuple | list | None = None,
+        view_target: tuple | list | None = None,
     ):
 
         super().__init__(
@@ -550,6 +577,15 @@ class CalcPlane(CalcZone):
             )
         self.geometry = geometry
 
+        # Validate mutual exclusivity of explicit view params
+        if view_direction is not None and view_target is not None:
+            raise ValueError(
+                "view_direction and view_target are mutually exclusive"
+            )
+
+        self.view_direction = view_direction
+        self.view_target = view_target
+
         # Resolve flags: calc_type spec → explicit overrides → defaults
         if calc_type is not None:
             ct = PlaneCalcType.from_token(calc_type)
@@ -559,6 +595,10 @@ class CalcPlane(CalcZone):
             self.use_normal = use_normal if use_normal is not None else spec.use_normal
             self.fov_vert = fov_vert if fov_vert is not None else spec.fov_vert
             self.fov_horiz = fov_horiz if fov_horiz is not None else spec.fov_horiz
+            # Apply view params from spec if not explicitly provided
+            if view_direction is None and view_target is None:
+                self.view_direction = spec.view_direction
+                self.view_target = spec.view_target
         else:
             self.horiz = horiz if horiz is not None else self._DEFAULT_HORIZ
             self.vert = vert if vert is not None else self._DEFAULT_VERT
@@ -569,6 +609,15 @@ class CalcPlane(CalcZone):
     @property
     def calctype(self):
         return "Plane"
+
+    @property
+    def view_mode(self) -> str | None:
+        """Return the active view mode, or None for normal (surface-normal) mode."""
+        if self.view_direction is not None:
+            return "directional"
+        if self.view_target is not None:
+            return "target"
+        return None
 
     @property
     def calc_type(self) -> str:
@@ -583,6 +632,8 @@ class CalcPlane(CalcZone):
             use_normal=self.use_normal,
             fov_vert=float(self.fov_vert),
             fov_horiz=float(self.fov_horiz),
+            view_direction=self.view_direction,
+            view_target=self.view_target,
         ).value
 
     def set_calc_type(self, value: str):
@@ -602,6 +653,8 @@ class CalcPlane(CalcZone):
         self.use_normal = spec.use_normal
         self.fov_vert = spec.fov_vert
         self.fov_horiz = spec.fov_horiz
+        self.view_direction = spec.view_direction
+        self.view_target = spec.view_target
         return self
 
     def _extra_dict(self):
@@ -612,6 +665,8 @@ class CalcPlane(CalcZone):
             "use_normal": self.use_normal,
             "vert": self.vert,
             "horiz": self.horiz,
+            "view_direction": self.view_direction,
+            "view_target": self.view_target,
         }
 
     def __repr__(self):
@@ -702,6 +757,8 @@ class CalcPlane(CalcZone):
             self.vert,
             self.horiz,
             self.use_normal,
+            self.view_direction,
+            self.view_target,
         )
 
     def to_view(self):
@@ -719,6 +776,8 @@ class CalcPlane(CalcZone):
             horiz=self.horiz,
             use_normal=self.use_normal,
             basis=self.basis,
+            view_direction=self.view_direction,
+            view_target=self.view_target,
         )
 
     def set_height(self, height):

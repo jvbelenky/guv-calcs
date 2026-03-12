@@ -348,11 +348,15 @@ class LightingCalculator:
         """
 
         if zv.is_plane():
-            rel_coords = zv.coords - lamp.surface.position
-            x, y, z = (rel_coords @ zv.basis).T
-            r = np.sqrt(x ** 2 + y ** 2 + z ** 2)
-            theta = np.arccos(-z / r)
-            values = apply_plane_filters(values, theta, zv)
+            if zv.has_view_mode():
+                theta, elevation, azimuth = _compute_view_angles(lamp, zv)
+                values = apply_plane_filters(values, theta, zv, elevation, azimuth)
+            else:
+                rel_coords = zv.coords - lamp.surface.position
+                x, y, z = (rel_coords @ zv.basis).T
+                r = np.sqrt(x ** 2 + y ** 2 + z ** 2)
+                theta = np.arccos(-z / r)
+                values = apply_plane_filters(values, theta, zv)
 
         # TODO: This should maybe actually be in Lamp/Photometry
         values = values * lamp.intensity_units.factor
@@ -364,7 +368,7 @@ class LightingCalculator:
 
         lamp_values = [self.cache.values(lamp_id) for lamp_id in lamps.keys()]
 
-        if zv.is_plane() and zv.fov_horiz < 360 and len(lamps) > 1:
+        if zv.is_plane() and zv.fov_horiz < 360 and len(lamps) > 1 and not zv.has_view_mode():
             base_values = self.calculate_horizontal_fov(lamps, lamp_values, zv)
         else:
             base_values = sum(lamp_values)
@@ -404,10 +408,10 @@ class LightingCalculator:
 
 
 # reused in reflectance.py
-def apply_plane_filters(values, theta, zv):
+def apply_plane_filters(values, theta, zv, elevation=None, azimuth=None):
     """apply angular view filters to a plane"""
     if zv.is_plane():
-        # apply normals/directions
+        # apply normals/directions — shared weighting (same code, different theta)
         if zv.use_normal:
             values[theta > np.pi / 2] = 0
 
@@ -417,9 +421,74 @@ def apply_plane_filters(values, theta, zv):
         if zv.horiz:
             values *= abs(np.cos(theta))
 
-        if zv.fov_vert < 180:
-            values[theta < (np.pi / 2 - np.radians(zv.fov_vert / 2))] = 0
-            values[theta > (np.pi / 2 + np.radians(zv.fov_vert / 2))] = 0
+        # FOV — branches on mode
+        if elevation is not None and azimuth is not None:
+            # View mode: rectangular FOV centered on view direction
+            if zv.fov_vert < 180:
+                values[np.abs(elevation) > np.radians(zv.fov_vert / 2)] = 0
+            if zv.fov_horiz < 360:
+                values[np.abs(azimuth) > np.radians(zv.fov_horiz / 2)] = 0
+        else:
+            # Normal mode: FOV centered on horizontal (existing)
+            if zv.fov_vert < 180:
+                values[theta < (np.pi / 2 - np.radians(zv.fov_vert / 2))] = 0
+                values[theta > (np.pi / 2 + np.radians(zv.fov_vert / 2))] = 0
+            # fov_horiz handled at aggregation time (worst-case search)
         return values
     else:
         return values
+
+
+def _compute_view_angles(lamp, zv):
+    """Compute theta, elevation, and azimuth for view mode.
+
+    Returns (theta, elevation, azimuth) arrays, all shape (N,).
+    theta: angle between incoming light and view direction
+    elevation: angle above/below the view plane
+    azimuth: angle left/right of the view direction
+    """
+    view_normals = zv.compute_view_normals()  # (N, 3)
+    lamp_pos = np.asarray(lamp.surface.position, dtype="float64")
+
+    # incoming = direction light arrives from (lamp → point), normalized
+    incoming = zv.coords - lamp_pos
+    dist = np.linalg.norm(incoming, axis=1, keepdims=True)
+    dist = np.where(dist < 1e-12, 1.0, dist)
+    incoming = incoming / dist
+
+    # theta = angle between incoming light and view direction
+    # light arriving FROM the lamp means we negate incoming to get "light direction toward eye"
+    cos_theta = np.sum(-incoming * view_normals, axis=1)
+    cos_theta = np.clip(cos_theta, -1.0, 1.0)
+    theta = np.arccos(cos_theta)
+
+    # Build per-point view frame: forward, right, up
+    forward = view_normals  # (N, 3)
+    world_up = np.array([0.0, 0.0, 1.0])
+
+    right = np.cross(forward, world_up)
+    right_norm = np.linalg.norm(right, axis=1, keepdims=True)
+    # Fallback for forward parallel to world_up
+    parallel = (right_norm.ravel() < 1e-6)
+    if np.any(parallel):
+        fallback_up = np.array([0.0, 1.0, 0.0])
+        right[parallel] = np.cross(forward[parallel], fallback_up)
+        right_norm[parallel] = np.linalg.norm(right[parallel], axis=1, keepdims=True)
+    right = right / right_norm
+
+    up = np.cross(right, forward)  # already normalized (cross of two unit vectors at 90°)
+
+    # Project -incoming into view frame
+    neg_incoming = -incoming
+    fwd_component = np.sum(neg_incoming * forward, axis=1)
+    right_component = np.sum(neg_incoming * right, axis=1)
+    up_component = np.sum(neg_incoming * up, axis=1)
+
+    # Elevation: angle above/below the forward-right plane
+    horiz_dist = np.sqrt(fwd_component ** 2 + right_component ** 2)
+    elevation = np.arctan2(up_component, horiz_dist)
+
+    # Azimuth: angle left/right of forward in the forward-right plane
+    azimuth = np.arctan2(right_component, fwd_component)
+
+    return theta, elevation, azimuth
