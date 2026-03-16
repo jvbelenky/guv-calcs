@@ -19,19 +19,38 @@ cross-sections weighted by photon energy.
 import numpy as np
 
 # ---------------------------------------------------------------------------
-# O2 absorption cross-sections (200-245 nm) at room temperature.
+# O2 absorption cross-sections (185-245 nm) at room temperature.
 #
 # Sources:
-#   200-204 nm: MPI-Mainz UV/VIS Spectral Atlas of Gaseous Molecules
+#   185-202 nm: Yoshino et al. (1992), 1nm-averaged Schumann-Runge band
+#               cross-sections at 300K. These include both the S-R band
+#               rotational structure and the underlying Herzberg continuum.
+#               Planet. Space Sci. 40(2), 185-192.
+#   203-204 nm: MPI-Mainz UV/VIS Spectral Atlas (Herzberg continuum)
 #   205-245 nm: JPL "Chemical Kinetics and Photochemical Data for Use
 #               in Stratospheric Modeling" Evaluation Number 12
 #
 # Units: [wavelength_nm, cross_section_cm2]
 # ---------------------------------------------------------------------------
 _O2_DATA = np.array([
-    [200, 8.087e-24],
-    [201, 7.987e-24],
-    [202, 7.866e-24],
+    [185, 6.229e-21],
+    [186, 8.913e-21],
+    [187, 1.785e-21],
+    [188, 4.387e-21],
+    [189, 5.330e-22],
+    [190, 2.253e-21],
+    [191, 2.530e-22],
+    [192, 7.700e-22],
+    [193, 1.577e-22],
+    [194, 1.710e-22],
+    [195, 1.146e-22],
+    [196, 3.308e-23],
+    [197, 5.532e-23],
+    [198, 2.142e-23],
+    [199, 1.322e-23],
+    [200, 1.426e-23],
+    [201, 9.211e-24],
+    [202, 7.205e-24],
     [203, 7.765e-24],
     [204, 7.664e-24],
     [205, 7.350e-24],
