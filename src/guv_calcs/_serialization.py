@@ -7,8 +7,20 @@ from .lamp.lamp_configs import LAMP_CONFIGS
 
 
 def init_from_dict(cls, data: dict):
-    """Construct cls from dict, filtering to valid __init__ params."""
-    keys = list(inspect.signature(cls.__init__).parameters.keys())[1:]
+    """Construct cls from dict, filtering to valid __init__ params across the MRO."""
+    keys = set()
+    for klass in cls.__mro__:
+        if klass is object:
+            continue
+        init = getattr(klass, '__init__', None)
+        if init is None:
+            continue
+        for name, param in inspect.signature(init).parameters.items():
+            if name == 'self':
+                continue
+            if param.kind == param.VAR_KEYWORD:
+                continue
+            keys.add(name)
     return cls(**{k: v for k, v in data.items() if k in keys})
 
 

@@ -542,29 +542,8 @@ class CalcVol(CalcZone):
 
     _grid_cls = VolumeGrid
 
-    def __init__(
-        self,
-        zone_id: str | None = None,
-        name: str | None = None,
-        geometry: VolumeGrid | None = None,
-        dose: bool = False,
-        hours: int | float | None = None,
-        minutes: int | float | None = None,
-        seconds: int | float | None = None,
-        enabled: bool = True,
-        display_mode: str = "heatmap",
-    ):
-
-        super().__init__(
-            zone_id=zone_id or "CalcVol",
-            name=name,
-            dose=dose,
-            hours=hours,
-            minutes=minutes,
-            seconds=seconds,
-            enabled=enabled,
-            display_mode=display_mode,
-        )
+    def __init__(self, zone_id=None, geometry=None, **kwargs):
+        super().__init__(zone_id=zone_id or "CalcVol", **kwargs)
         if geometry is None:
             geometry = VolumeGrid.from_polygon(
                 Polygon2D.rectangle(6.0, 4.0), z_height=2.7, offset=True,
@@ -615,46 +594,8 @@ class CalcPlane(CalcZone):
 
     _grid_cls = SurfaceGrid
 
-    def __init__(
-        self,
-        zone_id: str | None = None,
-        name: str | None = None,
-        geometry: "SurfaceGrid | None" = None,
-        dose: bool = False,
-        hours: int | float | None = None,
-        minutes: int | float | None = None,
-        seconds: int | float | None = None,
-        enabled: bool = True,
-        display_mode: str = "heatmap",
-        calc_mode: str | None = None,
-        fov_vert: int | float | None = None,
-        fov_horiz: int | float | None = None,
-        vert: bool | None = None,
-        horiz: bool | None = None,
-        use_normal: bool | None = None,
-        view_direction: tuple | list | None = None,
-        view_target: tuple | list | None = None,
-    ):
-
-        super().__init__(
-            zone_id=zone_id or "CalcPlane",
-            name=name,
-            dose=dose,
-            hours=hours,
-            minutes=minutes,
-            seconds=seconds,
-            enabled=enabled,
-            display_mode=display_mode,
-            calc_mode=calc_mode,
-            fov_vert=fov_vert,
-            fov_horiz=fov_horiz,
-            vert=vert,
-            horiz=horiz,
-            use_normal=use_normal,
-            view_direction=view_direction,
-            view_target=view_target,
-        )
-
+    def __init__(self, zone_id=None, geometry=None, **kwargs):
+        super().__init__(zone_id=zone_id or "CalcPlane", **kwargs)
         if geometry is None:
             geometry = SurfaceGrid.from_polygon(
                 Polygon2D.rectangle(6.0, 4.0), height=0, direction=1, offset=True,
@@ -795,50 +736,17 @@ class CalcPoint(CalcZone):
 
     _grid_cls = GridPoint
 
-    def __init__(
-        self,
-        position=(0.0, 0.0, 0.0),
-        normal_direction=None,
-        zone_id=None,
-        name=None,
-        geometry=None,
-        dose=False,
-        hours=None,
-        minutes=None,
-        seconds=None,
-        enabled=True,
-        calc_mode=None,
-        fov_vert=None,
-        fov_horiz=None,
-        vert=None,
-        horiz=None,
-        use_normal=None,
-        view_direction=None,
-        view_target=None,
-    ):
+    def __init__(self, zone_id=None, geometry=None, **kwargs):
         if geometry is None:
-            n = normal_direction or (0.0, 0.0, 1.0)
-            geometry = GridPoint(position=position, normal_direction=n)
-
-        super().__init__(
-            zone_id=zone_id or "CalcPoint",
-            name=name,
-            dose=dose,
-            hours=hours,
-            minutes=minutes,
-            seconds=seconds,
-            enabled=enabled,
-            display_mode="heatmap",
-            calc_mode=calc_mode,
-            fov_vert=fov_vert,
-            fov_horiz=fov_horiz,
-            vert=vert,
-            horiz=horiz,
-            use_normal=use_normal,
-            view_direction=view_direction,
-            view_target=view_target,
-        )
+            geometry = GridPoint()
+        super().__init__(zone_id=zone_id or "CalcPoint", **kwargs)
         self.geometry = geometry
+
+    @classmethod
+    def at(cls, position=(0.0, 0.0, 0.0), normal_direction=(0.0, 0.0, 1.0), **kwargs):
+        """Create a CalcPoint at a given position and normal direction."""
+        geometry = GridPoint(position=position, normal_direction=normal_direction)
+        return cls(geometry=geometry, **kwargs)
 
     @property
     def calctype(self):
@@ -847,12 +755,6 @@ class CalcPoint(CalcZone):
     @property
     def position(self):
         return self.geometry.position
-
-    def _extra_dict(self):
-        d = super()._extra_dict()
-        d["position"] = list(self.geometry.position)
-        d["normal_direction"] = list(self.geometry.normal_direction)
-        return d
 
     def export(self, fname=None):
         raise NotImplementedError("CalcPoint does not support CSV export")
