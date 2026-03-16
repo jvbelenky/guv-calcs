@@ -3,7 +3,7 @@
 import pytest
 import numpy as np
 from datetime import timedelta
-from guv_calcs import CalcPlane, CalcVol, SurfaceGrid, VolumeGrid
+from guv_calcs import CalcPlane, CalcPoint, CalcVol, SurfaceGrid, VolumeGrid
 
 
 class TestCalcPlaneCreation:
@@ -358,6 +358,64 @@ class TestExposureTime:
         vol = CalcVol(zone_id="T", minutes=15)
         assert vol.minutes == 15.0
         assert vol.hours == 0.25
+
+
+class TestCalcPoint:
+    """Tests for CalcPoint."""
+
+    def test_basic_creation(self):
+        pt = CalcPoint(position=(3, 2, 1.5))
+        assert pt.coords.shape == (1, 3)
+        assert np.allclose(pt.coords[0], [3.0, 2.0, 1.5], atol=1e-6)
+        assert pt.calctype == "Point"
+
+    def test_default_normal(self):
+        pt = CalcPoint(position=(0, 0, 0))
+        assert np.allclose(pt.geometry.normal, [0, 0, 1], atol=1e-6)
+        assert pt.view_direction is None
+
+    def test_custom_normal(self):
+        pt = CalcPoint(position=(3, 2, 1.5), normal_direction=(0, 1, 0))
+        assert np.allclose(pt.geometry.normal, [0, 1, 0], atol=1e-6)
+
+    def test_view_direction(self):
+        pt = CalcPoint(position=(0, 0, 0), view_direction=(0, 1, 0))
+        assert pt.view_direction == (0, 1, 0)
+
+    def test_kwargs(self):
+        pt = CalcPoint(position=(0, 0, 0), zone_id="MyPoint", dose=True, hours=4)
+        assert pt.zone_id == "MyPoint"
+        assert pt.dose is True
+        assert pt.hours == 4.0
+
+    def test_calc_mode(self):
+        pt = CalcPoint(
+            position=(0, 0, 0), view_direction=(0, 1, 0),
+            calc_mode="eye_directional",
+        )
+        assert pt.view_direction == (0, 1, 0)
+
+    def test_num_points(self):
+        pt = CalcPoint(position=(1, 2, 3))
+        assert pt.num_points == (1,)
+
+    def test_position_property(self):
+        pt = CalcPoint(position=(3, 2, 1.5))
+        assert pt.position == (3.0, 2.0, 1.5)
+
+    def test_serialization_round_trip(self):
+        pt = CalcPoint(position=(3, 2, 1.5), normal_direction=(0, 1, 0),
+                       zone_id="pt")
+        data = pt.to_dict()
+        loaded = CalcPoint.from_dict(data)
+        assert np.allclose(loaded.coords, pt.coords, atol=1e-6)
+        assert loaded.zone_id == "pt"
+        assert loaded.calctype == "Point"
+
+    def test_inherits_fov(self):
+        pt = CalcPoint(position=(0, 0, 0), fov_vert=120, fov_horiz=180)
+        assert pt.fov_vert == 120
+        assert pt.fov_horiz == 180
 
 
 class TestCalcZoneConvertUnits:

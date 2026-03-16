@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - nearfield convenience property for Lamp
 - Ozone calculation method
 - PlaneCalcType fully implemented
+- CalcPoint clas (with GridPoint geometry class)
 
 ### Fixed
 

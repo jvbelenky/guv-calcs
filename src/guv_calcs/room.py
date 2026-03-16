@@ -5,7 +5,7 @@ import numpy as np
 from collections.abc import Iterable
 from matplotlib import colormaps
 from .lamp import Lamp, LampPlacer
-from .calc_zone import CalcPlane, CalcVol, CalcZone
+from .calc_zone import CalcPlane, CalcPoint, CalcVol, CalcZone
 from .room_plotter import RoomPlotter
 from .geometry import RoomDimensions
 from .geometry import Polygon2D
@@ -289,7 +289,9 @@ class Room:
             room.add_lamp(Lamp.from_dict(lamp))
 
         for zoneid, zone in data.get("calc_zones", {}).items():
-            if zone["calctype"] == "Plane":
+            if zone["calctype"] == "Point":
+                room.add_calc_zone(CalcPoint.from_dict(zone))
+            elif zone["calctype"] == "Plane":
                 room.add_calc_zone(CalcPlane.from_dict(zone))
             elif zone["calctype"] == "Volume":
                 room.add_calc_zone(CalcVol.from_dict(zone))

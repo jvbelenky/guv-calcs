@@ -2,9 +2,9 @@ from .room import Room, DEFAULT_DIMS
 from .project import Project
 from .object import Object
 from .lamp import Lamp, LampType, GUVType, LampPlacer, Spectrum, sum_spectrum
-from .calc_zone import CalcVol, CalcPlane
+from .calc_zone import CalcVol, CalcPlane, CalcPoint
 from .geometry import Polygon2D, to_polar, to_cartesian, attitude
-from .geometry import SurfaceGrid, VolumeGrid
+from .geometry import SurfaceGrid, VolumeGrid, GridPoint
 from .plane_calc_mode import PlaneCalcMode, PlaneCalcSpec
 from .io import get_spectral_weightings
 from .efficacy import InactivationData
@@ -28,10 +28,12 @@ __all__ = [
     "sum_spectrum",
     "CalcVol",
     "CalcPlane",
+    "CalcPoint",
     "PlaneCalcMode",
     "PlaneCalcSpec",
     "SurfaceGrid",
     "VolumeGrid",
+    "GridPoint",
     "Polygon2D",
     "to_polar",
     "to_cartesian",

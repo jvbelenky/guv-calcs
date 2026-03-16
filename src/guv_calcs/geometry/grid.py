@@ -785,3 +785,79 @@ class VolumeGrid(_GridBase):
     def from_dict(cls, data):
         data = migrate_volume_grid_dict(data)
         return init_from_dict(cls, data)
+
+
+@dataclass(frozen=True, eq=False)
+class GridPoint:
+    """A single point in 3D space with an orientation normal."""
+
+    position: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    normal_direction: tuple[float, float, float] = (0.0, 0.0, 1.0)
+
+    def __post_init__(self):
+        pos = tuple(float(x) for x in self.position)
+        object.__setattr__(self, "position", pos)
+        n = np.asarray(self.normal_direction, float)
+        norm = np.linalg.norm(n)
+        if norm < 1e-12:
+            raise ValueError("normal_direction must be non-zero")
+        n = n / norm
+        object.__setattr__(self, "normal_direction", tuple(n))
+
+    def __eq__(self, other):
+        if not isinstance(other, GridPoint):
+            return NotImplemented
+        return self.to_dict() == other.to_dict()
+
+    @property
+    def coords(self) -> np.ndarray:
+        return np.array([self.position])
+
+    @property
+    def num_points(self) -> tuple:
+        return (1,)
+
+    @property
+    def normal(self) -> np.ndarray:
+        return np.asarray(self.normal_direction, float)
+
+    @property
+    def basis(self) -> np.ndarray:
+        n = self.normal
+        ref = np.array([0.0, 0.0, 1.0])
+        if abs(np.dot(n, ref)) > 0.99:
+            ref = np.array([0.0, 1.0, 0.0])
+        u = np.cross(ref, n)
+        u /= np.linalg.norm(u)
+        v = np.cross(n, u)
+        return np.stack([u, v, n], axis=1)
+
+    @property
+    def calc_state(self) -> tuple:
+        return (self.position, self.normal_direction)
+
+    @property
+    def update_state(self) -> tuple:
+        return ()
+
+    def to_dict(self) -> dict:
+        return {
+            "grid_type": "point",
+            "position": list(self.position),
+            "normal_direction": list(self.normal_direction),
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(
+            position=tuple(data["position"]),
+            normal_direction=tuple(data.get("normal_direction", (0, 0, 1))),
+        )
+
+    def _convert_units(self, old_units, new_units):
+        factor = convert_length(old_units, new_units, 1.0)
+        new_pos = tuple(c * factor for c in self.position)
+        return GridPoint(position=new_pos, normal_direction=self.normal_direction)
+
+    def __repr__(self):
+        return f"GridPoint(position={self.position}, normal={self.normal_direction})"

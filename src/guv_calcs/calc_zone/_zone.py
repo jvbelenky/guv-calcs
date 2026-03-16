@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
 from datetime import timedelta
 from ..calc_manager import LightingCalculator
-from ..geometry import SurfaceGrid, VolumeGrid
+from ..geometry import SurfaceGrid, VolumeGrid, GridPoint
 from ._io import export_plane, export_volume
 from ._plot import plot_plane, plot_volume
 from ..geometry import RoomDimensions
@@ -803,3 +803,76 @@ class CalcPlane(CalcZone):
     def plot_plane(self, **kwargs):
         """alias for plot() -- kept in for compatibility"""
         return self.plot(**kwargs)
+
+
+class CalcPoint(CalcPlane):
+    """Single-point calculation zone with full CalcPlane view/FOV support."""
+
+    _grid_cls = GridPoint
+
+    def __init__(
+        self,
+        position=(0.0, 0.0, 0.0),
+        normal_direction=None,
+        zone_id=None,
+        name=None,
+        geometry=None,
+        dose=False,
+        hours=None,
+        minutes=None,
+        seconds=None,
+        enabled=True,
+        calc_mode=None,
+        fov_vert=None,
+        fov_horiz=None,
+        vert=None,
+        horiz=None,
+        use_normal=None,
+        view_direction=None,
+        view_target=None,
+    ):
+        if geometry is None:
+            n = normal_direction or (0.0, 0.0, 1.0)
+            geometry = GridPoint(position=position, normal_direction=n)
+
+        super().__init__(
+            zone_id=zone_id or "CalcPoint",
+            name=name,
+            geometry=geometry,
+            dose=dose,
+            hours=hours,
+            minutes=minutes,
+            seconds=seconds,
+            enabled=enabled,
+            display_mode="heatmap",
+            calc_mode=calc_mode,
+            fov_vert=fov_vert,
+            fov_horiz=fov_horiz,
+            vert=vert,
+            horiz=horiz,
+            use_normal=use_normal,
+            view_direction=view_direction,
+            view_target=view_target,
+        )
+
+    @property
+    def calctype(self):
+        return "Point"
+
+    @property
+    def position(self):
+        return self.geometry.position
+
+    def _extra_dict(self):
+        d = super()._extra_dict()
+        d["position"] = list(self.geometry.position)
+        d["normal_direction"] = list(self.geometry.normal_direction)
+        return d
+
+    def export(self, fname=None):
+        raise NotImplementedError("CalcPoint does not support CSV export")
+
+    def plot(self, **kwargs):
+        raise NotImplementedError("CalcPoint does not support plotting")
+
+

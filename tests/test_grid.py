@@ -2,7 +2,7 @@
 
 import pytest
 import numpy as np
-from guv_calcs.geometry import SurfaceGrid, VolumeGrid, Polygon2D
+from guv_calcs.geometry import SurfaceGrid, VolumeGrid, GridPoint, Polygon2D
 
 
 class TestSurfaceGridCreation:
@@ -331,6 +331,53 @@ class TestTotalPoints:
         g = VolumeGrid.from_polygon(polygon=poly, z_height=2.7,
                                      spacing_init=(1.0, 1.0, 1.0))
         assert g.total_points == g.num_points[0]
+
+
+class TestGridPoint:
+    """Tests for GridPoint."""
+
+    def test_single_point_at_position(self):
+        g = GridPoint(position=(3.0, 2.0, 1.5))
+        assert g.coords.shape == (1, 3)
+        assert np.allclose(g.coords[0], [3.0, 2.0, 1.5], atol=1e-6)
+
+    def test_default_normal_is_z_up(self):
+        g = GridPoint(position=(0, 0, 0))
+        assert np.allclose(g.normal, [0, 0, 1], atol=1e-6)
+
+    def test_custom_normal(self):
+        g = GridPoint(position=(0, 0, 0), normal_direction=(0, 1, 0))
+        assert np.allclose(g.normal, [0, 1, 0], atol=1e-6)
+
+    def test_normal_z_down(self):
+        g = GridPoint(position=(0, 0, 0), normal_direction=(0, 0, -1))
+        assert np.allclose(g.normal, [0, 0, -1], atol=1e-6)
+
+    def test_num_points(self):
+        g = GridPoint(position=(1, 2, 3))
+        assert g.num_points == (1,)
+
+    def test_serialization_round_trip(self):
+        g = GridPoint(position=(3.0, 2.0, 1.5), normal_direction=(0, 1, 0))
+        d = g.to_dict()
+        g2 = GridPoint.from_dict(d)
+        assert np.allclose(g.coords, g2.coords, atol=1e-6)
+        assert np.allclose(g.normal, g2.normal, atol=1e-6)
+
+    def test_arbitrary_normal(self):
+        n = np.array([1.0, 1.0, 1.0])
+        n = n / np.linalg.norm(n)
+        g = GridPoint(position=(0, 0, 0), normal_direction=n)
+        assert np.allclose(g.normal, n, atol=1e-6)
+
+    def test_normalizes_direction(self):
+        g = GridPoint(position=(0, 0, 0), normal_direction=(0, 0, 5))
+        assert np.allclose(g.normal, [0, 0, 1], atol=1e-6)
+
+    def test_basis_orthogonal(self):
+        g = GridPoint(position=(0, 0, 0), normal_direction=(1, 1, 0))
+        basis = g.basis
+        assert np.allclose(basis.T @ basis, np.eye(3), atol=1e-10)
 
 
 class TestSerializationMigration:
