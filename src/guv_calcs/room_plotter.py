@@ -2,7 +2,7 @@ import plotly.graph_objs as go
 import numpy as np
 from scipy.spatial import Delaunay
 from .geometry import to_polar
-from .calc_zone import CalcPlane, CalcVol
+from .calc_zone import CalcPlane, CalcVol, CalcPoint
 from .units import convert_units
 
 
@@ -51,6 +51,8 @@ class RoomPlotter:
                     zone=zone, fig=fig, select_id=select_id,
                     show_isosurfaces=show,
                 )
+            elif isinstance(zone, CalcPoint):
+                fig = self._plot_point(zone=zone, fig=fig, select_id=select_id)
 
         for obj_id, obj in self.room.objects.items():
             fig = self._plot_object(obj=obj, fig=fig, select_id=select_id)
@@ -375,6 +377,47 @@ class RoomPlotter:
                     z=z,
                     surfacecolor=zone.values,
                 )
+        return fig
+
+    def _plot_point(self, zone, fig, select_id=None):
+        """Plot a CalcPoint as a marker with a short normal-direction line."""
+        pos = np.asarray(zone.position, dtype=float)
+        normal = np.asarray(zone.geometry.normal_direction, dtype=float)
+        norm_len = np.linalg.norm(normal)
+        if norm_len > 0:
+            normal = normal / norm_len
+
+        # Short line showing normal direction (scale to ~5% of room height)
+        line_len = self.room.dim.z * 0.05
+        tip = pos + normal * line_len
+
+        color = self._set_color(select_id, zone.zone_id, zone.enabled)
+        trace_id = "zone_" + zone.zone_id
+
+        marker_trace = go.Scatter3d(
+            x=[pos[0], tip[0]],
+            y=[pos[1], tip[1]],
+            z=[pos[2], tip[2]],
+            mode="lines+markers",
+            marker=dict(size=[6, 2], color=color),
+            line=dict(color=color, width=3),
+            name=zone.name,
+            customdata=[trace_id],
+            showlegend=True,
+        )
+
+        traces = [trace.customdata[0] if trace.customdata else None for trace in fig.data]
+        if trace_id not in traces:
+            fig.add_trace(marker_trace)
+        else:
+            self._update_trace_by_id(
+                fig, zone.zone_id,
+                x=[pos[0], tip[0]],
+                y=[pos[1], tip[1]],
+                z=[pos[2], tip[2]],
+                marker=dict(size=[6, 2], color=color),
+                line=dict(color=color, width=3),
+            )
         return fig
 
     def _plot_object(self, obj, fig, select_id=None):

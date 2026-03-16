@@ -347,7 +347,7 @@ class LightingCalculator:
         but which don't require a full recalculation
         """
 
-        if zv.is_plane():
+        if not zv.is_volume():
             if zv.has_view_mode():
                 theta, elevation, azimuth = _compute_view_angles(lamp, zv)
                 values = apply_plane_filters(values, theta, zv, elevation, azimuth)
@@ -368,7 +368,7 @@ class LightingCalculator:
 
         lamp_values = [self.cache.values(lamp_id) for lamp_id in lamps.keys()]
 
-        if zv.is_plane() and zv.fov_horiz < 360 and len(lamps) > 1 and not zv.has_view_mode():
+        if not zv.is_volume() and zv.fov_horiz < 360 and len(lamps) > 1 and not zv.has_view_mode():
             base_values = self.calculate_horizontal_fov(lamps, lamp_values, zv)
         else:
             base_values = sum(lamp_values)
@@ -409,8 +409,8 @@ class LightingCalculator:
 
 # reused in reflectance.py
 def apply_plane_filters(values, theta, zv, elevation=None, azimuth=None):
-    """apply angular view filters to a plane"""
-    if zv.is_plane():
+    """apply angular view filters to a plane or point"""
+    if not zv.is_volume():
         # apply normals/directions — shared weighting (same code, different theta)
         if zv.use_normal:
             values[theta > np.pi / 2] = 0

@@ -88,7 +88,7 @@ class CalcZone(ABC):
     """
     Abstract base class representing a calculation zone.
 
-    Subclasses must implement calctype, to_view(), export(), and plot().
+    Subclasses must implement calctype, export(), and plot().
     """
 
     _grid_cls = None  # subclasses set to VolumeGrid or SurfaceGrid
@@ -103,6 +103,14 @@ class CalcZone(ABC):
         seconds=None,
         enabled=True,
         display_mode="heatmap",
+        calc_mode=None,
+        fov_vert=None,
+        fov_horiz=None,
+        vert=None,
+        horiz=None,
+        use_normal=None,
+        view_direction=None,
+        view_target=None,
     ):
         self._zone_id = zone_id
         self.name = str(zone_id) if name is None else str(name)
@@ -115,6 +123,33 @@ class CalcZone(ABC):
         self._geometry = None
         self.calculator = LightingCalculator()
         self.result = ZoneResult()
+
+        # FOV / view handling
+        if view_direction is not None and view_target is not None:
+            raise ValueError(
+                "view_direction and view_target are mutually exclusive"
+            )
+
+        self.view_direction = view_direction
+        self.view_target = view_target
+
+        if calc_mode is not None:
+            ct = PlaneCalcMode.from_token(calc_mode)
+            spec = ct.spec
+            self.horiz = horiz if horiz is not None else spec.horiz
+            self.vert = vert if vert is not None else spec.vert
+            self.use_normal = use_normal if use_normal is not None else spec.use_normal
+            self.fov_vert = fov_vert if fov_vert is not None else spec.fov_vert
+            self.fov_horiz = fov_horiz if fov_horiz is not None else spec.fov_horiz
+            if view_direction is None and view_target is None:
+                self.view_direction = spec.view_direction
+                self.view_target = spec.view_target
+        else:
+            self.horiz = horiz if horiz is not None else False
+            self.vert = vert if vert is not None else False
+            self.use_normal = use_normal if use_normal is not None else True
+            self.fov_vert = fov_vert if fov_vert is not None else 180
+            self.fov_horiz = fov_horiz if fov_horiz is not None else 360
 
     def __getattr__(self, name):
         """
@@ -153,7 +188,7 @@ class CalcZone(ABC):
     @property
     @abstractmethod
     def calctype(self) -> str:
-        """Return zone type identifier ('Plane' or 'Volume')."""
+        """Return zone type identifier ('Plane', 'Volume', or 'Point')."""
         ...
 
     @property
@@ -175,7 +210,15 @@ class CalcZone(ABC):
         """if changes, calc zone needs updating but not recalculating"""
         if self.geometry is None:
             return ()
-        return self.geometry.update_state
+        return self.geometry.update_state + (
+            self.fov_vert,
+            self.fov_horiz,
+            self.vert,
+            self.horiz,
+            self.use_normal,
+            self.view_direction,
+            self.view_target,
+        )
 
     @property
     def geometry(self):
@@ -187,6 +230,32 @@ class CalcZone(ABC):
             if hasattr(self, "result") and self.result is not None:
                 self.result.init(new_geom.num_points)
         self._geometry = new_geom
+
+    @property
+    def view_mode(self) -> str | None:
+        """Return the active view mode, or None for normal (surface-normal) mode."""
+        if self.view_direction is not None:
+            return "directional"
+        if self.view_target is not None:
+            return "target"
+        return None
+
+    @property
+    def calc_mode(self) -> str:
+        """Derive the calculation mode from current flags.
+
+        Returns the matching PlaneCalcMode value if flags match a known mode,
+        otherwise returns "custom".
+        """
+        return PlaneCalcMode.from_flags(
+            horiz=self.horiz,
+            vert=self.vert,
+            use_normal=self.use_normal,
+            fov_vert=float(self.fov_vert),
+            fov_horiz=float(self.fov_horiz),
+            view_direction=self.view_direction,
+            view_target=self.view_target,
+        ).value
 
     @classmethod
     def from_dict(cls, data):
@@ -212,7 +281,18 @@ class CalcZone(ABC):
         return data
 
     def _extra_dict(self):
-        return {}
+        if self.calctype == "Volume":
+            return {}
+        return {
+            "calc_mode": self.calc_mode,
+            "fov_vert": self.fov_vert,
+            "fov_horiz": self.fov_horiz,
+            "use_normal": self.use_normal,
+            "vert": self.vert,
+            "horiz": self.horiz,
+            "view_direction": self.view_direction,
+            "view_target": self.view_target,
+        }
 
     def save(self, filename):
         """save zone data to json file"""
@@ -220,10 +300,24 @@ class CalcZone(ABC):
         with open(filename, "w") as json_file:
             json_file.write(json.dumps(data))
 
-    @abstractmethod
     def to_view(self) -> ZoneView:
         """Return a snapshot of the zone's state for calculation."""
-        ...
+        return ZoneView(
+            zone_id=self.zone_id,
+            coords=self.geometry.coords,
+            num_points=self.geometry.num_points,
+            calc_state=self.calc_state,
+            update_state=self.update_state,
+            calctype=self.calctype,
+            fov_vert=self.fov_vert,
+            fov_horiz=self.fov_horiz,
+            vert=self.vert,
+            horiz=self.horiz,
+            use_normal=self.use_normal,
+            basis=self.basis,
+            view_direction=self.view_direction,
+            view_target=self.view_target,
+        )
 
     @abstractmethod
     def export(self, fname=None):
@@ -259,7 +353,7 @@ class CalcZone(ABC):
     def set_dose_time(self, hours=None, minutes=None, seconds=None):
         """Set the exposure time for dose calculation."""
         self._exposure_time = self._parse_exposure_time(hours, minutes, seconds, default=False)
-        
+
     @property
     def exposure_time(self) -> timedelta:
         return self._exposure_time
@@ -424,7 +518,7 @@ class CalcZone(ABC):
     @property
     def values(self):
         return self.result.values
-        
+
     @staticmethod
     def _parse_exposure_time(hours=None, minutes=None, seconds=None, default=True):
         """Parse time params into a timedelta. Values are summed."""
@@ -503,17 +597,6 @@ class CalcVol(CalcZone):
         )
         return cls(geometry=geometry, **kwargs)
 
-    def to_view(self):
-        """take a snapshot of the zone's state"""
-        return ZoneView(
-            zone_id=self.zone_id,
-            coords=self.geometry.coords,
-            num_points=self.geometry.num_points,
-            calc_state=self.calc_state,
-            update_state=self.update_state,
-            calctype=self.calctype,
-        )
-
     def export(self, fname=None):
         """export values to csv"""
         return export_volume(self, fname=fname)
@@ -531,13 +614,6 @@ class CalcPlane(CalcZone):
     """Planar calculation zone for two-dimensional calculations at a specific height."""
 
     _grid_cls = SurfaceGrid
-
-    # Backward-compatible defaults when no calc_mode is provided
-    _DEFAULT_HORIZ = False
-    _DEFAULT_VERT = False
-    _DEFAULT_USE_NORMAL = True
-    _DEFAULT_FOV_VERT = 180
-    _DEFAULT_FOV_HORIZ = 360
 
     def __init__(
         self,
@@ -569,6 +645,14 @@ class CalcPlane(CalcZone):
             seconds=seconds,
             enabled=enabled,
             display_mode=display_mode,
+            calc_mode=calc_mode,
+            fov_vert=fov_vert,
+            fov_horiz=fov_horiz,
+            vert=vert,
+            horiz=horiz,
+            use_normal=use_normal,
+            view_direction=view_direction,
+            view_target=view_target,
         )
 
         if geometry is None:
@@ -577,64 +661,16 @@ class CalcPlane(CalcZone):
             )
         self.geometry = geometry
 
-        # Validate mutual exclusivity of explicit view params
-        if view_direction is not None and view_target is not None:
-            raise ValueError(
-                "view_direction and view_target are mutually exclusive"
-            )
-
-        self.view_direction = view_direction
-        self.view_target = view_target
-
-        # Resolve flags: calc_mode spec → explicit overrides → defaults
-        if calc_mode is not None:
-            ct = PlaneCalcMode.from_token(calc_mode)
-            spec = ct.spec
-            self.horiz = horiz if horiz is not None else spec.horiz
-            self.vert = vert if vert is not None else spec.vert
-            self.use_normal = use_normal if use_normal is not None else spec.use_normal
-            self.fov_vert = fov_vert if fov_vert is not None else spec.fov_vert
-            self.fov_horiz = fov_horiz if fov_horiz is not None else spec.fov_horiz
-            # Apply view params from spec if not explicitly provided
-            if view_direction is None and view_target is None:
-                self.view_direction = spec.view_direction
-                self.view_target = spec.view_target
-        else:
-            self.horiz = horiz if horiz is not None else self._DEFAULT_HORIZ
-            self.vert = vert if vert is not None else self._DEFAULT_VERT
-            self.use_normal = use_normal if use_normal is not None else self._DEFAULT_USE_NORMAL
-            self.fov_vert = fov_vert if fov_vert is not None else self._DEFAULT_FOV_VERT
-            self.fov_horiz = fov_horiz if fov_horiz is not None else self._DEFAULT_FOV_HORIZ
-
     @property
     def calctype(self):
         return "Plane"
 
-    @property
-    def view_mode(self) -> str | None:
-        """Return the active view mode, or None for normal (surface-normal) mode."""
-        if self.view_direction is not None:
-            return "directional"
-        if self.view_target is not None:
-            return "target"
-        return None
-
-    @property
-    def calc_mode(self) -> str:
-        """Derive the calculation mode from current flags.
-
-        Returns the matching PlaneCalcMode value if flags match a known mode,
-        otherwise returns "custom".
-        """
-        return PlaneCalcMode.from_flags(
-            horiz=self.horiz,
-            vert=self.vert,
-            use_normal=self.use_normal,
-            fov_vert=float(self.fov_vert),
-            fov_horiz=float(self.fov_horiz),
-            view_direction=self.view_direction,
-            view_target=self.view_target,
-        ).value
+    def __repr__(self):
+        return super().__repr__() + (
+            f"geometry={self.geometry.__repr__()}, "
+            f"field_of_view=({self.fov_horiz}° horiz, {self.fov_vert}° vert), "
+            f"flags=(vert={self.vert}, horiz={self.horiz}, use_normal={self.use_normal}), "
+        )
 
     def set_calc_mode(self, value: str):
         """Set all calculation flags from a named calc mode.
@@ -656,25 +692,6 @@ class CalcPlane(CalcZone):
         self.view_direction = spec.view_direction
         self.view_target = spec.view_target
         return self
-
-    def _extra_dict(self):
-        return {
-            "calc_mode": self.calc_mode,
-            "fov_vert": self.fov_vert,
-            "fov_horiz": self.fov_horiz,
-            "use_normal": self.use_normal,
-            "vert": self.vert,
-            "horiz": self.horiz,
-            "view_direction": self.view_direction,
-            "view_target": self.view_target,
-        }
-
-    def __repr__(self):
-        return super().__repr__() + (
-            f"geometry={self.geometry.__repr__()}, "
-            f"field_of_view=({self.fov_horiz}° horiz, {self.fov_vert}° vert), "
-            f"flags=(vert={self.vert}, horiz={self.horiz}, use_normal={self.use_normal}), "
-        )
 
     @classmethod
     def from_points(
@@ -748,38 +765,6 @@ class CalcPlane(CalcZone):
         )
         return cls(geometry=geometry, **kwargs)
 
-    @property
-    def update_state(self):
-        """if changes, calc_zone needs updating but not recalculating"""
-        return super().update_state + (
-            self.fov_vert,
-            self.fov_horiz,
-            self.vert,
-            self.horiz,
-            self.use_normal,
-            self.view_direction,
-            self.view_target,
-        )
-
-    def to_view(self):
-        """take a snapshot of the zone's state"""
-        return ZoneView(
-            zone_id=self.zone_id,
-            coords=self.geometry.coords,
-            num_points=self.geometry.num_points,
-            calc_state=self.calc_state,
-            update_state=self.update_state,
-            calctype=self.calctype,
-            fov_vert=self.fov_vert,
-            fov_horiz=self.fov_horiz,
-            vert=self.vert,
-            horiz=self.horiz,
-            use_normal=self.use_normal,
-            basis=self.basis,
-            view_direction=self.view_direction,
-            view_target=self.view_target,
-        )
-
     def set_height(self, height):
         self.geometry = self.geometry.update_legacy(height=height)
         return self
@@ -805,8 +790,8 @@ class CalcPlane(CalcZone):
         return self.plot(**kwargs)
 
 
-class CalcPoint(CalcPlane):
-    """Single-point calculation zone with full CalcPlane view/FOV support."""
+class CalcPoint(CalcZone):
+    """Single-point calculation zone with FOV/view support."""
 
     _grid_cls = GridPoint
 
@@ -838,7 +823,6 @@ class CalcPoint(CalcPlane):
         super().__init__(
             zone_id=zone_id or "CalcPoint",
             name=name,
-            geometry=geometry,
             dose=dose,
             hours=hours,
             minutes=minutes,
@@ -854,6 +838,7 @@ class CalcPoint(CalcPlane):
             view_direction=view_direction,
             view_target=view_target,
         )
+        self.geometry = geometry
 
     @property
     def calctype(self):
@@ -874,5 +859,3 @@ class CalcPoint(CalcPlane):
 
     def plot(self, **kwargs):
         raise NotImplementedError("CalcPoint does not support plotting")
-
-

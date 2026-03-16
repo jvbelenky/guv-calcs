@@ -239,7 +239,7 @@ class Surface:
         if (~np.isfinite(values)).any():
             values = np.ma.masked_invalid(values)
 
-        if zv.is_plane():
+        if theta_zone is not None:
             values = apply_plane_filters(values, theta_zone, zv)
 
         # Sum over all self.plane points to get total values at each volume point
@@ -288,7 +288,7 @@ class Surface:
         form_factors = form_factors.astype("float32")
 
         # angles relative to calculation zone (only relevant for planes)
-        if zv.is_plane():
+        if not zv.is_volume():
             x, y, z = differences.reshape(-1, 3).T
             distances = np.sqrt(x ** 2 + y ** 2 + z ** 2)
             distances = distances.reshape(differences.shape[0:-1])
