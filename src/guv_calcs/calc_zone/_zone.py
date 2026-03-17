@@ -5,8 +5,8 @@ from dataclasses import dataclass, replace
 from datetime import timedelta
 from ..calc_manager import LightingCalculator
 from ..geometry import SurfaceGrid, VolumeGrid, GridPoint
-from ._io import export_plane, export_volume
-from ._plot import plot_plane, plot_volume
+from ._io import export_plane, export_volume, export_point
+from ._plot import plot_plane, plot_volume, plot_point
 from ..geometry import RoomDimensions
 from ..geometry import Polygon2D
 from .._serialization import init_from_dict, deserialize_geometry, migrate_zone_dict, migrate_legacy_zone_geometry
@@ -805,7 +805,9 @@ class CalcPoint(CalcZone):
         return self
 
     def export(self, fname=None):
-        raise NotImplementedError("CalcPoint does not support CSV export")
+        """Export point data to CSV."""
+        return export_point(self, fname=fname)
 
     def plot(self, **kwargs):
-        raise NotImplementedError("CalcPoint does not support plotting")
+        """Plot the point in 3D with a normal arrow."""
+        return plot_point(self, **kwargs)

@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import plotly.graph_objs as go
 import numpy as np
 import warnings
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 – registers '3d' projection
 
 
 def plot_volume(zone, title=None, colormap=None):
@@ -142,5 +143,54 @@ def plot_plane(zone, fig=None, ax=None, vmin=None, vmax=None, title=None, colorm
         ax.set_ylabel(v_label)
         ax.set_title(title)
         cbar.set_label(zone.value_units, loc="center")
+
+    return fig, ax
+
+
+def plot_point(zone, fig=None, ax=None, title=None, arrow_length=0.5, colormap=None):
+    """Plot a CalcPoint as a 3D scatter marker with a normal arrow."""
+    if colormap is None:
+        colormap = "plasma"
+
+    if fig is None and ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection="3d")
+    elif fig is None:
+        fig = plt.gcf()
+    elif ax is None:
+        ax = fig.add_subplot(111, projection="3d")
+
+    pos = zone.geometry.position
+    normal = zone.geometry.normal_direction
+    values = zone.get_values()
+
+    # scatter the point
+    if values is not None:
+        cmap = plt.get_cmap(colormap)
+        color = cmap(0.5)
+    else:
+        color = "gray"
+    ax.scatter(*pos, c=[color], s=80, depthshade=False, zorder=5)
+
+    # normal arrow
+    ax.quiver(
+        pos[0], pos[1], pos[2],
+        normal[0] * arrow_length,
+        normal[1] * arrow_length,
+        normal[2] * arrow_length,
+        color="red", arrow_length_ratio=0.2,
+    )
+
+    # annotate value
+    if values is not None:
+        label = f"{values.flat[0]:.2f} {zone.value_units}"
+    else:
+        label = "no value"
+    ax.text(pos[0], pos[1], pos[2], f"  {label}", fontsize=8)
+
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
+    ax.set_title(zone.name if title is None else title)
 
     return fig, ax

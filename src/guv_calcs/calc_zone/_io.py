@@ -73,6 +73,24 @@ def export_volume(zone, fname=None):
     return to_csv(rows=rows, fname=fname)
 
 
+def export_point(zone, fname=None):
+    pos = zone.geometry.position
+    aim = zone.geometry.aim_point
+    normal = zone.geometry.normal_direction
+    values = zone.get_values()
+    val = "" if values is None else values.flat[0]
+    rows = [
+        ["Zone ID", zone.zone_id],
+        ["Name", zone.name],
+        ["Position", *pos],
+        ["Aim Point", *aim],
+        ["Normal", *normal],
+        ["Value", val],
+        ["Units", zone.value_units],
+    ]
+    return to_csv(rows=rows, fname=fname)
+
+
 def to_csv(rows, fname=None):
 
     # rows = zone._write_rows()  # implemented in subclass
