@@ -41,17 +41,21 @@ _TIME_EXTRA_PASS = 0.000000047
 # Per lamp: IES photometry (~66 KB) + spectrum (~112 KB) + metadata
 BYTES_PER_LAMP = 1_000_000
 
-# Per zone point: zone result arrays + overhead
-BYTES_PER_ZONE_POINT_BASE = 90
+# Per zone point: zone result arrays + lamp cache overhead
+BYTES_PER_ZONE_POINT = 90
 
-# Per zone point per lamp: 2 × float32 in lamp cache
-BYTES_PER_ZONE_POINT_PER_LAMP = 8
+# Fixed overhead when reflectance is enabled: manager copies, surface
+# data structures, and intermediate arrays during interreflection.
+# 50 MB keeps worst-case small-room underpredict above 0.89×.
+REFLECTANCE_OVERHEAD = 50_000_000
 
-# Form factors + theta_zone per (surface_point, zone_point) pair: 2 × float32
-BYTES_PER_FORM_FACTOR_ENTRY = 8
+# Form factor cache: each (surface_point, zone_point) pair stores
+# form_factors + theta_zone arrays.  Empirically fitted to 14 bytes/entry
+# (NNLS fit to tracemalloc peak data across 13 reflectance configurations).
+BYTES_PER_FORM_FACTOR_ENTRY = 14
 
-# Peak multiplier: temporaries during form factor computation use ~2×
-PEAK_MULTIPLIER = 2.0
+# Floor: minimum peak estimate regardless of configuration
+MIN_PEAK_BYTES = 10_000_000
 
 
 def estimate_calculation_time(room) -> float:
@@ -120,30 +124,28 @@ def estimate_calculation_time(room) -> float:
 
 
 def estimate_memory(room) -> dict:
-    """Estimate memory usage (bytes) for a Room during calculation.
+    """Estimate peak memory usage (bytes) for a Room during calculation.
 
-    Memory model (empirically calibrated from tracemalloc profiling):
+    Memory model (empirically calibrated from tracemalloc profiling across
+    29 configurations):
 
     - Per lamp: ~1 MB (IES photometry + spectrum + metadata)
-    - Per zone point: 90 bytes base + 8 bytes per lamp (cache entries)
-    - Reflectance form factors: 8 bytes × surface_pts × zone_pts per surface
-      + 8 bytes × total_surface_pts² (surface↔surface interreflection)
-    - Peak ≈ 2× allocated (temporaries during form factor computation)
+    - Per zone point: 90 bytes (zone result arrays + lamp cache)
+    - Reflectance overhead: 50 MB fixed (manager copies, surface structures)
+    - Form factor cache: 14 bytes per (surface_point × zone_point) entry
+    - Floor: 10 MB minimum
+
+    Validated against measured peak memory:
+    - All reflectance configs (86-1357 MB) predicted within [0.89, 1.65]×
+    - Non-reflectance configs (~10 MB) predicted within [0.94, 1.47]×
+    - 14L non-reflectance peak (70.9 MB) underpredicted (temporary lamp
+      arrays spike during calculation) but is irrelevant for OOM prevention.
 
     Args:
         room: A Room instance with lamps, calc_zones, surfaces, and ref_manager.
 
     Returns:
-        Dictionary with memory breakdown in bytes:
-        - lamp_bytes: memory for lamp IES/spectrum data
-        - zone_bytes: memory for zone result arrays and lamp caches
-        - reflectance_bytes: memory for form factor matrices (0 if disabled)
-        - stored_bytes: total retained memory after calculation
-        - peak_bytes: estimated peak memory during calculation
-        - total_zone_points: total grid points across enabled zones
-        - lamp_count: number of enabled lamps with IES data
-        - reflectance_grid_points: total surface grid points
-        - num_surfaces: number of reflective surfaces
+        Dictionary with memory breakdown in bytes and session metadata.
     """
     # Count enabled lamps with photometric data
     lamp_count = sum(
@@ -170,30 +172,26 @@ def estimate_memory(room) -> dict:
 
     # Memory estimate
     lamp_bytes = lamp_count * BYTES_PER_LAMP
-    zone_bytes = total_zone_points * (
-        BYTES_PER_ZONE_POINT_BASE + lamp_count * BYTES_PER_ZONE_POINT_PER_LAMP
-    )
+    zone_bytes = total_zone_points * BYTES_PER_ZONE_POINT
 
     reflectance_bytes = 0
     if reflectance_enabled and reflectance_grid_points > 0:
-        avg_pts_per_surface = reflectance_grid_points / max(num_surfaces, 1)
-        # Surface → zone form factors
-        surf_zone_ff = (
-            num_surfaces * avg_pts_per_surface
-            * total_zone_points * BYTES_PER_FORM_FACTOR_ENTRY
+        # Fixed overhead: manager copies, surface data structures
+        # Form factor cache: refl_points × zone_points × 14 bytes
+        reflectance_bytes = (
+            REFLECTANCE_OVERHEAD
+            + reflectance_grid_points * total_zone_points * BYTES_PER_FORM_FACTOR_ENTRY
         )
-        # Surface ↔ surface form factors during interreflection
-        surf_surf_ff = reflectance_grid_points ** 2 * BYTES_PER_FORM_FACTOR_ENTRY
-        reflectance_bytes = surf_zone_ff + surf_surf_ff
 
-    stored_bytes = lamp_bytes + zone_bytes + reflectance_bytes
-    peak_bytes = stored_bytes * PEAK_MULTIPLIER
+    peak_bytes = max(
+        lamp_bytes + zone_bytes + reflectance_bytes,
+        MIN_PEAK_BYTES,
+    )
 
     return {
         'lamp_bytes': lamp_bytes,
         'zone_bytes': zone_bytes,
         'reflectance_bytes': reflectance_bytes,
-        'stored_bytes': stored_bytes,
         'peak_bytes': peak_bytes,
         'total_zone_points': total_zone_points,
         'lamp_count': lamp_count,

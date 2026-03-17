@@ -160,7 +160,6 @@ def profiling_results():
             'est_peak_mb': est_mem['peak_bytes'] / 1e6,
             'actual_peak_mb': actual_peak / 1e6,
             'peak_ratio': est_mem['peak_bytes'] / actual_peak if actual_peak > 1000 else None,
-            'est_stored_mb': est_mem['stored_bytes'] / 1e6,
             'actual_alloc_mb': actual_alloc / 1e6,
         })
 
