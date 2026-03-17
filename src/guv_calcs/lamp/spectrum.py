@@ -224,6 +224,7 @@ class Spectrum:
         xmax: int | float | None = None,
         ymin: int | float | None = None,
         ymax: int | float | None = None,
+        **kwargs
     ):
         """
         Plot the spectrum.
@@ -247,7 +248,7 @@ class Spectrum:
                 ax = fig.axes[0]
 
         default_label = "Unweighted Relative Intensity"
-        ax.plot(self.wavelengths, self.intensities, label=label or default_label)
+        ax.plot(self.wavelengths, self.intensities, label=label or default_label,**kwargs)
 
         if weights:
             if isinstance(weights, str):
