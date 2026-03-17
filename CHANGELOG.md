@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - Ozone calculation method
 - PlaneCalcType fully implemented
 - CalcPoint class (with GridPoint geometry class)
+- performance.py file with both calc time and memory requirements estimations
 
 ### Fixed
 
