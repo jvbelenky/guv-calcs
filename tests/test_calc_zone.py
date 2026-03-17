@@ -419,6 +419,48 @@ class TestCalcPoint:
         assert pt.fov_horiz == 180
 
 
+class TestCalcPointMoveAim:
+    """Tests for CalcPoint move/aim API."""
+
+    def test_move_preserves_normal(self):
+        pt = CalcPoint.at((0, 0, 0), aim_point=(0, 0, 1))
+        normal_before = pt.geometry.normal_direction
+        pt.move(x=3, y=2, z=1)
+        assert pt.position == (3.0, 2.0, 1.0)
+        assert pt.aim_point == (3.0, 2.0, 2.0)
+        assert np.allclose(pt.geometry.normal_direction, normal_before, atol=1e-10)
+
+    def test_move_preserve_aim(self):
+        pt = CalcPoint.at((0, 0, 0), aim_point=(0, 0, 1))
+        pt.move(x=1, y=0, z=0, preserve_aim=True)
+        assert pt.position == (1.0, 0.0, 0.0)
+        assert pt.aim_point == (0.0, 0.0, 1.0)
+        # normal should have changed
+        assert not np.allclose(pt.geometry.normal_direction, (0, 0, 1), atol=1e-6)
+
+    def test_aim(self):
+        pt = CalcPoint.at((0, 0, 0), aim_point=(0, 0, 1))
+        pt.aim(x=1, y=0, z=0)
+        assert pt.aim_point == (1.0, 0.0, 0.0)
+        assert pt.position == (0.0, 0.0, 0.0)
+
+    def test_aim_partial_kwargs(self):
+        pt = CalcPoint.at((0, 0, 0), aim_point=(0, 0, 1))
+        pt.aim(z=5)
+        assert pt.aim_point == (0.0, 0.0, 5.0)
+
+    def test_method_chaining(self):
+        pt = CalcPoint.at((0, 0, 0))
+        result = pt.move(x=1, y=2, z=3).aim(x=1, y=2, z=10)
+        assert result is pt
+        assert pt.position == (1.0, 2.0, 3.0)
+        assert pt.aim_point == (1.0, 2.0, 10.0)
+
+    def test_set_aim_point_removed(self):
+        pt = CalcPoint.at((0, 0, 0))
+        assert not hasattr(pt, "set_aim_point")
+
+
 class TestViewDirectionExclusivity:
     """Tests for view_direction / view_target mutual exclusion via setters."""
 

@@ -865,6 +865,20 @@ class GridPoint:
         """Return a new GridPoint aimed at *aim_point*."""
         return GridPoint(position=self.position, aim_point=tuple(aim_point))
 
+    def with_position(self, position, preserve_aim=False):
+        """Return a new GridPoint at *position*.
+
+        If preserve_aim is False (default), the aim_point shifts by the same
+        delta so the normal direction stays constant.
+        If preserve_aim is True, the aim_point is kept and the normal rotates.
+        """
+        new_pos = tuple(position)
+        if preserve_aim:
+            return GridPoint(position=new_pos, aim_point=self.aim_point)
+        delta = tuple(p1 - p0 for p1, p0 in zip(new_pos, self.position))
+        new_aim = tuple(a + d for a, d in zip(self.aim_point, delta))
+        return GridPoint(position=new_pos, aim_point=new_aim)
+
     def _convert_units(self, old_units, new_units):
         factor = convert_length(old_units, new_units, 1.0)
         new_pos = tuple(c * factor for c in self.position)

@@ -778,9 +778,31 @@ class CalcPoint(CalcZone):
     def __repr__(self):
         return f"CalcPoint({self._repr_base()}, position={self.position}, aim_point={self.geometry.aim_point})"
 
-    def set_aim_point(self, aim_point):
-        """Update geometry normal to point from position toward *aim_point*."""
-        self.geometry = self.geometry.with_aim_point(aim_point)
+    def move(self, x=None, y=None, z=None, preserve_aim=False):
+        """Move to a new position.
+
+        By default the aim_point shifts with the position (normal stays fixed).
+        Set preserve_aim=True to keep the aim_point fixed (normal rotates).
+        """
+        pos = self.position
+        new_pos = (
+            pos[0] if x is None else x,
+            pos[1] if y is None else y,
+            pos[2] if z is None else z,
+        )
+        self.geometry = self.geometry.with_position(new_pos, preserve_aim=preserve_aim)
+        return self
+
+    def aim(self, x=None, y=None, z=None):
+        """Aim at a point in cartesian space."""
+        old = self.geometry.aim_point
+        new_aim = (
+            old[0] if x is None else x,
+            old[1] if y is None else y,
+            old[2] if z is None else z,
+        )
+        self.geometry = self.geometry.with_aim_point(new_aim)
+        return self
 
     def export(self, fname=None):
         raise NotImplementedError("CalcPoint does not support CSV export")
