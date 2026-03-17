@@ -789,25 +789,32 @@ class VolumeGrid(_GridBase):
 
 @dataclass(frozen=True, eq=False)
 class GridPoint:
-    """A single point in 3D space with an orientation normal."""
+    """A single point in 3D space with an aim point that defines its normal.
+
+    The surface normal is derived as ``aim_point - position`` (normalized).
+    This mirrors how lamps store their orientation via an aim point rather
+    than a raw direction vector.
+    """
 
     position: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    normal_direction: tuple[float, float, float] = (0.0, 0.0, 1.0)
+    aim_point: tuple[float, float, float] = (0.0, 0.0, 1.0)
 
     def __post_init__(self):
-        pos = tuple(float(x) for x in self.position)
-        object.__setattr__(self, "position", pos)
-        n = np.asarray(self.normal_direction, float)
-        norm = np.linalg.norm(n)
-        if norm < 1e-12:
-            raise ValueError("normal_direction must be non-zero")
-        n = n / norm
-        object.__setattr__(self, "normal_direction", tuple(n))
+        direction = tuple(a - p for a, p in zip(self.aim_point, self.position))
+        if sum(d * d for d in direction) < 1e-24:
+            raise ValueError("aim_point must differ from position")
 
     def __eq__(self, other):
         if not isinstance(other, GridPoint):
             return NotImplemented
         return self.to_dict() == other.to_dict()
+
+    @property
+    def normal_direction(self) -> tuple[float, float, float]:
+        """Unit normal derived from aim_point - position."""
+        n = np.asarray(self.aim_point, float) - np.asarray(self.position, float)
+        n = n / np.linalg.norm(n)
+        return tuple(n)
 
     @property
     def coords(self) -> np.ndarray:
@@ -834,7 +841,7 @@ class GridPoint:
 
     @property
     def calc_state(self) -> tuple:
-        return (self.position, self.normal_direction)
+        return (self.position, self.aim_point)
 
     @property
     def update_state(self) -> tuple:
@@ -844,25 +851,25 @@ class GridPoint:
         return {
             "grid_type": "point",
             "position": list(self.position),
-            "normal_direction": list(self.normal_direction),
+            "aim_point": list(self.aim_point),
         }
 
     @classmethod
     def from_dict(cls, data):
         return cls(
             position=tuple(data["position"]),
-            normal_direction=tuple(data.get("normal_direction", (0, 0, 1))),
+            aim_point=tuple(data["aim_point"]),
         )
 
     def with_aim_point(self, aim_point):
-        """Return a new GridPoint with normal pointing from position toward *aim_point*."""
-        direction = tuple(a - p for a, p in zip(aim_point, self.position))
-        return GridPoint(position=self.position, normal_direction=direction)
+        """Return a new GridPoint aimed at *aim_point*."""
+        return GridPoint(position=self.position, aim_point=tuple(aim_point))
 
     def _convert_units(self, old_units, new_units):
         factor = convert_length(old_units, new_units, 1.0)
         new_pos = tuple(c * factor for c in self.position)
-        return GridPoint(position=new_pos, normal_direction=self.normal_direction)
+        new_aim = tuple(c * factor for c in self.aim_point)
+        return GridPoint(position=new_pos, aim_point=new_aim)
 
     def __repr__(self):
-        return f"GridPoint(position={self.position}, normal={self.normal_direction})"
+        return f"GridPoint(position={self.position}, aim_point={self.aim_point})"

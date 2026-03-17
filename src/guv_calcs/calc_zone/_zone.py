@@ -743,9 +743,15 @@ class CalcPoint(CalcZone):
         self.geometry = geometry
 
     @classmethod
-    def at(cls, position=(0.0, 0.0, 0.0), normal_direction=(0.0, 0.0, 1.0), **kwargs):
-        """Create a CalcPoint at a given position and normal direction."""
-        geometry = GridPoint(position=position, normal_direction=normal_direction)
+    def at(cls, position=(0.0, 0.0, 0.0), aim_point=None, **kwargs):
+        """Create a CalcPoint at a given position aimed at *aim_point*.
+
+        If *aim_point* is ``None``, defaults to ``(pos_x, pos_y, pos_z + 1)``
+        (normal pointing straight up).
+        """
+        if aim_point is None:
+            aim_point = (position[0], position[1], position[2] + 1)
+        geometry = GridPoint(position=position, aim_point=aim_point)
         return cls(geometry=geometry, **kwargs)
 
     @property

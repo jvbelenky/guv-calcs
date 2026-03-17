@@ -346,11 +346,11 @@ class TestGridPoint:
         assert np.allclose(g.normal, [0, 0, 1], atol=1e-6)
 
     def test_custom_normal(self):
-        g = GridPoint(position=(0, 0, 0), normal_direction=(0, 1, 0))
+        g = GridPoint(position=(0, 0, 0), aim_point=(0, 1, 0))
         assert np.allclose(g.normal, [0, 1, 0], atol=1e-6)
 
     def test_normal_z_down(self):
-        g = GridPoint(position=(0, 0, 0), normal_direction=(0, 0, -1))
+        g = GridPoint(position=(0, 0, 0), aim_point=(0, 0, -1))
         assert np.allclose(g.normal, [0, 0, -1], atol=1e-6)
 
     def test_num_points(self):
@@ -358,26 +358,30 @@ class TestGridPoint:
         assert g.num_points == (1,)
 
     def test_serialization_round_trip(self):
-        g = GridPoint(position=(3.0, 2.0, 1.5), normal_direction=(0, 1, 0))
+        g = GridPoint(position=(3.0, 2.0, 1.5), aim_point=(3.0, 3.5, 1.5))
         d = g.to_dict()
         g2 = GridPoint.from_dict(d)
         assert np.allclose(g.coords, g2.coords, atol=1e-6)
         assert np.allclose(g.normal, g2.normal, atol=1e-6)
+        assert g.aim_point == g2.aim_point
 
     def test_arbitrary_normal(self):
+        # aim_point (1,1,1) from origin → normal = (1,1,1)/sqrt(3)
         n = np.array([1.0, 1.0, 1.0])
         n = n / np.linalg.norm(n)
-        g = GridPoint(position=(0, 0, 0), normal_direction=n)
+        g = GridPoint(position=(0, 0, 0), aim_point=(1, 1, 1))
         assert np.allclose(g.normal, n, atol=1e-6)
 
-    def test_normalizes_direction(self):
-        g = GridPoint(position=(0, 0, 0), normal_direction=(0, 0, 5))
+    def test_aim_determines_direction(self):
+        # aim_point far along Z produces same normal as close along Z
+        g = GridPoint(position=(0, 0, 0), aim_point=(0, 0, 5))
         assert np.allclose(g.normal, [0, 0, 1], atol=1e-6)
 
     def test_basis_orthogonal(self):
-        g = GridPoint(position=(0, 0, 0), normal_direction=(1, 1, 0))
+        g = GridPoint(position=(0, 0, 0), aim_point=(1, 1, 0))
         basis = g.basis
         assert np.allclose(basis.T @ basis, np.eye(3), atol=1e-10)
+
 
 
 class TestSerializationMigration:

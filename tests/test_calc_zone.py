@@ -374,8 +374,8 @@ class TestCalcPoint:
         assert np.allclose(pt.geometry.normal, [0, 0, 1], atol=1e-6)
         assert pt.view_direction is None
 
-    def test_custom_normal(self):
-        pt = CalcPoint.at((3, 2, 1.5), normal_direction=(0, 1, 0))
+    def test_custom_aim(self):
+        pt = CalcPoint.at((3, 2, 1.5), aim_point=(3, 5, 1.5))
         assert np.allclose(pt.geometry.normal, [0, 1, 0], atol=1e-6)
 
     def test_view_direction(self):
@@ -404,13 +404,14 @@ class TestCalcPoint:
         assert pt.position == (3.0, 2.0, 1.5)
 
     def test_serialization_round_trip(self):
-        pt = CalcPoint.at((3, 2, 1.5), normal_direction=(0, 1, 0),
+        pt = CalcPoint.at((3, 2, 1.5), aim_point=(3, 5, 1.5),
                           zone_id="pt")
         data = pt.to_dict()
         loaded = CalcPoint.from_dict(data)
         assert np.allclose(loaded.coords, pt.coords, atol=1e-6)
         assert loaded.zone_id == "pt"
         assert loaded.calctype == "Point"
+        assert loaded.geometry.aim_point == pt.geometry.aim_point
 
     def test_inherits_fov(self):
         pt = CalcPoint.at((0, 0, 0), fov_vert=120, fov_horiz=180)
