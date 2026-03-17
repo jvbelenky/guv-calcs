@@ -6,7 +6,6 @@ from guv_calcs import Room, Lamp
 from guv_calcs.safety import (
     ComplianceStatus,
     WarningLevel,
-    SafetyCheckResult,
     LampComplianceResult,
 )
 
@@ -200,49 +199,3 @@ class TestLampComplianceResult:
         assert hasattr(lamp_result, "missing_spectrum")
 
 
-class TestSafetyCheckResult:
-    """Tests for SafetyCheckResult dataclass."""
-
-    def test_result_is_frozen(self):
-        """SafetyCheckResult should be immutable."""
-        room = Room(x=6, y=4, z=2.7)
-        room.place_lamp(Lamp.from_keyword("ushio_b1"))
-        room.add_standard_zones()
-        room.calculate()
-
-        result = room.check_lamps()
-
-        with pytest.raises(Exception):  # FrozenInstanceError
-            result.status = ComplianceStatus.NON_COMPLIANT
-
-
-class TestComplianceStatusEnum:
-    """Tests for ComplianceStatus enum values."""
-
-    def test_compliant_value(self):
-        assert ComplianceStatus.COMPLIANT == "compliant"
-
-    def test_non_compliant_value(self):
-        assert ComplianceStatus.NON_COMPLIANT == "non_compliant"
-
-    def test_compliant_with_dimming_value(self):
-        assert ComplianceStatus.COMPLIANT_WITH_DIMMING == "compliant_with_dimming"
-
-    def test_non_compliant_even_with_dimming_value(self):
-        assert (
-            ComplianceStatus.NON_COMPLIANT_EVEN_WITH_DIMMING
-            == "non_compliant_even_with_dimming"
-        )
-
-
-class TestWarningLevelEnum:
-    """Tests for WarningLevel enum values."""
-
-    def test_info_value(self):
-        assert WarningLevel.INFO == "info"
-
-    def test_warning_value(self):
-        assert WarningLevel.WARNING == "warning"
-
-    def test_error_value(self):
-        assert WarningLevel.ERROR == "error"

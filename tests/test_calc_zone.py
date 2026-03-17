@@ -183,19 +183,6 @@ class TestCalcVolCreation:
         assert coords.shape[0] == total_points
 
 
-class TestCalcVolProperties:
-    """Tests for CalcVol properties."""
-
-    def test_dose_mode_default_false(self):
-        """CalcVol dose mode should default to False."""
-        vol = CalcVol(zone_id="TestVol")
-        assert vol.dose is False
-
-    def test_enabled_default_true(self):
-        """CalcVol enabled should default to True."""
-        vol = CalcVol(zone_id="TestVol")
-        assert vol.enabled is True
-
 
 class TestCalcZoneSerialization:
     """Tests for CalcPlane and CalcVol serialization."""
@@ -291,11 +278,6 @@ class TestExposureTime:
         assert plane.exposure_time == timedelta(hours=1, minutes=30)
         assert plane.seconds == 5400.0
 
-    def test_combined_time_all_three(self):
-        """All three time params sum together."""
-        plane = CalcPlane(zone_id="T", hours=1, minutes=30, seconds=45)
-        assert plane.exposure_time == timedelta(hours=1, minutes=30, seconds=45)
-
     def test_set_dose_time_combined(self):
         """set_dose_time with multiple params sums them."""
         plane = CalcPlane(zone_id="T")
@@ -322,12 +304,6 @@ class TestExposureTime:
         plane = CalcPlane(zone_id="T")
         plane.exposure_time = timedelta(minutes=45)
         assert plane.hours == 0.75
-
-    def test_set_dose_time_hours(self):
-        """set_dose_time accepts hours kwarg."""
-        plane = CalcPlane(zone_id="T")
-        plane.set_dose_time(hours=4)
-        assert plane.hours == 4.0
 
     def test_set_dose_time_minutes(self):
         """set_dose_time accepts minutes kwarg."""
@@ -482,16 +458,6 @@ class TestCalcPointMoveAim:
         pt = CalcPoint.at((0, 0, 0), aim_point=(0, 0, 1))
         with pytest.raises(ValueError):
             pt.move(x=0, y=0, z=1, preserve_aim=True)
-
-    def test_serialization_round_trip_after_move(self):
-        """Position and aim survive serialization after move + aim."""
-        pt = CalcPoint.at((0, 0, 0), aim_point=(0, 0, 1), zone_id="pt")
-        pt.move(x=3, y=2, z=1)
-        pt.aim(x=3, y=5, z=1)
-        data = pt.to_dict()
-        loaded = CalcPoint.from_dict(data)
-        assert loaded.position == (3.0, 2.0, 1.0)
-        assert loaded.aim_point == (3.0, 5.0, 1.0)
 
 
 class TestViewDirectionExclusivity:

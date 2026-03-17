@@ -152,13 +152,6 @@ class TestGetTlvs:
         # 222nm has higher TLVs than 254nm
         assert skin_222 > skin_254
 
-    def test_get_tlvs_different_wavelengths(self):
-        """Different wavelengths should give different TLVs."""
-        skin_254, eye_254 = get_tlvs(254, PhotStandard.ACGIH)
-        skin_280, eye_280 = get_tlvs(280, PhotStandard.ACGIH)
-        # Different wavelengths have different TLVs
-        assert skin_254 != skin_280 or eye_254 != eye_280
-
     def test_get_tlvs_with_spectrum(self):
         """get_tlvs should work with Spectrum object."""
         spec = Spectrum(

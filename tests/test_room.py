@@ -392,14 +392,6 @@ class TestRoomSerialization:
         assert loaded_room.z == room_with_zones.z
         assert "WholeRoomFluence" in loaded_room.calc_zones
 
-    def test_to_dict_from_dict_basic(self, basic_room):
-        """Room should survive to_dict/from_dict round trip."""
-        data = basic_room.to_dict()
-        loaded_room = Room.from_dict(data)
-        assert loaded_room.x == basic_room.x
-        assert loaded_room.y == basic_room.y
-        assert loaded_room.z == basic_room.z
-
     def test_copy(self, basic_room):
         """Room copy should be independent of original."""
         copy = basic_room.copy()

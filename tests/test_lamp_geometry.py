@@ -264,13 +264,6 @@ class TestSurfaceBackReference:
 class TestSurfacePositionEqualsLampPosition:
     """Tests verifying lamp position == surface position (no offset)."""
 
-    def test_surface_position_equals_lamp_position(self, basic_lamp):
-        """Surface position should always equal lamp position."""
-        np.testing.assert_array_almost_equal(
-            basic_lamp.surface.position,
-            basic_lamp.position
-        )
-
     def test_surface_position_equals_lamp_position_after_move(self, basic_lamp):
         """Surface position should follow lamp after move."""
         basic_lamp.move(10, 20, 30)

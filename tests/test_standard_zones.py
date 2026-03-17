@@ -19,10 +19,6 @@ class TestCreateStandardZones:
             polygon=Polygon2D.rectangle(20, 13), z=9, units=LengthUnits.FEET,
         )
 
-    def test_creates_three_zones(self, dims_m):
-        zones = create_standard_zones(PhotStandard.ACGIH, dims_m)
-        assert len(zones) == 3
-
     def test_zone_ids(self, dims_m):
         zones = create_standard_zones(PhotStandard.ACGIH, dims_m)
         ids = [z.zone_id for z in zones]

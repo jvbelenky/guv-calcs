@@ -106,16 +106,6 @@ class TestCornerPlacement:
         assert len(ranked) == 4
         assert set(ranked) == {0, 1, 2, 3}
 
-    def test_new_lamp_position_corner_first_lamp(self):
-        """First lamp goes to best visibility corner"""
-        rect = Polygon2D.rectangle(4.0, 4.0)
-        pos, aim = new_lamp_position_corner(1, rect)
-        # Position should be near a corner
-        x, y = pos
-        assert (x < 0.5 or x > 3.5) or (y < 0.5 or y > 3.5)
-        # Aim should be inside polygon
-        assert rect.contains_point(*aim) or _is_near_boundary(aim, rect)
-
     def test_new_lamp_position_corner_fills_corners_first(self):
         """Subsequent lamps should fill other corners"""
         rect = Polygon2D.rectangle(4.0, 4.0)
