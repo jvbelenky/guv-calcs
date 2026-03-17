@@ -31,14 +31,13 @@ class ZoneView:
     view_target: tuple | None = None
 
     def is_plane(self):
-        if self.calctype.lower() == "plane":
-            return True
-        return False
+        return self.calctype.lower() == "plane"
 
     def is_volume(self):
-        if self.calctype.lower() == "volume":
-            return True
-        return False
+        return self.calctype.lower() == "volume"
+
+    def is_point(self):
+        return self.calctype.lower() == "point"
 
     def has_view_mode(self):
         return self.view_direction is not None or self.view_target is not None
@@ -69,7 +68,7 @@ class ZoneResult:
     base_values: np.ndarray | None = None
     reflected_values: np.ndarray | None = None
 
-    def init(self, num_points=None):
+    def init(self):
         self.base_values = None
         self.reflected_values = None
         return self
@@ -130,6 +129,8 @@ class CalcZone(ABC):
                 "view_direction and view_target are mutually exclusive"
             )
 
+        self._view_direction = None
+        self._view_target = None
         self.view_direction = view_direction
         self.view_target = view_target
 
@@ -165,13 +166,8 @@ class CalcZone(ABC):
             return NotImplemented
         return self.to_dict() == other.to_dict()
 
-    def __repr__(self):
-        return (
-            f"Calc{self.calctype}(id={self.zone_id!r}, name={self.name!r}, "
-            f"enabled={self.enabled}, "
-            f"dose={self.dose}, "
-            f"dose_hours={self.hours}, "
-        )
+    def _repr_base(self):
+        return f"id={self.zone_id!r}, name={self.name!r}, enabled={self.enabled}, dose={self.dose}"
 
     @property
     def id(self) -> str:
@@ -200,7 +196,8 @@ class CalcZone(ABC):
 
     @property
     def calc_state(self):
-        """if changes, these parameters indicate zone must be recalculated"""
+        """Geometry state + whether values exist. The 'has values' flag prevents
+        spurious recalc when comparing against a cache saved after computation."""
         if self.geometry is None:
             return ()
         return self.geometry.calc_state + (self.result.base_values is not None,)
@@ -228,8 +225,28 @@ class CalcZone(ABC):
     def geometry(self, new_geom):
         if self._geometry != new_geom:  # only clear if geometry is different
             if hasattr(self, "result") and self.result is not None:
-                self.result.init(new_geom.num_points)
+                self.result.init()
         self._geometry = new_geom
+
+    @property
+    def view_direction(self):
+        return self._view_direction
+
+    @view_direction.setter
+    def view_direction(self, value):
+        self._view_direction = value
+        if value is not None:
+            self._view_target = None
+
+    @property
+    def view_target(self):
+        return self._view_target
+
+    @view_target.setter
+    def view_target(self, value):
+        self._view_target = value
+        if value is not None:
+            self._view_direction = None
 
     @property
     def view_mode(self) -> str | None:
@@ -555,7 +572,7 @@ class CalcVol(CalcZone):
         return "Volume"
 
     def __repr__(self):
-        return super().__repr__() + f"geometry: {self.geometry.__repr__()})"
+        return f"CalcVol({self._repr_base()}, geometry={self.geometry!r})"
 
     @classmethod
     def from_dims(
@@ -607,10 +624,10 @@ class CalcPlane(CalcZone):
         return "Plane"
 
     def __repr__(self):
-        return super().__repr__() + (
-            f"geometry={self.geometry.__repr__()}, "
-            f"field_of_view=({self.fov_horiz}° horiz, {self.fov_vert}° vert), "
-            f"flags=(vert={self.vert}, horiz={self.horiz}, use_normal={self.use_normal}), "
+        return (
+            f"CalcPlane({self._repr_base()}, geometry={self.geometry!r}, "
+            f"fov=({self.fov_horiz}h, {self.fov_vert}v), "
+            f"flags=(vert={self.vert}, horiz={self.horiz}, use_normal={self.use_normal}))"
         )
 
     def set_calc_mode(self, value: str):
@@ -758,9 +775,8 @@ class CalcPoint(CalcZone):
     def calctype(self):
         return "Point"
 
-    @property
-    def position(self):
-        return self.geometry.position
+    def __repr__(self):
+        return f"CalcPoint({self._repr_base()}, position={self.position}, aim_point={self.geometry.aim_point})"
 
     def set_aim_point(self, aim_point):
         """Update geometry normal to point from position toward *aim_point*."""

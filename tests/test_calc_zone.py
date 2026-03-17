@@ -419,6 +419,42 @@ class TestCalcPoint:
         assert pt.fov_horiz == 180
 
 
+class TestViewDirectionExclusivity:
+    """Tests for view_direction / view_target mutual exclusion via setters."""
+
+    def test_setting_view_target_clears_view_direction(self):
+        pt = CalcPoint.at((0, 0, 0), view_direction=(0, 1, 0))
+        assert pt.view_direction == (0, 1, 0)
+        assert pt.view_target is None
+        pt.view_target = (1, 0, 0)
+        assert pt.view_target == (1, 0, 0)
+        assert pt.view_direction is None
+
+    def test_setting_view_direction_clears_view_target(self):
+        pt = CalcPoint.at((0, 0, 0), view_target=(1, 0, 0))
+        assert pt.view_target == (1, 0, 0)
+        assert pt.view_direction is None
+        pt.view_direction = (0, 1, 0)
+        assert pt.view_direction == (0, 1, 0)
+        assert pt.view_target is None
+
+    def test_setting_both_in_init_raises(self):
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            CalcPoint.at((0, 0, 0), view_direction=(0, 1, 0), view_target=(1, 0, 0))
+
+    def test_setting_to_none_does_not_clear_other(self):
+        pt = CalcPoint.at((0, 0, 0), view_direction=(0, 1, 0))
+        pt.view_target = None  # should not clear view_direction
+        assert pt.view_direction == (0, 1, 0)
+        assert pt.view_target is None
+
+    def test_set_calc_mode_uses_setters(self):
+        plane = CalcPlane(zone_id="T", view_direction=(0, 1, 0))
+        assert plane.view_direction == (0, 1, 0)
+        plane.set_calc_mode("fluence_rate")
+        assert plane.view_direction is None
+
+
 class TestCalcZoneConvertUnits:
     """Tests for CalcZone.convert_units preserving calculated values."""
 

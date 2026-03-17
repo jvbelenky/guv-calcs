@@ -199,6 +199,8 @@ class Surface:
     def update_state(self):
         """check if surface needs updating"""
         arr = self.plane.values
+        if arr is None:
+            return self.plane.update_state + (None,)
         return self.plane.update_state + (hashlib.sha1(arr.tobytes()).digest(),)
 
     def set_reflectance(self, R: float):
