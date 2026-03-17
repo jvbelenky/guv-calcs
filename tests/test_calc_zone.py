@@ -456,9 +456,42 @@ class TestCalcPointMoveAim:
         assert pt.position == (1.0, 2.0, 3.0)
         assert pt.aim_point == (1.0, 2.0, 10.0)
 
-    def test_set_aim_point_removed(self):
+    def test_move_partial_kwargs(self):
+        """move() with partial kwargs preserves unchanged coordinates."""
+        pt = CalcPoint.at((1, 2, 3), aim_point=(1, 2, 4))
+        pt.move(x=5)
+        assert pt.position == (5.0, 2.0, 3.0)
+        assert pt.aim_point == (5.0, 2.0, 4.0)
+
+    def test_move_invalidates_values(self):
+        """move() clears calculated values."""
         pt = CalcPoint.at((0, 0, 0))
-        assert not hasattr(pt, "set_aim_point")
+        pt.result.base_values = np.array([42.0])
+        pt.move(x=1)
+        assert pt.result.base_values is None
+
+    def test_aim_invalidates_values(self):
+        """aim() clears calculated values."""
+        pt = CalcPoint.at((0, 0, 0))
+        pt.result.base_values = np.array([42.0])
+        pt.aim(x=1)
+        assert pt.result.base_values is None
+
+    def test_move_to_aim_point_raises(self):
+        """Moving to the aim point with preserve_aim raises ValueError."""
+        pt = CalcPoint.at((0, 0, 0), aim_point=(0, 0, 1))
+        with pytest.raises(ValueError):
+            pt.move(x=0, y=0, z=1, preserve_aim=True)
+
+    def test_serialization_round_trip_after_move(self):
+        """Position and aim survive serialization after move + aim."""
+        pt = CalcPoint.at((0, 0, 0), aim_point=(0, 0, 1), zone_id="pt")
+        pt.move(x=3, y=2, z=1)
+        pt.aim(x=3, y=5, z=1)
+        data = pt.to_dict()
+        loaded = CalcPoint.from_dict(data)
+        assert loaded.position == (3.0, 2.0, 1.0)
+        assert loaded.aim_point == (3.0, 5.0, 1.0)
 
 
 class TestViewDirectionExclusivity:

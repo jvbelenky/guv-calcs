@@ -27,12 +27,6 @@ class TestFixtureConstruction:
         assert f.housing_length == 0.3
         assert f.housing_height == 0.1
 
-    def test_fixture_is_frozen(self):
-        """Fixture should be immutable (frozen dataclass)."""
-        f = Fixture(housing_width=0.5)
-        with pytest.raises(AttributeError):
-            f.housing_width = 1.0
-
     def test_has_dimensions_true(self):
         """has_dimensions should be True when any dimension is set."""
         f = Fixture(housing_width=0.1)

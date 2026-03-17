@@ -101,6 +101,24 @@ class TestRoomUnits:
             assert after is not None
             assert np.allclose(orig, after)
 
+    def test_set_units_converts_lamp_positions(self):
+        """Lamp positions should convert when units change."""
+        room = Room(x=6, y=4, z=2.7, units="meters")
+        lamp = Lamp.from_keyword("aerolamp").move(3, 2, 2.7).aim(3, 2, 0)
+        room.add_lamp(lamp)
+        room.set_units("feet")
+        lamp = list(room.lamps.values())[0]
+        assert lamp.x == pytest.approx(3 / 0.3048, rel=1e-3)
+
+    def test_set_units_converts_zone_geometry(self):
+        """Zone geometry should scale when units change."""
+        room = Room(x=6, y=4, z=2.7, units="meters")
+        room.add_standard_zones()
+        zone = room.calc_zones["SkinLimits"]
+        spacing_m = zone.x_spacing
+        room.set_units("feet")
+        assert zone.x_spacing == pytest.approx(spacing_m / 0.3048, rel=1e-3)
+
 
 @pytest.mark.filterwarnings("ignore:aerolamp exceeds room boundaries")
 class TestRoomLampManagement:
