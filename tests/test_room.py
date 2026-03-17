@@ -530,6 +530,7 @@ class TestEstimateCalculationTime:
 
         room_refl = Room(x=6, y=4, z=2.7, units="meters")
         room_refl.add_lamp(lamp)
+        room_refl.set_reflectance(0.1)
         room_refl.add_standard_zones()
 
         room_no_refl = Room(x=6, y=4, z=2.7, units="meters", enable_reflectance=False)
@@ -540,6 +541,7 @@ class TestEstimateCalculationTime:
 
     def test_after_calculate_estimate_drops(self, room_with_zones):
         """After calculate(), incidence is cached so estimate should drop."""
+        room_with_zones.set_reflectance(0.1)
         estimate_before = room_with_zones.estimate_calculation_time()
         room_with_zones.calculate()
         estimate_after = room_with_zones.estimate_calculation_time()

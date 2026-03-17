@@ -22,6 +22,23 @@ from guv_calcs.efficacy._filtering import (
 from guv_calcs.efficacy.math import survival_fraction
 
 
+# Module-scoped fixtures to avoid rebuilding InactivationData per test
+@pytest.fixture(scope="module")
+def inact_data():
+    """InactivationData with no fluence (base table only)."""
+    return InactivationData()
+
+@pytest.fixture(scope="module")
+def inact_data_fluence():
+    """InactivationData with fluence=0.5 (computed columns)."""
+    return InactivationData(fluence=0.5)
+
+@pytest.fixture(scope="module")
+def inact_data_fluence_dict():
+    """InactivationData with dict fluence."""
+    return InactivationData(fluence={222: 0.5, 254: 0.5})
+
+
 class TestInactivationDataClassMethods:
     """Tests for InactivationData class methods."""
 
@@ -34,27 +51,22 @@ class TestInactivationDataClassMethods:
         """InactivationData.get_full() should return a copy."""
         df1 = InactivationData.get_full()
         df2 = InactivationData.get_full()
-        # Modifying one shouldn't affect the other
         df1["test_col"] = 1
         assert "test_col" not in df2.columns
 
     def test_get_valid_categories(self):
-        """InactivationData.get_valid_categories() should return list of strings."""
         categories = InactivationData.get_valid_categories()
         assert isinstance(categories, list)
         assert len(categories) > 0
         assert all(isinstance(c, str) for c in categories)
 
     def test_get_valid_mediums(self):
-        """InactivationData.get_valid_mediums() should return list of strings."""
         mediums = InactivationData.get_valid_mediums()
         assert isinstance(mediums, list)
         assert len(mediums) > 0
-        # Should include Aerosol, Surface, or Liquid
         assert any(m in mediums for m in ["Aerosol", "Surface", "Liquid"])
 
     def test_get_valid_wavelengths(self):
-        """InactivationData.get_valid_wavelengths() should return list of numbers."""
         wavelengths = InactivationData.get_valid_wavelengths()
         assert isinstance(wavelengths, list)
         assert len(wavelengths) > 0
@@ -64,20 +76,14 @@ class TestInactivationDataClassMethods:
 class TestInactivationDataInitialization:
     """Tests for InactivationData initialization."""
 
-    def test_init_no_args(self):
-        """InactivationData() should create instance with base table."""
-        data = InactivationData()
-        assert data is not None
+    def test_init_no_args(self, inact_data):
+        assert inact_data is not None
 
-    def test_init_with_fluence_float(self):
-        """InactivationData with float fluence should compute additional columns."""
-        data = InactivationData(fluence=1.0)
-        assert data is not None
+    def test_init_with_fluence_float(self, inact_data_fluence):
+        assert inact_data_fluence is not None
 
-    def test_init_with_fluence_dict(self):
-        """InactivationData with dict fluence should handle multiple wavelengths."""
-        data = InactivationData(fluence={222: 0.5, 254: 0.5})
-        assert data is not None
+    def test_init_with_fluence_dict(self, inact_data_fluence_dict):
+        assert inact_data_fluence_dict is not None
 
     def test_init_with_volume(self):
         """InactivationData with volume should compute CADR columns."""
@@ -88,126 +94,96 @@ class TestInactivationDataInitialization:
 class TestInactivationDataSubset:
     """Tests for InactivationData.subset() filtering."""
 
-    def test_subset_returns_new_instance(self):
-        """subset() should return a new instance, not mutate the original."""
-        data = InactivationData()
-        result = data.subset(medium="Aerosol")
-        assert result is not data
+    def test_subset_returns_new_instance(self, inact_data):
+        result = inact_data.subset(medium="Aerosol")
+        assert result is not inact_data
         assert result._medium == "Aerosol"
-        assert data._medium is None  # original unchanged
+        assert inact_data._medium is None
 
-    def test_subset_by_medium(self):
-        """subset(medium=...) should filter by medium."""
-        data = InactivationData()
-        result = data.subset(medium="Aerosol")
+    def test_subset_by_medium(self, inact_data):
+        result = inact_data.subset(medium="Aerosol")
         assert result._medium is not None
 
-    def test_subset_by_category(self):
-        """subset(category=...) should filter by category."""
-        data = InactivationData()
+    def test_subset_by_category(self, inact_data):
         categories = InactivationData.get_valid_categories()
         if categories:
-            result = data.subset(category=categories[0])
+            result = inact_data.subset(category=categories[0])
             assert result._category is not None
 
-    def test_subset_by_species(self):
-        """subset(species=...) should filter by species."""
-        data = InactivationData()
-        result = data.subset(species="coli")
+    def test_subset_by_species(self, inact_data):
+        result = inact_data.subset(species="coli")
         assert result._species is not None
-        # Check that full_df is filtered (display_df may remove single-value columns)
         df = result.full_df
         assert all("coli" in s.lower() for s in df["Species"])
 
-    def test_subset_by_strain(self):
-        """subset(strain=...) should filter by strain."""
-        data = InactivationData()
-        result = data.subset(strain="ATCC")
+    def test_subset_by_strain(self, inact_data):
+        result = inact_data.subset(strain="ATCC")
         assert result._strain is not None
 
-    def test_subset_by_condition(self):
-        """subset(condition=...) should filter by condition."""
-        data = InactivationData()
-        result = data.subset(condition="stationary")
+    def test_subset_by_condition(self, inact_data):
+        result = inact_data.subset(condition="stationary")
         assert result._condition is not None
 
-    def test_subset_by_log_level(self):
-        """subset(log=...) should set log reduction level."""
-        data = InactivationData(fluence=1.0)
-        result = data.subset(log=3)
+    def test_subset_by_log_level(self, inact_data_fluence):
+        result = inact_data_fluence.subset(log=3)
         assert result._log == 3
 
-    def test_subset_chaining(self):
-        """Multiple subset calls should chain without mutating."""
-        data = InactivationData()
-        result = data.subset(medium="Aerosol").subset(log=2)
-        assert result is not data
+    def test_subset_chaining(self, inact_data):
+        result = inact_data.subset(medium="Aerosol").subset(log=2)
+        assert result is not inact_data
         assert result._medium == "Aerosol"
         assert result._log == 2
-        assert data._medium is None  # original unchanged
+        assert inact_data._medium is None
 
-    def test_subset_case_insensitive_medium(self):
-        """subset() should match medium case-insensitively."""
-        data = InactivationData().subset(medium="aerosol")
+    def test_subset_case_insensitive_medium(self, inact_data):
+        data = inact_data.subset(medium="aerosol")
         df = data.full_df
         assert len(df) > 0
         assert all("Aerosol" in m for m in df["Medium"])
 
-    def test_subset_alias_air_to_aerosol(self):
-        """subset(medium='air') should match Aerosol."""
-        data = InactivationData().subset(medium="air")
+    def test_subset_alias_air_to_aerosol(self, inact_data):
+        data = inact_data.subset(medium="air")
         df = data.full_df
         assert len(df) > 0
         assert all("Aerosol" in m for m in df["Medium"])
 
-    def test_subset_partial_word_matching(self):
-        """subset should match partial words."""
-        data = InactivationData().subset(category="virus")
+    def test_subset_partial_word_matching(self, inact_data):
+        data = inact_data.subset(category="virus")
         df = data.full_df
         assert len(df) > 0
         assert all("virus" in c.lower() for c in df["Category"])
 
-    def test_subset_category_list_with_aliases(self):
-        """subset(category=['bacteria', 'virus']) should use alias matching per element."""
-        data = InactivationData().subset(category=["bacteria", "virus"])
+    def test_subset_category_list_with_aliases(self, inact_data):
+        data = inact_data.subset(category=["bacteria", "virus"])
         df = data.full_df
         assert len(df) > 0
         assert set(df["Category"].unique()) == {"Bacteria", "Viruses"}
 
-    def test_subset_medium_list_with_aliases(self):
-        """subset(medium=['air', 'surface']) should use alias matching per element."""
-        data = InactivationData().subset(medium=["air", "surface"])
+    def test_subset_medium_list_with_aliases(self, inact_data):
+        data = inact_data.subset(medium=["air", "surface"])
         df = data.full_df
         assert len(df) > 0
         assert all(m in ("Aerosol", "Surface") for m in df["Medium"].unique())
 
-    def test_subset_empty_result_returns_empty_df(self):
-        """subset with no matching rows should return empty DataFrame."""
-        data = InactivationData().subset(species="nonexistent_species_xyz")
-        # Result should be empty but not raise
+    def test_subset_empty_result_returns_empty_df(self, inact_data):
+        data = inact_data.subset(species="nonexistent_species_xyz")
         assert len(data.display_df) == 0
 
 
 class TestInactivationDataDisplayDf:
     """Tests for InactivationData.display_df property."""
 
-    def test_display_df_returns_dataframe(self):
-        """display_df should return DataFrame."""
-        data = InactivationData()
-        df = data.display_df
+    def test_display_df_returns_dataframe(self, inact_data):
+        df = inact_data.display_df
         assert isinstance(df, pd.DataFrame)
 
-    def test_display_df_has_species(self):
-        """display_df should have Species column."""
-        data = InactivationData()
-        df = data.display_df
+    def test_display_df_has_species(self, inact_data):
+        df = inact_data.display_df
         assert "Species" in df.columns
 
-    def test_display_df_filtered(self):
-        """display_df should reflect subset filters."""
-        data = InactivationData().subset(medium="Aerosol")
+    def test_display_df_filtered(self, inact_data):
+        data = inact_data.subset(medium="Aerosol")
         df = data.display_df
-        # All rows should be Aerosol medium
         if "Medium" in df.columns and len(df) > 0:
             assert all(df["Medium"] == "Aerosol")
 
@@ -215,104 +191,73 @@ class TestInactivationDataDisplayDf:
 class TestInactivationDataWithFluence:
     """Tests for InactivationData with fluence calculations."""
 
-    def test_fluence_adds_each_column(self):
-        """InactivationData with fluence should add eACH-UV column."""
-        data = InactivationData(fluence=1.0)
-        # The internal _full_df should have computed columns
-        assert data._full_df is not None
-        assert len(data._full_df) > 0
+    def test_fluence_adds_each_column(self, inact_data_fluence):
+        assert inact_data_fluence._full_df is not None
+        assert len(inact_data_fluence._full_df) > 0
 
-    def test_fluence_dict_multiple_wavelengths(self):
-        """InactivationData with dict fluence should handle all wavelengths."""
-        data = InactivationData(fluence={222: 0.5, 254: 0.5})
-        # Should not raise error
-        df = data.display_df
+    def test_fluence_dict_multiple_wavelengths(self, inact_data_fluence_dict):
+        df = inact_data_fluence_dict.display_df
         assert df is not None
 
 
 class TestInactivationDataMetadataProperties:
     """Tests for metadata properties (species, mediums, strains, etc.)."""
 
-    def test_species_property(self):
-        """species property should return list of unique species."""
-        data = InactivationData()
-        species = data.species
+    def test_species_property(self, inact_data):
+        species = inact_data.species
         assert isinstance(species, list)
         assert len(species) > 0
 
-    def test_mediums_property(self):
-        """mediums property should return list of unique mediums."""
-        data = InactivationData()
-        mediums = data.mediums
+    def test_mediums_property(self, inact_data):
+        mediums = inact_data.mediums
         assert isinstance(mediums, list)
         assert len(mediums) > 0
 
-    def test_strains_property(self):
-        """strains property should return list of unique strains or None."""
-        data = InactivationData()
-        strains = data.strains
-        # May be None if no strain data, or list if present
+    def test_strains_property(self, inact_data):
+        strains = inact_data.strains
         assert strains is None or isinstance(strains, list)
 
-    def test_conditions_property(self):
-        """conditions property should return list of unique conditions or None."""
-        data = InactivationData()
-        conditions = data.conditions
-        # May be None if no condition data, or list if present
+    def test_conditions_property(self, inact_data):
+        conditions = inact_data.conditions
         assert conditions is None or isinstance(conditions, list)
 
-    def test_metadata_sorted_alphabetically(self):
-        """metadata lists should be sorted alphabetically."""
-        data = InactivationData()
-        species = data.species
+    def test_metadata_sorted_alphabetically(self, inact_data):
+        species = inact_data.species
         assert species == sorted(species)
 
 
 class TestAverageValueParametric:
     """Tests for average_value with parametric inputs."""
 
-    def test_average_value_single_function(self):
-        """average_value with single function returns float."""
-        data = InactivationData(fluence=0.5)
-        result = data.average_value("log2", species="coli")
+    def test_average_value_single_function(self, inact_data_fluence):
+        result = inact_data_fluence.average_value("log2", species="coli")
         assert isinstance(result, float)
 
-    def test_average_value_function_list(self):
-        """average_value with function list returns dict keyed by function."""
-        data = InactivationData(fluence=0.5)
-        result = data.average_value(["log2", "log3"], species="coli")
+    def test_average_value_function_list(self, inact_data_fluence):
+        result = inact_data_fluence.average_value(["log2", "log3"], species="coli")
         assert isinstance(result, dict)
         assert "log2" in result
         assert "log3" in result
         assert isinstance(result["log2"], float)
         assert isinstance(result["log3"], float)
-        # log3 should require more time than log2
         assert result["log3"] > result["log2"]
 
-    def test_average_value_function_list_with_species_list(self):
-        """average_value with both function and species lists returns nested dict."""
-        data = InactivationData(fluence=0.5)
-        result = data.average_value(["log2", "each"], species=["coli", "staph"])
+    def test_average_value_function_list_with_species_list(self, inact_data_fluence):
+        result = inact_data_fluence.average_value(["log2", "each"], species=["coli", "staph"])
         assert isinstance(result, dict)
         assert "log2" in result
         assert "each" in result
-        # Each function key should have a dict of species
         assert isinstance(result["log2"], dict)
         assert "coli" in result["log2"]
         assert "staph" in result["log2"]
 
-    def test_average_value_function_list_order(self):
-        """Function list should be outermost dimension in nested dict."""
-        data = InactivationData(fluence=0.5)
-        result = data.average_value(["log2", "log3"], species=["coli"])
-        # Function is outermost, so result["log2"]["coli"] should exist
+    def test_average_value_function_list_order(self, inact_data_fluence):
+        result = inact_data_fluence.average_value(["log2", "log3"], species=["coli"])
         assert "log2" in result
         assert "coli" in result["log2"]
 
-    def test_average_value_medium_alias(self):
-        """average_value with medium='air' should resolve to Aerosol and return results."""
-        data = InactivationData(fluence=0.5)
-        result = data.average_value("each", medium="air")
+    def test_average_value_medium_alias(self, inact_data_fluence):
+        result = inact_data_fluence.average_value("each", medium="air")
         assert isinstance(result, float)
         assert result > 0
 
@@ -651,68 +596,56 @@ class TestApplyRowFilters:
 class TestPlotFunction:
     """Tests for plot functionality."""
 
-    def test_plot_returns_figure(self):
-        """plot() should return a matplotlib Figure."""
+    def test_plot_returns_figure(self, inact_data_fluence):
         import matplotlib.pyplot as plt
-        data = InactivationData(fluence=0.5).subset(medium="aerosol", species="ms2")
+        data = inact_data_fluence.subset(medium="aerosol", species="ms2")
         fig = data.plot()
         assert fig is not None
         plt.close('all')
 
-    def test_plot_survival_returns_figure(self):
-        """plot_survival() should return a matplotlib Figure."""
+    def test_plot_survival_returns_figure(self, inact_data_fluence):
         import matplotlib.pyplot as plt
-        data = InactivationData(fluence=0.5).subset(medium="aerosol", species="ms2")
+        data = inact_data_fluence.subset(medium="aerosol", species="ms2")
         fig = data.plot_survival()
         assert fig is not None
         plt.close('all')
 
-    def test_plot_with_single_species_shows_strains(self):
-        """When single species filtered, x-axis should show strains if multiple."""
+    def test_plot_with_single_species_shows_strains(self, inact_data_fluence):
         import matplotlib.pyplot as plt
-        data = InactivationData(fluence=0.5).subset(medium="aerosol", species="ms2")
+        data = inact_data_fluence.subset(medium="aerosol", species="ms2")
         fig = data.plot()
-        # Just verify it doesn't crash - detailed axis checking would be brittle
         assert fig is not None
         plt.close('all')
 
-    def test_plot_wavelength_returns_figure(self):
-        """plot_wavelength() should return a matplotlib Figure."""
+    def test_plot_wavelength_returns_figure(self, inact_data):
         import matplotlib.pyplot as plt
-        data = InactivationData().subset(medium="aerosol")
+        data = inact_data.subset(medium="aerosol")
         fig = data.plot_wavelength()
         assert fig is not None
         plt.close('all')
 
-    def test_plot_wavelength_with_species_filter(self):
-        """plot_wavelength() should work with species filter."""
+    def test_plot_wavelength_with_species_filter(self, inact_data):
         import matplotlib.pyplot as plt
-        data = InactivationData().subset(species="coli")
+        data = inact_data.subset(species="coli")
         fig = data.plot_wavelength()
         assert fig is not None
         plt.close('all')
 
-    def test_plot_wavelength_k2(self):
-        """plot_wavelength(y='k2') should plot k2 values."""
+    def test_plot_wavelength_k2(self, inact_data):
         import matplotlib.pyplot as plt
-        data = InactivationData()
-        fig = data.plot_wavelength(y="k2")
+        fig = inact_data.plot_wavelength(y="k2")
         assert fig is not None
         plt.close('all')
 
-    def test_plot_wavelength_log_scale(self):
-        """plot_wavelength() should support log scale."""
+    def test_plot_wavelength_log_scale(self, inact_data):
         import matplotlib.pyplot as plt
-        data = InactivationData()
-        fig = data.plot_wavelength(yscale="log")
+        fig = inact_data.plot_wavelength(yscale="log")
         assert fig is not None
         plt.close('all')
 
-    def test_plot_wavelength_no_fit(self):
-        """plot_wavelength(show_fit=False) should work without fit line."""
+    def test_plot_wavelength_no_fit(self, inact_data):
         import matplotlib.pyplot as plt
-        data = InactivationData()
-        fig = data.plot_wavelength(show_fit=False)
+        fig = inact_data.plot_wavelength(show_fit=False)
         assert fig is not None
         plt.close('all')
 
@@ -720,24 +653,19 @@ class TestPlotFunction:
 class TestTableFiltering:
     """Tests for table() with call-time filter arguments."""
 
-    def test_table_with_species_filter(self):
-        """table(species=...) should return only rows matching the species."""
-        data = InactivationData(fluence=0.5)
-        df = data.table(species="coronavirus")
+    def test_table_with_species_filter(self, inact_data_fluence):
+        df = inact_data_fluence.table(species="coronavirus")
         assert len(df) > 0
         assert all("coronavirus" in s.lower() for s in df["Species"])
 
-    def test_table_with_category_filter(self):
-        """table(category=...) should filter to matching rows."""
-        data = InactivationData(fluence=0.5)
-        all_rows = len(data.table())
-        filtered = data.table(category="virus")
+    def test_table_with_category_filter(self, inact_data_fluence):
+        all_rows = len(inact_data_fluence.table())
+        filtered = inact_data_fluence.table(category="virus")
         assert len(filtered) > 0
         assert len(filtered) < all_rows
 
-    def test_table_no_args_matches_display_df(self):
-        """table() with no args should match display_df."""
-        data = InactivationData(fluence=0.5).subset(medium="aerosol")
+    def test_table_no_args_matches_display_df(self, inact_data_fluence):
+        data = inact_data_fluence.subset(medium="aerosol")
         table_df = data.table()
         display_df = data.display_df
         pd.testing.assert_frame_equal(table_df, display_df)

@@ -49,11 +49,14 @@ clean:
 test:
 	$(PYTHON_INTERPRETER) -m pytest tests/ -v
 
+test-all:
+	$(PYTHON_INTERPRETER) -m pytest tests/ -v -m ""
+
 test-cov:
 	$(PYTHON_INTERPRETER) -m pytest tests/ --cov=src/guv_calcs --cov-report=term-missing
 
 test-fast:
-	$(PYTHON_INTERPRETER) -m pytest tests/ -v -x --ignore=tests/test_e2e.py
+	$(PYTHON_INTERPRETER) -m pytest tests/ -v -x --ignore=tests/test_e2e.py -m "not slow"
 	
 # ----- PyPI upload only -----
 publish-pypi:

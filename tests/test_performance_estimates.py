@@ -12,6 +12,8 @@ from math import prod
 import pytest
 import numpy as np
 
+pytestmark = pytest.mark.slow
+
 from guv_calcs import Room, Lamp
 from guv_calcs.performance import estimate_calculation_time, estimate_memory
 
