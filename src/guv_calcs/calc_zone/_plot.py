@@ -181,6 +181,14 @@ def plot_point(zone, fig=None, ax=None, title=None, arrow_length=0.5, colormap=N
         color="red", arrow_length_ratio=0.2,
     )
 
+    # expand axes to include arrow tip with padding
+    tip = [pos[i] + normal[i] * arrow_length for i in range(3)]
+    margin = arrow_length * 0.3
+    for i, setter in enumerate([ax.set_xlim, ax.set_ylim, ax.set_zlim]):
+        lo = min(pos[i], tip[i]) - margin
+        hi = max(pos[i], tip[i]) + margin
+        setter(lo, hi)
+
     # annotate value
     if values is not None:
         label = f"{values.flat[0]:.2f} {zone.value_units}"
