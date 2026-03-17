@@ -756,6 +756,10 @@ class CalcPoint(CalcZone):
     def position(self):
         return self.geometry.position
 
+    def set_aim_point(self, aim_point):
+        """Update geometry normal to point from position toward *aim_point*."""
+        self.geometry = self.geometry.with_aim_point(aim_point)
+
     def export(self, fname=None):
         raise NotImplementedError("CalcPoint does not support CSV export")
 

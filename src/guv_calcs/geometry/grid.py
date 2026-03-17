@@ -854,6 +854,11 @@ class GridPoint:
             normal_direction=tuple(data.get("normal_direction", (0, 0, 1))),
         )
 
+    def with_aim_point(self, aim_point):
+        """Return a new GridPoint with normal pointing from position toward *aim_point*."""
+        direction = tuple(a - p for a, p in zip(aim_point, self.position))
+        return GridPoint(position=self.position, normal_direction=direction)
+
     def _convert_units(self, old_units, new_units):
         factor = convert_length(old_units, new_units, 1.0)
         new_pos = tuple(c * factor for c in self.position)
