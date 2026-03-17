@@ -14,7 +14,7 @@ All notable changes to this project will be documented in this file.
 - nearfield convenience property for Lamp
 - Ozone calculation method
 - PlaneCalcType fully implemented
-- CalcPoint clas (with GridPoint geometry class)
+- CalcPoint class (with GridPoint geometry class)
 
 ### Fixed
 
@@ -39,6 +39,7 @@ All notable changes to this project will be documented in this file.
 - calculate_nearfield method in LightingCalculator extracted to _irradiance_at method
 - LampSurface position computation simplified
 - ReflectanceManager no longer mirrors room surfaces
+- More accurate calculation time estimates
 
 ## [0.6.5] - 2026-03-06
 

@@ -1,6 +1,6 @@
 import warnings
 import copy
-from math import prod
+from math import prod, log
 import numpy as np
 from collections.abc import Iterable
 from matplotlib import colormaps
@@ -729,10 +729,14 @@ class Room:
     def estimate_calculation_time(self) -> float:
         """Estimate wall-clock time (seconds) for the next calculate() call.
 
-        Uses empirically fitted coefficients for three cost phases:
-        - Base: lamp-to-zone direct calculation
-        - Incidence: lamp-to-surface + interreflection (skipped if cached)
-        - Zone reflectance: surface-to-zone form factors (skipped if cached)
+        Uses empirically fitted coefficients for four cost terms:
+
+        1. Base: direct lamp → zone calculation, O(lamps * zone_points)
+        2. Zone reflect: surface → zone form factors, O(surfaces * refl_points * zone_points)
+        3. Form factors: first-pass surface ↔ surface coordinate transforms, O(refl_points²)
+        4. Extra passes: subsequent interreflection passes reuse cached form factors,
+           so each additional pass is ~47x cheaper than the first.  Pass count is
+           estimated from average reflectance: passes ≈ log(threshold) / log(R_avg).
         """
         lamp_count = len(self.lamps.valid())
         if lamp_count == 0:
@@ -745,20 +749,37 @@ class Room:
                 total_zone_points += prod(zone.num_points)
 
         # Base cost: direct lamp → zone calculation
-        calc_time = lamp_count * total_zone_points * 0.0000016
+        calc_time = lamp_count * total_zone_points * 0.00000047
 
         # Reflectance cost (only if enabled AND needs recalculation)
         if self.ref_manager.enabled and self.recalculate_incidence:
             all_surfs = self.all_surfaces
+            R_avg = np.mean([s.R for s in all_surfs.values()]) if all_surfs else 0
+            if R_avg <= 0:
+                return calc_time
+
             refl_points = sum(prod(s.plane.num_points) for s in all_surfs.values())
             num_surfaces = len(all_surfs)
 
-            # Phase 1: incidence (lamp → surface + interreflection passes)
-            incidence_time = lamp_count * refl_points * 0.00003
-            # Phase 2: zone reflectance (surface → zone form factors)
+            # Estimate interreflection passes from average reflectance
+            if R_avg < 1:
+                est_passes = min(
+                    log(self.ref_manager.threshold) / log(R_avg),
+                    self.ref_manager.max_num_passes,
+                )
+            else:
+                est_passes = float(self.ref_manager.max_num_passes)
+            est_passes = max(est_passes, 1.0)
+            extra_passes = max(est_passes - 1.0, 0.0)
+
+            # Surface → zone form factors (linear in refl_points)
             zone_reflect_time = (num_surfaces * refl_points
-                                 * total_zone_points * 0.000000009)
-            calc_time += incidence_time + zone_reflect_time
+                                 * total_zone_points * 0.000000024)
+            # First-pass surface ↔ surface form factor computation (quadratic)
+            form_factor_time = refl_points ** 2 * 0.0000022
+            # Subsequent passes reuse cached form factors (much cheaper per pass)
+            extra_pass_time = extra_passes * refl_points ** 2 * 0.000000047
+            calc_time += zone_reflect_time + form_factor_time + extra_pass_time
 
         return calc_time
 
