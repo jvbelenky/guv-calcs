@@ -621,6 +621,67 @@ class Lamp:
         self.geometry.aim(x=x, y=y, z=z)
         return self
 
+    def nudge_into_bounds(self, room_dims, max_iterations: int = 3) -> bool:
+        """Nudge lamp so its bounding box stays within room bounds.
+
+        Args:
+            room_dims: RoomDimensions (has .polygon and .z).
+            max_iterations: Max correction passes.
+
+        Returns:
+            True if the position was changed.
+        """
+        fixture = getattr(self, "fixture", None)
+        if fixture is None or not fixture.has_dimensions:
+            return False
+
+        moved = False
+        margin = 1e-4
+        polygon = room_dims.polygon
+        z_max = room_dims.z
+
+        for _ in range(max_iterations):
+            corners = self.geometry.get_bounding_box_corners()  # (8, 3)
+            dx = 0.0
+            dy = 0.0
+            dz = 0.0
+
+            for corner in corners:
+                cx, cy, cz = corner
+                # XY check
+                if not polygon.contains_point_inclusive(cx, cy):
+                    nearest = polygon.nearest_boundary_point(cx, cy)
+                    nudge_x = nearest[0] - cx
+                    nudge_y = nearest[1] - cy
+                    if abs(nudge_x) > abs(dx):
+                        dx = nudge_x
+                    if abs(nudge_y) > abs(dy):
+                        dy = nudge_y
+                # Z check
+                if cz > z_max:
+                    shift = z_max - cz
+                    if shift < dz:
+                        dz = shift
+                if cz < 0:
+                    shift = -cz
+                    if shift > dz:
+                        dz = shift
+
+            if abs(dx) < 1e-9 and abs(dy) < 1e-9 and abs(dz) < 1e-9:
+                return moved
+
+            # Apply nudge with small inward margin
+            if dx != 0:
+                dx += margin if dx > 0 else -margin
+            if dy != 0:
+                dy += margin if dy > 0 else -margin
+            if dz != 0:
+                dz += margin if dz > 0 else -margin
+            self.move(self.x + dx, self.y + dy, self.z + dz)
+            moved = True
+
+        return moved
+
     def transform_to_world(self, coords, scale=1, which="cartesian"):
         """
         Transform coordinates from the lamp frame of reference to the world.

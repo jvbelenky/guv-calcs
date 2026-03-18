@@ -261,6 +261,59 @@ class Object:
                 R=local_surface.R, T=local_surface.T, plane=world_plane,
             )
 
+    def nudge_into_bounds(self, room_dims, max_iterations: int = 3) -> bool:
+        """Nudge object so all surface vertices stay within room bounds. Returns True if changed."""
+        polygon = room_dims.polygon
+        z_max = room_dims.z
+        moved = False
+        margin = 1e-4
+
+        for _ in range(max_iterations):
+            # Gather all world-space surface boundary vertices
+            all_verts = []
+            for surface in self._world_surfaces.values():
+                all_verts.append(surface.plane.geometry.boundary_vertices)
+            if not all_verts:
+                return moved
+            coords = np.vstack(all_verts)
+
+            dx = 0.0
+            dy = 0.0
+            dz = 0.0
+
+            for point in coords:
+                cx, cy, cz = point
+                if not polygon.contains_point_inclusive(cx, cy):
+                    nearest = polygon.nearest_boundary_point(cx, cy)
+                    nudge_x = nearest[0] - cx
+                    nudge_y = nearest[1] - cy
+                    if abs(nudge_x) > abs(dx):
+                        dx = nudge_x
+                    if abs(nudge_y) > abs(dy):
+                        dy = nudge_y
+                if cz > z_max:
+                    shift = z_max - cz
+                    if shift < dz:
+                        dz = shift
+                if cz < 0:
+                    shift = -cz
+                    if shift > dz:
+                        dz = shift
+
+            if abs(dx) < 1e-9 and abs(dy) < 1e-9 and abs(dz) < 1e-9:
+                return moved
+
+            if dx != 0:
+                dx += margin if dx > 0 else -margin
+            if dy != 0:
+                dy += margin if dy > 0 else -margin
+            if dz != 0:
+                dz += margin if dz > 0 else -margin
+            self.move(self.x + dx, self.y + dy, self.z + dz)
+            moved = True
+
+        return moved
+
     # ---- state ----
 
     @property

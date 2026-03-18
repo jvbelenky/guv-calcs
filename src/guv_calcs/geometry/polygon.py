@@ -1,6 +1,7 @@
 """2D polygon representation for non-rectangular room shapes."""
 
 from dataclasses import dataclass, field
+from math import hypot
 import numpy as np
 
 
@@ -295,6 +296,27 @@ class Polygon2D:
     @classmethod
     def from_dict(cls, data: dict) -> "Polygon2D":
         return cls(vertices=tuple(tuple(v) for v in data["vertices"]))
+
+    def nearest_boundary_point(self, px: float, py: float) -> tuple[float, float]:
+        """Return the closest point on the polygon boundary to (px, py)."""
+        best_dist = float("inf")
+        best_point = (px, py)
+
+        for (x1, y1), (x2, y2) in self.edges:
+            dx, dy = x2 - x1, y2 - y1
+            length_sq = dx * dx + dy * dy
+            if length_sq == 0:
+                proj_x, proj_y = x1, y1
+            else:
+                t = max(0, min(1, ((px - x1) * dx + (py - y1) * dy) / length_sq))
+                proj_x = x1 + t * dx
+                proj_y = y1 + t * dy
+            dist = hypot(px - proj_x, py - proj_y)
+            if dist < best_dist:
+                best_dist = dist
+                best_point = (proj_x, proj_y)
+
+        return best_point
 
     def translate(self, dx: float, dy: float) -> "Polygon2D":
         """Return a new polygon translated by (dx, dy)."""

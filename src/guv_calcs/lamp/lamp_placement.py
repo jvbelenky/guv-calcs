@@ -396,60 +396,9 @@ class LampPlacer:
 
     def _nudge_into_bounds(self, lamp, max_iterations: int = 3):
         """Nudge lamp so its bounding box stays within the room polygon and z bounds."""
-        fixture = getattr(lamp, "fixture", None)
-        if fixture is None or not fixture.has_dimensions:
-            return
-
-        margin = 1e-4
-        for _ in range(max_iterations):
-            corners = lamp.geometry.get_bounding_box_corners()  # (8, 3)
-            dx = 0.0
-            dy = 0.0
-            dz = 0.0
-
-            for corner in corners:
-                cx, cy, cz = corner
-                # XY check
-                if not self.polygon.contains_point_inclusive(cx, cy):
-                    nearest = _nearest_point_on_polygon_boundary((cx, cy), self.polygon)
-                    nudge_x = nearest[0] - cx
-                    nudge_y = nearest[1] - cy
-                    # Keep the largest-magnitude nudge per axis
-                    if abs(nudge_x) > abs(dx):
-                        dx = nudge_x
-                    if abs(nudge_y) > abs(dy):
-                        dy = nudge_y
-                # Z check
-                if cz > self.z:
-                    shift = self.z - cz
-                    if shift < dz:
-                        dz = shift
-                if cz < 0:
-                    shift = -cz
-                    if shift > dz:
-                        dz = shift
-
-            if abs(dx) < 1e-9 and abs(dy) < 1e-9 and abs(dz) < 1e-9:
-                return  # Already in bounds
-
-            # Apply nudge with small inward margin
-            if dx != 0:
-                dx += margin if dx > 0 else -margin
-            if dy != 0:
-                dy += margin if dy > 0 else -margin
-            if dz != 0:
-                dz += margin if dz > 0 else -margin
-            lamp.move(lamp.x + dx, lamp.y + dy, lamp.z + dz)
-
-        # After max iterations, warn if still out of bounds
-        corners = lamp.geometry.get_bounding_box_corners()
-        for corner in corners:
-            cx, cy, cz = corner
-            if not self.polygon.contains_point_inclusive(cx, cy) or cz > self.z or cz < 0:
-                warnings.warn(
-                    "Fixture bounding box still extends past room boundaries after nudging"
-                )
-                return
+        from ..geometry import RoomDimensions
+        room_dims = RoomDimensions(polygon=self.polygon, z=self.z)
+        lamp.nudge_into_bounds(room_dims, max_iterations=max_iterations)
 
 
 # =============================================================================
@@ -558,25 +507,7 @@ def _nearest_point_on_polygon_boundary(
     point: tuple[float, float], polygon: "Polygon2D"
 ) -> tuple[float, float]:
     """Return the closest point on the polygon boundary to the given point."""
-    px, py = point
-    best_dist = float("inf")
-    best_point = (px, py)
-
-    for (x1, y1), (x2, y2) in polygon.edges:
-        dx, dy = x2 - x1, y2 - y1
-        length_sq = dx * dx + dy * dy
-        if length_sq == 0:
-            proj_x, proj_y = x1, y1
-        else:
-            t = max(0, min(1, ((px - x1) * dx + (py - y1) * dy) / length_sq))
-            proj_x = x1 + t * dx
-            proj_y = y1 + t * dy
-        dist = hypot(px - proj_x, py - proj_y)
-        if dist < best_dist:
-            best_dist = dist
-            best_point = (proj_x, proj_y)
-
-    return best_point
+    return polygon.nearest_boundary_point(point[0], point[1])
 
 
 def _ray_polygon_intersection(

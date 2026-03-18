@@ -84,30 +84,39 @@ class Registry(Generic[T], MutableMapping[str, T]):
         """Return (N, 3) world-space coordinates for boundary checking."""
         return None
 
-    def check_position(self, obj: T) -> str | None:
-        """Check object coordinates against room bounding box."""
+    def check_position(self, obj: T, tol: float = 1e-3) -> str | None:
+        """Check object coordinates against room polygon boundary."""
         if self.dims is None:
             return None
         coords = self._get_coords(obj)
         if coords is None or len(coords) == 0:
             return None
         room_dims = self.dims()
-        tol = 1e-9
-        x, y, z = coords.T
-        rx_min, ry_min, rx_max, ry_max = room_dims.polygon.bounding_box
-        if (x.min() < rx_min - tol or x.max() > rx_max + tol or
-                y.min() < ry_min - tol or y.max() > ry_max + tol or
-                z.min() < -tol or z.max() > room_dims.z + tol):
-            msg = f"{obj.name} exceeds room boundaries!"
-            warnings.warn(msg, stacklevel=2)
-            return msg
+        for x, y, z in coords:
+            if (not room_dims.polygon.contains_point_inclusive(x, y, tol=tol)
+                    or z < -tol or z > room_dims.z + tol):
+                msg = f"{obj.name} exceeds room boundaries!"
+                warnings.warn(msg, stacklevel=2)
+                return msg
         return None
 
-    def get_position_warnings(self):
+    def get_position_warnings(self, tol: float = 1e-3):
         dct = {}
         for obj_id, obj in self.items():
-            dct[obj_id] = self.check_position(obj)
+            dct[obj_id] = self.check_position(obj, tol=tol)
         return dct
+
+    def nudge_into_bounds(self, tol: float = 1e-3):
+        """Nudge all items into room bounds. Returns dict of {id: obj} for moved items."""
+        if self.dims is None:
+            return {}
+        room_dims = self.dims()
+        moved = {}
+        for obj_id, obj in self.items():
+            if hasattr(obj, 'nudge_into_bounds'):
+                if obj.nudge_into_bounds(room_dims):
+                    moved[obj_id] = obj
+        return moved
 
     def _validate(self, obj: T) -> T:
         """Type check + position check. Override for additional validation."""
@@ -186,9 +195,6 @@ class ZoneRegistry(Registry["CalcZone"]):
 class SurfaceRegistry(Registry["Surface"]):
     base_id = "Surface"
     expected_type: type | None = Surface
-
-    def _get_coords(self, surface):
-        return surface.plane.coords
 
 
 @dataclass(eq=False)

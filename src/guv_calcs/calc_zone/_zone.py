@@ -593,6 +593,50 @@ class CalcVol(CalcZone):
         )
         return cls(geometry=geometry, **kwargs)
 
+    def nudge_into_bounds(self, room_dims) -> bool:
+        """Shift and clamp volume zone into room bounds. Returns True if changed."""
+        if self.geometry is None:
+            return False
+        polygon = room_dims.polygon
+        rx_min, ry_min, rx_max, ry_max = polygon.bounding_box
+        rz = room_dims.z
+        changed = False
+
+        x1, x2 = self.x1, self.x2
+        y1, y2 = self.y1, self.y2
+        z1, z2 = self.z1, self.z2
+
+        # Shift-then-clamp for each axis pair
+        for lo, hi, r_lo, r_hi, label in [
+            (x1, x2, rx_min, rx_max, 'x'),
+            (y1, y2, ry_min, ry_max, 'y'),
+            (z1, z2, 0.0, rz, 'z'),
+        ]:
+            span = hi - lo
+            if span > (r_hi - r_lo):
+                lo, hi = r_lo, r_hi
+            elif lo < r_lo:
+                lo, hi = r_lo, r_lo + span
+            elif hi > r_hi:
+                lo, hi = r_hi - span, r_hi
+
+            if label == 'x':
+                if lo != x1 or hi != x2:
+                    changed = True
+                x1, x2 = lo, hi
+            elif label == 'y':
+                if lo != y1 or hi != y2:
+                    changed = True
+                y1, y2 = lo, hi
+            else:
+                if lo != z1 or hi != z2:
+                    changed = True
+                z1, z2 = lo, hi
+
+        if changed:
+            self.set_dimensions(x1=x1, x2=x2, y1=y1, y2=y2, z1=z1, z2=z2)
+        return changed
+
     def export(self, fname=None):
         """export values to csv"""
         return export_volume(self, fname=fname)
@@ -723,6 +767,52 @@ class CalcPlane(CalcZone):
         )
         return cls(geometry=geometry, **kwargs)
 
+    def nudge_into_bounds(self, room_dims) -> bool:
+        """Shift and clamp plane zone into room bounds. Returns True if changed."""
+        if self.geometry is None:
+            return False
+        polygon = room_dims.polygon
+        rx_min, ry_min, rx_max, ry_max = polygon.bounding_box
+        rz = room_dims.z
+        changed = False
+
+        x1, x2 = self.x1, self.x2
+        y1, y2 = self.y1, self.y2
+        h = self.geometry.height
+
+        # Shift-then-clamp XY
+        for lo, hi, r_lo, r_hi, label in [
+            (x1, x2, rx_min, rx_max, 'x'),
+            (y1, y2, ry_min, ry_max, 'y'),
+        ]:
+            span = hi - lo
+            if span > (r_hi - r_lo):
+                lo, hi = r_lo, r_hi
+            elif lo < r_lo:
+                lo, hi = r_lo, r_lo + span
+            elif hi > r_hi:
+                lo, hi = r_hi - span, r_hi
+
+            if label == 'x':
+                if lo != x1 or hi != x2:
+                    changed = True
+                x1, x2 = lo, hi
+            else:
+                if lo != y1 or hi != y2:
+                    changed = True
+                y1, y2 = lo, hi
+
+        # Clamp height
+        new_h = max(0.0, min(h, rz))
+        if new_h != h:
+            changed = True
+            h = new_h
+
+        if changed:
+            self.set_dimensions(x1=x1, x2=x2, y1=y1, y2=y2)
+            self.set_height(h)
+        return changed
+
     def set_height(self, height):
         self.geometry = self.geometry.update_legacy(height=height)
         return self
@@ -803,6 +893,42 @@ class CalcPoint(CalcZone):
         )
         self.geometry = self.geometry.with_aim_point(new_aim)
         return self
+
+    def nudge_into_bounds(self, room_dims) -> bool:
+        """Clamp point position and aim into room bounds. Returns True if changed."""
+        polygon = room_dims.polygon
+        rz = room_dims.z
+        changed = False
+
+        px, py, pz = self.position
+        # XY clamp
+        if not polygon.contains_point_inclusive(px, py):
+            px, py = polygon.nearest_boundary_point(px, py)
+            changed = True
+        # Z clamp
+        new_pz = max(0.0, min(pz, rz))
+        if new_pz != pz:
+            changed = True
+            pz = new_pz
+
+        if changed:
+            self.move(x=px, y=py, z=pz)
+
+        # Also clamp aim_point
+        ax, ay, az = self.geometry.aim_point
+        aim_changed = False
+        if not polygon.contains_point_inclusive(ax, ay):
+            ax, ay = polygon.nearest_boundary_point(ax, ay)
+            aim_changed = True
+        new_az = max(0.0, min(az, rz))
+        if new_az != az:
+            aim_changed = True
+            az = new_az
+        if aim_changed:
+            self.aim(x=ax, y=ay, z=az)
+            changed = True
+
+        return changed
 
     def export(self, fname=None):
         """Export point data to CSV."""
