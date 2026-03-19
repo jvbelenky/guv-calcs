@@ -594,48 +594,39 @@ class CalcVol(CalcZone):
         return cls(geometry=geometry, **kwargs)
 
     def nudge_into_bounds(self, room_dims) -> bool:
-        """Shift and clamp volume zone into room bounds. Returns True if changed."""
+        """Shift volume zone into room bounds. Returns True if changed."""
         if self.geometry is None:
             return False
-        polygon = room_dims.polygon
-        rx_min, ry_min, rx_max, ry_max = polygon.bounding_box
+        room_poly = room_dims.polygon
         rz = room_dims.z
-        changed = False
+        origin = np.asarray(self.geometry.origin, float)
+        u_hat, v_hat = self.geometry.u_hat, self.geometry.v_hat
 
-        x1, x2 = self.x1, self.x2
-        y1, y2 = self.y1, self.y2
-        z1, z2 = self.z1, self.z2
+        # Check footprint vertices in world space
+        dx, dy = 0.0, 0.0
+        for s, t in self.geometry.polygon.vertices:
+            pt = origin + s * u_hat + t * v_hat
+            wx, wy = float(pt[0]), float(pt[1])
+            if not room_poly.contains_point_inclusive(wx, wy):
+                nx, ny = room_poly.nearest_boundary_point(wx, wy)
+                if abs(nx - wx) > abs(dx):
+                    dx = nx - wx
+                if abs(ny - wy) > abs(dy):
+                    dy = ny - wy
 
-        # Shift-then-clamp for each axis pair
-        for lo, hi, r_lo, r_hi, label in [
-            (x1, x2, rx_min, rx_max, 'x'),
-            (y1, y2, ry_min, ry_max, 'y'),
-            (z1, z2, 0.0, rz, 'z'),
-        ]:
-            span = hi - lo
-            if span > (r_hi - r_lo):
-                lo, hi = r_lo, r_hi
-            elif lo < r_lo:
-                lo, hi = r_lo, r_lo + span
-            elif hi > r_hi:
-                lo, hi = r_hi - span, r_hi
+        # Clamp Z to [0, rz]
+        new_z = max(0.0, origin[2])
+        new_depth = min(self.geometry.depth, rz - new_z)
 
-            if label == 'x':
-                if lo != x1 or hi != x2:
-                    changed = True
-                x1, x2 = lo, hi
-            elif label == 'y':
-                if lo != y1 or hi != y2:
-                    changed = True
-                y1, y2 = lo, hi
-            else:
-                if lo != z1 or hi != z2:
-                    changed = True
-                z1, z2 = lo, hi
+        if (abs(dx) < 1e-9 and abs(dy) < 1e-9
+                and new_z == origin[2] and new_depth == self.geometry.depth):
+            return False
 
-        if changed:
-            self.set_dimensions(x1=x1, x2=x2, y1=y1, y2=y2, z1=z1, z2=z2)
-        return changed
+        self.geometry = self.geometry.update(
+            origin=(origin[0] + dx, origin[1] + dy, new_z),
+            depth=new_depth,
+        )
+        return True
 
     def export(self, fname=None):
         """export values to csv"""
@@ -768,50 +759,33 @@ class CalcPlane(CalcZone):
         return cls(geometry=geometry, **kwargs)
 
     def nudge_into_bounds(self, room_dims) -> bool:
-        """Shift and clamp plane zone into room bounds. Returns True if changed."""
+        """Shift plane zone into room bounds. Returns True if changed."""
         if self.geometry is None:
             return False
-        polygon = room_dims.polygon
-        rx_min, ry_min, rx_max, ry_max = polygon.bounding_box
+        room_poly = room_dims.polygon
         rz = room_dims.z
-        changed = False
 
-        x1, x2 = self.x1, self.x2
-        y1, y2 = self.y1, self.y2
-        h = self.geometry.height
+        dx, dy, dz = 0.0, 0.0, 0.0
+        for cx, cy, cz in self.geometry.boundary_vertices:
+            if not room_poly.contains_point_inclusive(cx, cy):
+                nx, ny = room_poly.nearest_boundary_point(cx, cy)
+                if abs(nx - cx) > abs(dx):
+                    dx = nx - cx
+                if abs(ny - cy) > abs(dy):
+                    dy = ny - cy
+            if cz > rz and (rz - cz) < dz:
+                dz = rz - cz
+            elif cz < 0 and -cz > dz:
+                dz = -cz
 
-        # Shift-then-clamp XY
-        for lo, hi, r_lo, r_hi, label in [
-            (x1, x2, rx_min, rx_max, 'x'),
-            (y1, y2, ry_min, ry_max, 'y'),
-        ]:
-            span = hi - lo
-            if span > (r_hi - r_lo):
-                lo, hi = r_lo, r_hi
-            elif lo < r_lo:
-                lo, hi = r_lo, r_lo + span
-            elif hi > r_hi:
-                lo, hi = r_hi - span, r_hi
+        if abs(dx) < 1e-9 and abs(dy) < 1e-9 and abs(dz) < 1e-9:
+            return False
 
-            if label == 'x':
-                if lo != x1 or hi != x2:
-                    changed = True
-                x1, x2 = lo, hi
-            else:
-                if lo != y1 or hi != y2:
-                    changed = True
-                y1, y2 = lo, hi
-
-        # Clamp height
-        new_h = max(0.0, min(h, rz))
-        if new_h != h:
-            changed = True
-            h = new_h
-
-        if changed:
-            self.set_dimensions(x1=x1, x2=x2, y1=y1, y2=y2)
-            self.set_height(h)
-        return changed
+        origin = self.geometry.origin
+        self.geometry = self.geometry.update(
+            origin=(origin[0] + dx, origin[1] + dy, origin[2] + dz)
+        )
+        return True
 
     def set_height(self, height):
         self.geometry = self.geometry.update_legacy(height=height)

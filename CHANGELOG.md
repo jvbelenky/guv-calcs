@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - PlaneCalcType fully implemented
 - CalcPoint class (with GridPoint geometry class)
 - performance.py file with both calc time and memory requirements estimations
+- nudge_into_bounds() methods on registry objects
 
 ### Fixed
 
