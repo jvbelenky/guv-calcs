@@ -1,4 +1,7 @@
- .PHONY: all test clean build release
+SHELL := /bin/bash
+export PATH := $(HOME)/.local/bin:$(PATH)
+
+ .PHONY: all test clean build release interactive
 #################################################################################
 # GLOBALS                                                                       #
 #################################################################################
@@ -6,29 +9,18 @@
 PROJECT_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 PYTHON_INTERPRETER = python
 
-ifeq (,$(shell which conda))
-HAS_CONDA=False
-else
-HAS_CONDA=True
-endif
-
 #################################################################################
 # COMMANDS                                                                      #
 #################################################################################
 
 all: install test
 
-## Install package
+## Install package (editable)
 local:
-	rm -rf dist build */*.egg-info *.egg-info
-	$(PYTHON_INTERPRETER) setup.py sdist
-	pip install -e . --no-cache-dir
-	
+	uv pip install -e .
+
 install:
-	pip install -r requirements.txt
-	rm -rf dist build */*.egg-info *.egg-info
-	$(PYTHON_INTERPRETER) setup.py sdist
-	pip install . --no-cache-dir
+	uv pip install .
 
 ## Lint using flake8 and black
 format: 
@@ -58,10 +50,13 @@ test-cov:
 test-fast:
 	$(PYTHON_INTERPRETER) -m pytest tests/ -v -x --ignore=tests/test_e2e.py -m "not slow"
 	
+interactive:
+	.venv/bin/jupyter notebook notebooks/guv-calcs_test.ipynb --ip=0.0.0.0 --no-browser
+
 # ----- PyPI upload only -----
 publish-pypi:
 	rm -rf dist build */*.egg-info *.egg-info
-	$(PYTHON_INTERPRETER) setup.py sdist bdist_wheel
+	uv build
 	twine upload dist/*
 
 # ----- Full release pipeline -----
