@@ -776,21 +776,23 @@ class Lamp:
         return self.photometry.total_optical_power() * self.intensity_units.factor * 10
 
     def irradiance_at(self, theta, phi, r):
+        """Compute irradiance at a point defined by (theta, phi, r) from lamp center."""
         phot = self.photometry.interpolated()
-        
+
         if self.nearfield and r < self.surface.photometric_distance:
-            points = self.surface.surface_points
+            # Convert (theta, phi, r) to world-space target
+            th, ph = np.radians(theta), np.radians(phi)
+            local = np.array([r*np.sin(th)*np.cos(ph), r*np.sin(th)*np.sin(ph), -r*np.cos(th)])
+            target = self.pose.inverse_rotation_matrix @ local + self.surface.position
+
+            # Per-source-point angles and distances
+            rel = target - self.surface.surface_points  # (N, 3)
+            Th, Ph, Rn = self.transform_to_lamp(rel, which="polar")
             imap = self.surface.intensity_map.reshape(-1)
-            n_src = len(points)
-            vals = []
-            for point, mult in zip(points, imap):
-                a, b, c = point+np.array([0, 0, r])
-                r_n = np.sqrt(a**2+b**2+c**2)
-                val = phot.get_intensity(theta, phi) / r_n ** 2
-                vals.append(val * mult / n_src)
-            irradiance = sum(vals)
+            vals = phot.get_intensity(Th, Ph) / Rn ** 2
+            irradiance = np.sum(vals * imap) / len(self.surface.surface_points)
         else:
-            irradiance = phot.get_intensity(theta, phi) / r ** 2            
+            irradiance = phot.get_intensity(theta, phi) / r ** 2
         return irradiance * self.intensity_units.factor
 
     def get_tlvs(self, standard=0):
