@@ -788,10 +788,10 @@ class Lamp:
                 r_n = np.sqrt(a**2+b**2+c**2)
                 val = phot.get_intensity(theta, phi) / r_n ** 2
                 vals.append(val * mult / n_src)
-            return sum(vals)
+            irradiance = sum(vals)
         else:
-            return phot.get_intensity(theta, phi) / r ** 2            
-        
+            irradiance = phot.get_intensity(theta, phi) / r ** 2            
+        return irradiance * self.intensity_units.factor
 
     def get_tlvs(self, standard=0):
         """
@@ -941,7 +941,7 @@ class Lamp:
         
     @property
     def nearfield(self)->bool:
-        return self.surface.source_density > 0 and self.surface.photometric_distance
+        return self.surface.source_density > 0 and self.surface.photometric_distance is not None
             
     def set_source_density(self, source_density):
         """Change source discretization."""

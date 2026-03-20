@@ -27,6 +27,8 @@ All notable changes to this project will be documented in this file.
 - Bug in loading an intensity map while width/length are 0
 - Bug in update_managers call preventing interreflections from being calculated
 - x/y coordinate swap in photometry
+- lamp.nearfield parameter returning float and not bool
+- lamp.irradiance_at() function not using lamp.intensity_factor properly
 
 ### Changed
 
