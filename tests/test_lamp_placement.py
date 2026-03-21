@@ -25,7 +25,7 @@ from guv_calcs.lamp.lamp_placement import (
     apply_tilt,
     # Existing downlight functions
     new_lamp_position,
-    new_lamp_position_polygon,
+    new_lamp_position_downlight,
 )
 
 
@@ -381,25 +381,35 @@ class TestDownlightPlacement:
         assert x == pytest.approx(2.0, abs=0.1)
         assert y == pytest.approx(2.0, abs=0.1)
 
-    def test_new_lamp_position_polygon_first_in_center(self):
-        """First lamp in polygon should be near centroid"""
+    def test_downlight_first_in_center(self):
+        """First downlight in polygon should be near centroid"""
         rect = Polygon2D.rectangle(4.0, 4.0)
-        x, y = new_lamp_position_polygon(1, rect)
+        x, y = new_lamp_position_downlight(rect)
         cx, cy = rect.centroid
         assert x == pytest.approx(cx, abs=0.5)
         assert y == pytest.approx(cy, abs=0.5)
 
-    def test_new_lamp_position_polygon_l_shape(self):
-        """L-shape placement puts lamps in both sections"""
+    def test_downlight_avoids_existing(self):
+        """New downlight should be placed far from existing lamps"""
+        rect = Polygon2D.rectangle(4.0, 4.0)
+        existing = [(1.0, 1.0)]
+        x, y = new_lamp_position_downlight(rect, existing)
+        # Should be far from (1, 1) — in the opposite region
+        dist = ((x - 1.0) ** 2 + (y - 1.0) ** 2) ** 0.5
+        assert dist > 1.5
+
+    def test_downlight_l_shape(self):
+        """L-shape placement covers different areas"""
         l_shape = Polygon2D(vertices=(
             (0.0, 0.0), (4.0, 0.0), (4.0, 2.0),
             (2.0, 2.0), (2.0, 4.0), (0.0, 4.0)
         ))
-        positions = [new_lamp_position_polygon(i + 1, l_shape) for i in range(3)]
-        # Should cover different areas
+        positions = []
+        for _ in range(3):
+            pos = new_lamp_position_downlight(l_shape, positions)
+            positions.append(pos)
         xs = [p[0] for p in positions]
         ys = [p[1] for p in positions]
-        # Should have variety in positions
         assert max(xs) - min(xs) > 1.0 or max(ys) - min(ys) > 1.0
 
 

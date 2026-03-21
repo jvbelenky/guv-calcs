@@ -44,6 +44,7 @@ All notable changes to this project will be documented in this file.
 - LampSurface position computation simplified
 - ReflectanceManager no longer mirrors room surfaces
 - More accurate calculation time estimates
+- Optimized downlight placement, rename new_lamp_position_polygon->new_lamp_position_downlight to match corner and edge functions
 
 ## [0.6.5] - 2026-03-06
 
