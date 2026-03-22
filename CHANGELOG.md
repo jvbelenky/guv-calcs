@@ -45,6 +45,7 @@ All notable changes to this project will be documented in this file.
 - ReflectanceManager no longer mirrors room surfaces
 - More accurate calculation time estimates
 - Optimized downlight placement, rename new_lamp_position_polygon->new_lamp_position_downlight to match corner and edge functions
+- Simplify LampPlace API--separate computation and mutation paths
 
 ## [0.6.5] - 2026-03-06
 

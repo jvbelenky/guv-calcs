@@ -519,22 +519,28 @@ class TestLampPlacerAPI:
         placer = LampPlacer.for_dims(dims, existing=existing)
         assert len(placer._existing) == 2
 
-    def test_place_returns_result(self):
-        """place returns PlacementResult with position and aim."""
+    def test_place_handlers_return_result(self):
+        """Placement handlers return PlacementResult with position and aim."""
         from guv_calcs.lamp.lamp_placement import LampPlacer
         placer = LampPlacer.for_room(x=4, y=4, z=3)
-        result = placer.place("corner", lamp_idx=1)
+        result = placer._place_corner(1)
         assert hasattr(result, "position")
         assert hasattr(result, "aim")
         assert len(result.position) == 2
         assert len(result.aim) == 2
 
-    def test_place_different_modes(self):
-        """place works with all modes."""
+    def test_place_handlers_all_modes(self):
+        """All placement handlers work correctly."""
         from guv_calcs.lamp.lamp_placement import LampPlacer
         placer = LampPlacer.for_room(x=4, y=4, z=3)
-        for mode in ["downlight", "corner", "edge", "horizontal"]:
-            result = placer.place(mode, lamp_idx=1)
+        handlers = [
+            placer._place_downlight,
+            placer._place_corner,
+            placer._place_edge,
+            placer._place_edge,  # horizontal uses edge handler
+        ]
+        for handler in handlers:
+            result = handler(1)
             assert result.position is not None
             assert result.aim is not None
 

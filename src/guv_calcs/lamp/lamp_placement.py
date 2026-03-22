@@ -33,12 +33,46 @@ def _offset_inward(
 
 @dataclass
 class PlacementResult:
-    """Result of lamp placement calculation."""
+    """Complete 3D lamp placement result."""
 
-    position: tuple[float, float]
-    aim: tuple[float, float]
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+    aimx: float = 0.0
+    aimy: float = 0.0
+    aimz: float = 0.0
+    angle: float = 0.0
     index: int = 0
     count: int = 1
+
+    @property
+    def position(self) -> tuple[float, float]:
+        """2D position (for geometry handlers and backward compat)."""
+        return (self.x, self.y)
+
+    @property
+    def aim(self) -> tuple[float, float]:
+        """2D aim point (for geometry handlers and backward compat)."""
+        return (self.aimx, self.aimy)
+
+    @property
+    def heading(self) -> float:
+        """Azimuth angle in degrees (0-360)."""
+        dx, dy = self.aimx - self.x, self.aimy - self.y
+        if abs(dx) < 1e-10 and abs(dy) < 1e-10:
+            return 0.0
+        return float(np.degrees(np.arctan2(dy, dx)) % 360)
+
+    @property
+    def bank(self) -> float:
+        """Tilt angle from vertical in degrees (0=down, 90=horizontal)."""
+        dx = self.aimx - self.x
+        dy = self.aimy - self.y
+        dz = self.aimz - self.z
+        norm = np.sqrt(dx * dx + dy * dy + dz * dz)
+        if norm == 0:
+            return 0.0
+        return float(np.degrees(np.arccos(np.clip(-dz / norm, -1.0, 1.0))))
 
 
 class LampPlacer:
@@ -49,12 +83,12 @@ class LampPlacer:
     to calculate optimal placements for different modes.
 
     Example usage:
-        # Simple usage - just get positions
         placer = LampPlacer.for_room(x=4, y=4, z=3)
-        pos, aim = placer.place("corner", lamp_idx=1)
 
-        # Full usage with lamp objects
-        placer = LampPlacer.for_room(x=4, y=4, z=3)
+        # Query-only — returns PlacementResult without mutating lamp
+        result = placer.get_placement(lamp, mode="corner")
+
+        # Mutate lamp — moves, aims, rotates, nudges into bounds
         placer.place_lamp(lamp, mode="corner", tilt=45)
     """
 
@@ -89,24 +123,121 @@ class LampPlacer:
         """Create placer from a RoomDimensions object."""
         return cls(dims.polygon, z=dims.z, existing_positions=existing)
 
-    def place(self, mode: str, lamp_idx: int, **kwargs) -> PlacementResult:
+    def get_placement(
+        self,
+        lamp,
+        mode: str = None,
+        tilt: float = None,
+        max_tilt: float = None,
+        offset: float = None,
+        wall_clearance: float = None,
+        angle: float = None,
+        position_index: int = None,
+    ) -> PlacementResult:
         """
-        Calculate position and aim for a lamp.
+        Compute lamp placement without mutating the lamp.
+
+        When position_index is None (default), computes the best available
+        position, skipping occupied spots.
+
+        When position_index is provided, computes the Nth-ranked position
+        regardless of occupancy (used for interactive cycling).
 
         Args:
-            mode: "downlight", "corner", "edge", or "horizontal"
-            lamp_idx: Index of lamp being placed (1-based)
-            **kwargs: Mode-specific options (e.g., beam_angle for corner mode)
+            lamp: Lamp object (read for config/fixture info, not mutated)
+            mode: Placement mode ("downlight", "corner", "edge", "horizontal").
+                If None, uses the lamp's config default or "downlight".
+            tilt: Force exact tilt angle in degrees (0=down, 90=horizontal)
+            max_tilt: Maximum allowed tilt angle in degrees. If None, uses the
+                lamp's config default.
+            offset: Distance below ceiling to place lamp. If None, calculated from
+                fixture.housing_height + 0.02 margin (minimum 0.05).
+            wall_clearance: Distance from walls for corner/edge modes. If None,
+                calculated from fixture diagonal to account for rotation when aiming
+                (minimum 0.05).
+            position_index: 0-based rank for cycling (wraps via modulo).
+                If None, uses auto-placement.
+
+        Returns:
+            PlacementResult with full 3D position, aim, angle, and cycling metadata
         """
-        handlers = {
-            "downlight": self._place_downlight,
-            "corner": self._place_corner,
-            "edge": self._place_edge,
-            "horizontal": self._place_horizontal,
-        }
-        if mode not in handlers:
-            raise ValueError(f"invalid lamp placement mode {mode}")
-        return handlers[mode](lamp_idx, **kwargs)
+        if self.z is None:
+            raise ValueError("z must be set (use for_room or for_dims)")
+
+        # Resolve config from lamp config and explicit params
+        config_angle = 0
+        if mode is None or max_tilt is None or angle is None:
+            try:
+                _, config = resolve_keyword(lamp.lamp_id)
+                placement = config.get("placement", {})
+                if mode is None:
+                    mode = placement.get("mode", "downlight")
+                if max_tilt is None:
+                    max_tilt = placement.get("max_tilt")
+                config_angle = placement.get("angle", 0)
+            except KeyError:
+                if mode is None:
+                    mode = "downlight"
+        fixture_angle = angle if angle is not None else config_angle
+        if offset is None:
+            offset = self.ceiling_offset(lamp)
+        if wall_clearance is None:
+            wall_clearance = self.wall_clearance(lamp)
+        beam_angle = self._get_beam_angle(lamp)
+        mode = mode.lower()
+
+        # Get 2D position and aim
+        if position_index is not None:
+            if mode == "corner":
+                result = self._ranked_corner(position_index, beam_angle=beam_angle, wall_offset=wall_clearance)
+            elif mode in ("edge", "horizontal"):
+                result = self._ranked_edge(position_index, beam_angle=beam_angle, wall_offset=wall_clearance)
+            else:
+                raise ValueError(f"Indexed placement not supported for mode '{mode}'")
+        else:
+            idx = len(self._existing) + 1
+            if mode == "downlight":
+                result = self._place_downlight(idx)
+            elif mode == "corner":
+                result = self._place_corner(idx, beam_angle=beam_angle, wall_offset=wall_clearance)
+            elif mode in ("edge", "horizontal"):
+                result = self._place_edge(idx, wall_offset=wall_clearance)
+            else:
+                raise ValueError(f"invalid lamp placement mode {mode}")
+
+        # Fill 3D fields
+        result.z = self.z - offset
+        result.aimz = result.z if mode == "horizontal" else 0.0
+        result.angle = fixture_angle
+
+        if mode in ("corner", "edge"):
+            aim_xy = self._apply_tilt((result.x, result.y, result.z), result.aim, tilt, max_tilt)
+            result.aimx, result.aimy = aim_xy
+
+        return result
+
+    def place_lamp(self, lamp, mode=None, tilt=None, max_tilt=None,
+                   offset=None, wall_clearance=None, angle=None):
+        """Compute placement, apply it to the lamp, and record the position."""
+        result = self.get_placement(
+            lamp, mode=mode, tilt=tilt, max_tilt=max_tilt,
+            offset=offset, wall_clearance=wall_clearance, angle=angle,
+        )
+        lamp.move(result.x, result.y, result.z)
+        lamp.aim(result.aimx, result.aimy, result.aimz)
+        if result.angle:
+            lamp.rotate(result.angle)
+        self._nudge_into_bounds(lamp)
+        self.record(lamp.x, lamp.y)
+        return lamp
+
+    def place_lamp_at_index(self, lamp, mode, index, *, max_tilt=None,
+                            offset=None, wall_clearance=None, angle=None):
+        """Deprecated: use get_placement(position_index=index) instead."""
+        return self.get_placement(
+            lamp, mode=mode, max_tilt=max_tilt, offset=offset,
+            wall_clearance=wall_clearance, angle=angle, position_index=index,
+        )
 
     def record(self, x: float, y: float):
         """Record a placed lamp position for future spacing calculations."""
@@ -116,7 +247,7 @@ class LampPlacer:
         x, y = new_lamp_position_downlight(
             self.polygon, self._existing
         )
-        return PlacementResult(position=(x, y), aim=(x, y))
+        return PlacementResult(x=x, y=y, aimx=x, aimy=y)
 
     def _place_corner(self, idx: int, **kwargs) -> PlacementResult:
         beam_angle = kwargs.get("beam_angle", 30.0)
@@ -124,18 +255,14 @@ class LampPlacer:
         (x, y), (aim_x, aim_y) = new_lamp_position_corner(
             idx, self.polygon, self._existing, beam_angle=beam_angle, wall_offset=wall_offset
         )
-        return PlacementResult(position=(x, y), aim=(aim_x, aim_y))
+        return PlacementResult(x=x, y=y, aimx=aim_x, aimy=aim_y)
 
     def _place_edge(self, idx: int, **kwargs) -> PlacementResult:
         wall_offset = kwargs.get("wall_offset", 0.05)
         (x, y), (aim_x, aim_y) = new_lamp_position_edge(
             idx, self.polygon, self._existing, wall_offset=wall_offset
         )
-        return PlacementResult(position=(x, y), aim=(aim_x, aim_y))
-
-    def _place_horizontal(self, idx: int, **kwargs) -> PlacementResult:
-        # Same as edge but caller handles aim z-coordinate
-        return self._place_edge(idx, **kwargs)
+        return PlacementResult(x=x, y=y, aimx=aim_x, aimy=aim_y)
 
     @staticmethod
     def ceiling_offset(lamp) -> float:
@@ -165,175 +292,6 @@ class LampPlacer:
         diagonal_2d = (w**2 + l**2) ** 0.5
         return max(diagonal_2d / 2 + h / 2, 0.05)
 
-    def place_lamp(
-        self,
-        lamp,
-        mode: str = None,
-        tilt: float = None,
-        max_tilt: float = None,
-        offset: float = None,
-        wall_clearance: float = None,
-        angle: float = None,
-    ):
-        """
-        Position and aim a lamp, returning it for chaining.
-
-        Args:
-            lamp: Lamp object to position
-            mode: Placement mode ("downlight", "corner", "edge", "horizontal").
-                If None, uses the lamp's config default or "downlight".
-            tilt: Force exact tilt angle in degrees (0=down, 90=horizontal)
-            max_tilt: Maximum allowed tilt angle in degrees. If None, uses the
-                lamp's config default.
-            offset: Distance below ceiling to place lamp. If None, calculated from
-                fixture.housing_height + 0.02 margin (minimum 0.05).
-            wall_clearance: Distance from walls for corner/edge modes. If None,
-                calculated from fixture diagonal to account for rotation when aiming
-                (minimum 0.05).
-
-        Returns:
-            The lamp object for method chaining
-        """
-        if self.z is None:
-            raise ValueError("z must be set to use place_lamp (use for_room or for_dims)")
-
-        # Get placement defaults from lamp config if available
-        config_angle = 0
-        if mode is None or max_tilt is None or angle is None:
-            try:
-                _, config = resolve_keyword(lamp.lamp_id)
-                placement = config.get("placement", {})
-                if mode is None:
-                    mode = placement.get("mode", "downlight")
-                if max_tilt is None:
-                    max_tilt = placement.get("max_tilt")
-                config_angle = placement.get("angle", 0)
-            except KeyError:
-                if mode is None:
-                    mode = "downlight"
-        fixture_angle = angle if angle is not None else config_angle
-
-        # Calculate ceiling offset from fixture if not specified
-        if offset is None:
-            offset = self.ceiling_offset(lamp)
-
-        # Calculate wall clearance from fixture dimensions
-        if wall_clearance is None:
-            wall_clearance = self.wall_clearance(lamp)
-
-        idx = len(self._existing) + 1
-        beam_angle = self._get_beam_angle(lamp)
-        mode_lower = mode.lower()
-
-        result = self.place(mode_lower, idx, beam_angle=beam_angle, wall_offset=wall_clearance)
-
-        lamp_z = self.z - offset
-        lamp.move(result.position[0], result.position[1], lamp_z)
-
-        if mode_lower == "horizontal":
-            aim_z = lamp_z
-        else:
-            aim_z = 0.0
-
-        if mode_lower in ("corner", "edge"):
-            aim_xy = self._apply_tilt(lamp.position, result.aim, tilt, max_tilt)
-        else:
-            aim_xy = result.aim
-
-        lamp.aim(aim_xy[0], aim_xy[1], aim_z)
-        if fixture_angle:
-            lamp.rotate(fixture_angle)
-        self._nudge_into_bounds(lamp)
-        self.record(lamp.x, lamp.y)
-        return lamp
-
-    def place_at_index(self, mode: str, index: int, **kwargs) -> PlacementResult:
-        """Get the Nth-ranked position for a mode, cycling with modulo.
-
-        Unlike place() which skips occupied positions, this returns the position
-        at a specific rank regardless of occupancy. Used for interactive cycling.
-
-        Args:
-            mode: "corner", "edge", or "horizontal"
-            index: 0-based position index (wraps via modulo)
-            **kwargs: Mode-specific options (wall_offset, beam_angle)
-
-        Returns:
-            PlacementResult with index and count populated
-        """
-        handlers = {
-            "corner": self._ranked_corner,
-            "edge": self._ranked_edge,
-            "horizontal": self._ranked_edge,
-        }
-        if mode not in handlers:
-            raise ValueError(f"Indexed placement not supported for mode '{mode}'")
-        return handlers[mode](index, **kwargs)
-
-    def place_lamp_at_index(
-        self,
-        lamp,
-        mode: str,
-        index: int,
-        *,
-        max_tilt: float = None,
-        offset: float = None,
-        wall_clearance: float = None,
-        angle: float = None,
-    ) -> PlacementResult:
-        """Place lamp at a specific ranked position for interactive cycling.
-
-        Like place_lamp() but uses place_at_index() instead of place(),
-        so the lamp goes to the Nth-ranked position regardless of occupancy.
-
-        Mutates the lamp's position, aim, and rotation.
-        Returns PlacementResult with resolved index and count.
-        """
-        if self.z is None:
-            raise ValueError("z must be set to use place_lamp_at_index (use for_room or for_dims)")
-
-        config_angle = 0
-        if max_tilt is None or angle is None:
-            try:
-                _, config = resolve_keyword(lamp.lamp_id)
-                placement = config.get("placement", {})
-                if max_tilt is None:
-                    max_tilt = placement.get("max_tilt")
-                config_angle = placement.get("angle", 0)
-            except KeyError:
-                pass
-        fixture_angle = angle if angle is not None else config_angle
-
-        if offset is None:
-            offset = self.ceiling_offset(lamp)
-        if wall_clearance is None:
-            wall_clearance = self.wall_clearance(lamp)
-
-        beam_angle = self._get_beam_angle(lamp)
-        result = self.place_at_index(
-            mode, index, beam_angle=beam_angle, wall_offset=wall_clearance
-        )
-
-        lamp_z = self.z - offset
-        lamp.move(result.position[0], result.position[1], lamp_z)
-
-        if mode == "horizontal":
-            aim_z = lamp_z
-        else:
-            aim_z = 0.0
-
-        if mode in ("corner", "edge"):
-            aim_xy = self._apply_tilt(lamp.position, result.aim, None, max_tilt)
-        else:
-            aim_xy = result.aim
-
-        lamp.aim(aim_xy[0], aim_xy[1], aim_z)
-        if fixture_angle:
-            lamp.rotate(fixture_angle)
-        self._nudge_into_bounds(lamp)
-
-        return result
-
     def _ranked_corner(self, index: int, **kwargs) -> PlacementResult:
         """Return placement for the Nth-ranked corner."""
         wall_offset = kwargs.get("wall_offset", 0.05)
@@ -354,7 +312,7 @@ class LampPlacer:
             position = corner
 
         aim = _calculate_corner_aim(position, self.polygon, beam_angle)
-        return PlacementResult(position=position, aim=aim, index=idx, count=count)
+        return PlacementResult(x=position[0], y=position[1], aimx=aim[0], aimy=aim[1], index=idx, count=count)
 
     def _ranked_edge(self, index: int, **kwargs) -> PlacementResult:
         """Return placement for the Nth-ranked edge."""
@@ -371,7 +329,7 @@ class LampPlacer:
         position = _offset_inward(best_pos, inward, offset=wall_offset)
 
         aim = _calculate_edge_perpendicular_aim(position, chosen_edge_idx, self.polygon)
-        return PlacementResult(position=position, aim=aim, index=idx, count=count)
+        return PlacementResult(x=position[0], y=position[1], aimx=aim[0], aimy=aim[1], index=idx, count=count)
 
     def _get_beam_angle(self, lamp, default: float = 30.0) -> float:
         """Extract beam angle from lamp photometry."""
