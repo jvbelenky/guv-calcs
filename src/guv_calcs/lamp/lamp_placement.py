@@ -8,6 +8,15 @@ from ..geometry import Polygon2D
 from .lamp_configs import resolve_keyword
 
 
+# Placement order: corners most constrained (finite convex vertices), edges next
+# (perimeter-bound), downlights most flexible (any interior point).
+_MODE_ORDER = ("corner", "edge", "horizontal", "downlight")
+
+_VALID_MODES = set(_MODE_ORDER)
+
+_VALID_AIM_MODES = {"down", "point", "direction", "centroid", "furthest_edge", "furthest_corner"}
+
+
 # =============================================================================
 # SECTION 1: Shared Utilities
 # =============================================================================
@@ -75,6 +84,15 @@ class PlacementResult:
         return float(np.degrees(np.arccos(np.clip(-dz / norm, -1.0, 1.0))))
 
 
+@dataclass
+class AimResult:
+    """Result of an aim computation for a single lamp."""
+
+    aimx: float
+    aimy: float
+    aimz: float
+
+
 class LampPlacer:
     """
     Coordinates lamp placement within a room polygon.
@@ -101,6 +119,10 @@ class LampPlacer:
         self.polygon = polygon
         self.z = z
         self._existing = list(existing_positions) if existing_positions else []
+        # Lazy caches for batch operations (populated on first use)
+        self._corner_cache = None  # list[int] — ranked corner indices
+        self._edge_cache = None  # list[int] — ranked edge indices
+        self._grid_cache = None  # dict with interior grid + boundary dists
 
     @classmethod
     def for_room(
@@ -360,10 +382,437 @@ class LampPlacer:
         room_dims = RoomDimensions(polygon=self.polygon, z=self.z)
         lamp.nudge_into_bounds(room_dims, max_iterations=max_iterations)
 
+    # ----- Lazy cache helpers -----
+
+    def _get_corner_cache(self) -> list:
+        """Return cached ranked corner indices, computing on first call."""
+        if self._corner_cache is None:
+            self._corner_cache = _rank_corners_by_visibility(self.polygon)
+        return self._corner_cache
+
+    def _get_edge_cache(self) -> dict:
+        """Return cached edge ranking + best positions, computing on first call."""
+        if self._edge_cache is None:
+            edge_centers = get_edge_centers(self.polygon)
+            scored = []
+            best_positions = {}
+            for _, (mx, my, edge_idx) in enumerate(edge_centers):
+                mid_sight = _calculate_sightline_distance((mx, my), edge_idx, self.polygon)
+                best_pos, best_sight = _best_position_on_edge(edge_idx, self.polygon)
+                scored.append((edge_idx, mid_sight, best_sight))
+                best_positions[edge_idx] = best_pos
+            scored.sort(key=lambda x: (-x[1], -x[2]))
+            self._edge_cache = {
+                "ranked": [s[0] for s in scored],
+                "best_positions": best_positions,
+                "edge_centers": edge_centers,
+            }
+        return self._edge_cache
+
+    def _get_grid_cache(self) -> dict:
+        """Return cached interior grid + boundary distances, computing on first call."""
+        if self._grid_cache is None:
+            x_min, y_min, x_max, y_max = self.polygon.bounding_box
+            xp = np.linspace(x_min, x_max, 101)
+            yp = np.linspace(y_min, y_max, 101)
+            xx, yy = np.meshgrid(xp, yp, indexing="ij")
+            all_points = np.column_stack([xx.ravel(), yy.ravel()])
+            inside_mask = self.polygon.contains_points(all_points)
+            candidates = all_points[inside_mask]
+            boundary_dists = np.array(
+                [_distance_to_polygon_boundary(candidates[i], self.polygon)
+                 for i in range(len(candidates))]
+            )
+            self._grid_cache = {
+                "candidates": candidates,
+                "boundary_dists": boundary_dists,
+            }
+        return self._grid_cache
+
+    # ----- Cached placement helpers (used by batch methods) -----
+
+    def _cached_place_downlight(self) -> PlacementResult:
+        """Downlight placement using cached grid + boundary distances.
+
+        Uses an incremental running-minimum strategy: rather than recomputing
+        distances to all existing lamps each time, it only computes the distance
+        to the most recently added lamp and updates the running minimum.
+        """
+        cache = self._get_grid_cache()
+        candidates = cache["candidates"]
+        boundary_dists = cache["boundary_dists"]
+
+        if len(candidates) == 0:
+            cx, cy = self.polygon.centroid
+            return PlacementResult(x=cx, y=cy, aimx=cx, aimy=cy)
+
+        # Lazily initialise or update the running minimum distance to existing lamps
+        min_existing = cache.get("_min_existing")
+        n_accounted = cache.get("_n_accounted", 0)
+
+        if not self._existing:
+            idx = int(np.argmax(boundary_dists))
+        else:
+            # Bootstrap running min if this is the first call with existing lamps
+            if min_existing is None:
+                min_existing = np.full(len(candidates), np.inf)
+                n_accounted = 0
+
+            # Incrementally add any new positions since last call
+            for i in range(n_accounted, len(self._existing)):
+                ex, ey = self._existing[i]
+                dx = candidates[:, 0] - ex
+                dy = candidates[:, 1] - ey
+                np.minimum(min_existing, np.sqrt(dx * dx + dy * dy), out=min_existing)
+
+            cache["_min_existing"] = min_existing
+            cache["_n_accounted"] = len(self._existing)
+
+            min_dist = np.minimum(min_existing, boundary_dists)
+            idx = int(np.argmax(min_dist))
+
+        x, y = float(candidates[idx][0]), float(candidates[idx][1])
+        return PlacementResult(x=x, y=y, aimx=x, aimy=y)
+
+    def _cached_place_corner(self, wall_clearance: float, beam_angle: float) -> PlacementResult:
+        """Corner placement using cached ranking."""
+        ranked = self._get_corner_cache()
+        corners = get_corners(self.polygon)
+
+        tolerance = max(0.2, wall_clearance * 1.5 + 0.1)
+        occupied = set()
+        for ex, ey in self._existing:
+            for i, (cx, cy) in enumerate(corners):
+                if hypot(ex - cx, ey - cy) < tolerance:
+                    occupied.add(i)
+        available = [i for i in ranked if i not in occupied]
+
+        if available:
+            corner = corners[available[0]]
+            inward = _get_corner_inward_direction(corner, self.polygon)
+            position = _offset_inward(corner, inward, offset=wall_clearance)
+            if not self.polygon.contains_point(*position):
+                position = _offset_inward(corner, inward, offset=min(wall_clearance, 0.01))
+            if not self.polygon.contains_point(*position):
+                position = corner
+            aim = _calculate_corner_aim(position, self.polygon, beam_angle)
+            return PlacementResult(x=position[0], y=position[1], aimx=aim[0], aimy=aim[1])
+
+        # All corners occupied — delegate to edge
+        return self._cached_place_edge(wall_clearance)
+
+    def _cached_place_edge(self, wall_clearance: float) -> PlacementResult:
+        """Edge placement using cached ranking + best positions."""
+        cache = self._get_edge_cache()
+        ranked = cache["ranked"]
+        best_positions = cache["best_positions"]
+        edge_centers = cache["edge_centers"]
+
+        tolerance = max(0.2, wall_clearance + 0.1)
+        occupied_edges = set()
+        for ex, ey in self._existing:
+            for _, _, edge_idx in edge_centers:
+                (x1, y1), (x2, y2) = self.polygon.edges[edge_idx]
+                if _point_to_segment_distance(ex, ey, x1, y1, x2, y2) < tolerance:
+                    occupied_edges.add(edge_idx)
+
+        for edge_idx in ranked:
+            if edge_idx not in occupied_edges:
+                best_pos = best_positions[edge_idx]
+                inward = (-self.polygon.edge_normals[edge_idx][0],
+                          -self.polygon.edge_normals[edge_idx][1])
+                position = _offset_inward(best_pos, inward, offset=wall_clearance)
+                aim = _calculate_edge_perpendicular_aim(position, edge_idx, self.polygon)
+                return PlacementResult(
+                    x=position[0], y=position[1], aimx=aim[0], aimy=aim[1],
+                )
+
+        # All edges occupied — farthest perimeter point
+        position, aim = _farthest_perimeter_position(
+            self.polygon, self._existing, wall_offset=wall_clearance,
+        )
+        return PlacementResult(x=position[0], y=position[1], aimx=aim[0], aimy=aim[1])
+
+    def _compute_batch_placement(self, lamp, mode, *, tilt, max_tilt) -> PlacementResult:
+        """Compute a single placement using cached room data."""
+        if self.z is None:
+            raise ValueError("z must be set (use for_room or for_dims)")
+
+        # Resolve per-lamp config — beam_angle only for corner mode (expensive)
+        config_angle = 0
+        resolved_max_tilt = max_tilt
+        try:
+            _, config = resolve_keyword(lamp.lamp_id)
+            placement = config.get("placement", {})
+            config_angle = placement.get("angle", 0)
+            if resolved_max_tilt is None:
+                resolved_max_tilt = placement.get("max_tilt")
+        except KeyError:
+            pass
+        offset = self.ceiling_offset(lamp)
+
+        if mode == "downlight":
+            result = self._cached_place_downlight()
+        elif mode == "corner":
+            wall_clearance = self.wall_clearance(lamp)
+            beam_angle = self._get_beam_angle(lamp)
+            result = self._cached_place_corner(wall_clearance, beam_angle)
+        elif mode in ("edge", "horizontal"):
+            wall_clearance = self.wall_clearance(lamp)
+            result = self._cached_place_edge(wall_clearance)
+        else:
+            raise ValueError(f"invalid lamp placement mode {mode}")
+
+        result.z = self.z - offset
+        result.aimz = result.z if mode == "horizontal" else 0.0
+        result.angle = config_angle
+
+        if mode in ("corner", "edge"):
+            aim_xy = self._apply_tilt(
+                (result.x, result.y, result.z), result.aim, tilt, resolved_max_tilt,
+            )
+            result.aimx, result.aimy = aim_xy
+
+        return result
+
+    # ----- Batch placement -----
+
+    @staticmethod
+    def _validate_lamps_by_mode(lamps_by_mode: dict) -> set:
+        """Validate lamps_by_mode dict. Returns set of all lamp IDs."""
+        seen_ids = set()
+        for mode, lamps in lamps_by_mode.items():
+            if mode not in _VALID_MODES:
+                raise ValueError(
+                    f"Unknown placement mode '{mode}'. "
+                    f"Valid modes: {', '.join(_MODE_ORDER)}"
+                )
+            for lamp in lamps:
+                lid = lamp.lamp_id
+                if lid in seen_ids:
+                    raise ValueError(f"Lamp '{lid}' appears in multiple mode lists")
+                seen_ids.add(lid)
+        return seen_ids
+
+    def get_layout(
+        self,
+        lamps_by_mode: dict,
+        *,
+        tilt: float = None,
+        max_tilt: float = None,
+    ) -> dict:
+        """Compute placements for multiple lamps without mutating them.
+
+        Uses cached room geometry so placement scales well to many lamps.
+
+        Args:
+            lamps_by_mode: {mode: [lamps]} dict grouping lamps by placement mode.
+                Valid modes: "corner", "edge", "horizontal", "downlight".
+            tilt: Force exact tilt angle in degrees (applied to corner/edge modes)
+            max_tilt: Maximum allowed tilt angle in degrees
+
+        Returns:
+            dict[str, PlacementResult] keyed by lamp.lamp_id
+        """
+        self._validate_lamps_by_mode(lamps_by_mode)
+        results = {}
+
+        for mode in _MODE_ORDER:
+            for lamp in lamps_by_mode.get(mode, []):
+                result = self._compute_batch_placement(
+                    lamp, mode, tilt=tilt, max_tilt=max_tilt,
+                )
+                results[lamp.lamp_id] = result
+                self.record(result.x, result.y)
+
+        return results
+
+    def place_lamps(
+        self,
+        lamps_by_mode: dict,
+        *,
+        tilt: float = None,
+        max_tilt: float = None,
+    ) -> dict:
+        """Compute and apply placements for multiple lamps.
+
+        Same as get_layout() but also applies each result: lamp.move(),
+        lamp.aim(), lamp.rotate(), _nudge_into_bounds(). Records post-nudge
+        positions so subsequent placements respect spacing.
+        """
+        self._validate_lamps_by_mode(lamps_by_mode)
+        results = {}
+
+        for mode in _MODE_ORDER:
+            for lamp in lamps_by_mode.get(mode, []):
+                result = self._compute_batch_placement(
+                    lamp, mode, tilt=tilt, max_tilt=max_tilt,
+                )
+                lamp.move(result.x, result.y, result.z)
+                lamp.aim(result.aimx, result.aimy, result.aimz)
+                if result.angle:
+                    lamp.rotate(result.angle)
+                self._nudge_into_bounds(lamp)
+                self.record(lamp.x, lamp.y)
+                results[lamp.lamp_id] = result
+
+        return results
+
+    # ----- Batch aiming -----
+
+    def get_aim(
+        self,
+        lamp,
+        aim_mode: str,
+        *,
+        target: tuple = None,
+        direction: tuple = None,
+    ) -> "AimResult":
+        """Compute aim for a single lamp without mutating it.
+
+        Args:
+            lamp: Lamp object (read for position, not mutated)
+            aim_mode: One of "down", "point", "direction", "centroid",
+                "furthest_edge", "furthest_corner"
+            target: (x, y, z) for "point" mode
+            direction: (dx, dy, dz) for "direction" mode
+
+        Returns:
+            AimResult with computed aim coordinates
+        """
+        if aim_mode not in _VALID_AIM_MODES:
+            raise ValueError(
+                f"Unknown aim mode '{aim_mode}'. "
+                f"Valid modes: {', '.join(sorted(_VALID_AIM_MODES))}"
+            )
+
+        lx, ly = lamp.x, lamp.y
+
+        if aim_mode == "down":
+            return AimResult(aimx=lx, aimy=ly, aimz=0.0)
+
+        if aim_mode == "point":
+            if target is None:
+                raise ValueError("'point' aim mode requires 'target' parameter")
+            return AimResult(aimx=target[0], aimy=target[1], aimz=target[2])
+
+        if aim_mode == "direction":
+            if direction is None:
+                raise ValueError("'direction' aim mode requires 'direction' parameter")
+            dx, dy, dz = direction
+            length = (dx * dx + dy * dy + dz * dz) ** 0.5
+            if length < 1e-10:
+                return AimResult(aimx=lx, aimy=ly, aimz=0.0)
+            ndx, ndy, ndz = dx / length, dy / length, dz / length
+            return AimResult(
+                aimx=lx + ndx, aimy=ly + ndy, aimz=lamp.z + ndz,
+            )
+
+        if aim_mode == "centroid":
+            cx, cy = _visible_centroid((lx, ly), self.polygon)
+            return AimResult(aimx=cx, aimy=cy, aimz=0.0)
+
+        if aim_mode == "furthest_edge":
+            edges = get_edge_centers(self.polygon)
+            best = None
+            best_dist = -1.0
+            for ex, ey, _ in edges:
+                d = hypot(ex - lx, ey - ly)
+                if d > best_dist:
+                    best_dist = d
+                    best = (ex, ey)
+            if best is None:
+                best = self.polygon.centroid
+            return AimResult(aimx=best[0], aimy=best[1], aimz=0.0)
+
+        # aim_mode == "furthest_corner"
+        corners = get_corners(self.polygon)
+        best = None
+        best_dist = -1.0
+        for cx, cy in corners:
+            d = hypot(cx - lx, cy - ly)
+            if d > best_dist:
+                best_dist = d
+                best = (cx, cy)
+        if best is None:
+            best = self.polygon.centroid
+        return AimResult(aimx=best[0], aimy=best[1], aimz=0.0)
+
+    def get_aims(
+        self,
+        lamps: list,
+        aim_mode: str,
+        *,
+        target: tuple = None,
+        direction: tuple = None,
+    ) -> dict:
+        """Compute aim for multiple lamps. Returns dict[lamp_id, AimResult]."""
+        return {
+            lamp.lamp_id: self.get_aim(lamp, aim_mode, target=target, direction=direction)
+            for lamp in lamps
+        }
+
+    def aim_lamps(
+        self,
+        lamps: list,
+        aim_mode: str,
+        *,
+        target: tuple = None,
+        direction: tuple = None,
+    ) -> dict:
+        """Compute and apply aim for multiple lamps.
+
+        Calls get_aims(), then lamp.aim() for each.
+        """
+        results = self.get_aims(lamps, aim_mode, target=target, direction=direction)
+        for lamp in lamps:
+            r = results[lamp.lamp_id]
+            lamp.aim(r.aimx, r.aimy, r.aimz)
+        return results
+
 
 # =============================================================================
 # SECTION 3: Low-level Geometry Helpers
 # =============================================================================
+
+
+def _visible_centroid(
+    position: tuple[float, float], polygon: Polygon2D, grid_size: int = 30
+) -> tuple[float, float]:
+    """Centroid of the floor area visible from position within the polygon.
+
+    For convex rooms, every interior point sees every other, so returns the
+    polygon centroid directly. For concave rooms, generates an interior grid
+    and computes the centroid of only those points with unobstructed line-of-sight
+    from the given position.
+    """
+    if polygon.is_convex:
+        return polygon.centroid
+
+    x_min, y_min, x_max, y_max = polygon.bounding_box
+    xp = np.linspace(x_min, x_max, grid_size)
+    yp = np.linspace(y_min, y_max, grid_size)
+    xx, yy = np.meshgrid(xp, yp, indexing="ij")
+    all_points = np.column_stack([xx.ravel(), yy.ravel()])
+
+    inside_mask = polygon.contains_points(all_points)
+    interior = all_points[inside_mask]
+
+    if len(interior) == 0:
+        return polygon.centroid
+
+    origin_edge_idx = _find_origin_edge(position, polygon)
+
+    visible = []
+    for pt in interior:
+        if not _line_intersects_polygon_edge(position, (pt[0], pt[1]), polygon, origin_edge_idx):
+            visible.append(pt)
+
+    if not visible:
+        return polygon.centroid
+
+    visible_arr = np.array(visible)
+    return (float(np.mean(visible_arr[:, 0])), float(np.mean(visible_arr[:, 1])))
 
 
 def _point_to_segment_distance(px, py, x1, y1, x2, y2) -> float:
@@ -1408,3 +1857,35 @@ def _find_reflex_vertices(polygon: "Polygon2D") -> list[tuple[float, float]]:
             reflex.append(curr_v)
 
     return reflex
+
+
+# =============================================================================
+# SECTION 9: Height Utilities
+# =============================================================================
+
+
+def set_height(lamps: list, *, z: float = None, ceiling_offset: float = None, room_z: float = None):
+    """Set the height of multiple lamps.
+
+    Exactly one of ``z`` or ``ceiling_offset`` must be provided.
+    When using ``ceiling_offset``, ``room_z`` is also required.
+
+    Calls ``lamp.move(z=z)`` for each lamp, which shifts the aim point by
+    the same delta, preserving relative aim.
+
+    Args:
+        lamps: List of Lamp objects to modify.
+        z: Absolute height to place lamps at.
+        ceiling_offset: Distance below the ceiling. Requires ``room_z``.
+        room_z: Ceiling height (required when using ``ceiling_offset``).
+    """
+    if z is not None and ceiling_offset is not None:
+        raise ValueError("Provide either 'z' or 'ceiling_offset', not both")
+    if z is None and ceiling_offset is None:
+        raise ValueError("Must provide either 'z' or 'ceiling_offset'")
+    if ceiling_offset is not None:
+        if room_z is None:
+            raise ValueError("'ceiling_offset' requires 'room_z'")
+        z = room_z - ceiling_offset
+    for lamp in lamps:
+        lamp.move(z=z)

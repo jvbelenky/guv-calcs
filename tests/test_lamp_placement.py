@@ -8,6 +8,7 @@ from guv_calcs.lamp.lamp_placement import (
     _point_to_segment_distance,
     _ray_polygon_intersection,
     _distance_to_polygon_boundary,
+    _visible_centroid,
     # Corner placement
     get_corners,
     _rank_corners_by_visibility,
@@ -26,6 +27,11 @@ from guv_calcs.lamp.lamp_placement import (
     # Existing downlight functions
     new_lamp_position,
     new_lamp_position_downlight,
+    # Batch / mass operations
+    LampPlacer,
+    AimResult,
+    set_height,
+    _MODE_ORDER,
 )
 
 
@@ -821,3 +827,323 @@ class TestBoundingBoxNudge:
         placer = LampPlacer(l_shape, z=2.7)
         placer.place_lamp(lamp, mode="corner")
         _assert_bbox_inside(lamp, placer)
+
+
+class TestMassPlacement:
+    """Tests for get_layout() and place_lamps() batch operations."""
+
+    def test_get_layout_basic(self):
+        """get_layout returns results for all lamps."""
+        from guv_calcs import Lamp
+
+        lamps = [Lamp(lamp_id=f"lamp_{i}", filedata=None) for i in range(4)]
+        placer = LampPlacer.for_room(x=6, y=6, z=3)
+        results = placer.get_layout({
+            "corner": lamps[:2],
+            "downlight": lamps[2:],
+        })
+        assert len(results) == 4
+        for lid in ["lamp_0", "lamp_1", "lamp_2", "lamp_3"]:
+            assert lid in results
+            r = results[lid]
+            assert r.x >= 0 and r.y >= 0
+
+    def test_get_layout_mode_order(self):
+        """Corners are placed before downlights."""
+        from guv_calcs import Lamp
+
+        placer = LampPlacer.for_room(x=6, y=6, z=3)
+        corner_lamp = Lamp(lamp_id="c1", filedata=None)
+        down_lamp = Lamp(lamp_id="d1", filedata=None)
+
+        results = placer.get_layout({
+            "downlight": [down_lamp],
+            "corner": [corner_lamp],
+        })
+        # Corner lamp should be at a corner position, downlight more central
+        c_result = results["c1"]
+        d_result = results["d1"]
+        # Corner should be near room boundary
+        assert c_result.x < 1.0 or c_result.x > 5.0 or c_result.y < 1.0 or c_result.y > 5.0
+
+    def test_get_layout_duplicate_lamp_raises(self):
+        """Lamp appearing in multiple modes raises ValueError."""
+        from guv_calcs import Lamp
+
+        lamp = Lamp(lamp_id="dup", filedata=None)
+        placer = LampPlacer.for_room(x=6, y=6, z=3)
+        with pytest.raises(ValueError, match="appears in multiple"):
+            placer.get_layout({
+                "corner": [lamp],
+                "downlight": [lamp],
+            })
+
+    def test_get_layout_invalid_mode_raises(self):
+        """Unknown mode raises ValueError."""
+        from guv_calcs import Lamp
+
+        lamp = Lamp(lamp_id="x", filedata=None)
+        placer = LampPlacer.for_room(x=6, y=6, z=3)
+        with pytest.raises(ValueError, match="Unknown placement mode"):
+            placer.get_layout({"ceiling": [lamp]})
+
+    def test_place_lamps_mutates(self):
+        """place_lamps() moves lamps to computed positions."""
+        from guv_calcs import Lamp
+
+        lamps = [Lamp(lamp_id=f"lamp_{i}", filedata=None) for i in range(3)]
+        placer = LampPlacer.for_room(x=6, y=4, z=3)
+        placer.place_lamps({
+            "corner": [lamps[0]],
+            "edge": [lamps[1]],
+            "downlight": [lamps[2]],
+        })
+        # All lamps should have been moved
+        for lamp in lamps:
+            assert lamp.z != 0  # z was set from ceiling offset
+
+    def test_place_lamps_spacing(self):
+        """Lamps placed by place_lamps respect spacing."""
+        from guv_calcs import Lamp
+
+        lamps = [Lamp(lamp_id=f"lamp_{i}", filedata=None) for i in range(4)]
+        placer = LampPlacer.for_room(x=6, y=6, z=3)
+        placer.place_lamps({"downlight": lamps})
+        # All lamps should be at different positions
+        positions = [(l.x, l.y) for l in lamps]
+        for i in range(len(positions)):
+            for j in range(i + 1, len(positions)):
+                dist = np.hypot(
+                    positions[i][0] - positions[j][0],
+                    positions[i][1] - positions[j][1],
+                )
+                assert dist > 0.5, f"Lamps {i} and {j} too close: {dist:.2f}"
+
+    def test_get_layout_records_positions(self):
+        """get_layout records positions so existing list grows."""
+        from guv_calcs import Lamp
+
+        placer = LampPlacer.for_room(x=6, y=6, z=3)
+        assert len(placer._existing) == 0
+
+        lamps = [Lamp(lamp_id=f"l{i}", filedata=None) for i in range(3)]
+        placer.get_layout({"downlight": lamps})
+        assert len(placer._existing) == 3
+
+
+class TestMassAiming:
+    """Tests for get_aim(), get_aims(), and aim_lamps()."""
+
+    def test_aim_down(self):
+        """'down' mode aims straight below lamp."""
+        from guv_calcs import Lamp
+
+        lamp = Lamp(lamp_id="t", filedata=None)
+        lamp.move(2.0, 3.0, 2.5)
+        placer = LampPlacer.for_room(x=6, y=6, z=3)
+        result = placer.get_aim(lamp, "down")
+        assert result.aimx == pytest.approx(2.0)
+        assert result.aimy == pytest.approx(3.0)
+        assert result.aimz == pytest.approx(0.0)
+
+    def test_aim_point(self):
+        """'point' mode aims at target coordinates."""
+        from guv_calcs import Lamp
+
+        lamp = Lamp(lamp_id="t", filedata=None)
+        lamp.move(1.0, 1.0, 2.5)
+        placer = LampPlacer.for_room(x=6, y=6, z=3)
+        result = placer.get_aim(lamp, "point", target=(3.0, 4.0, 0.5))
+        assert result.aimx == pytest.approx(3.0)
+        assert result.aimy == pytest.approx(4.0)
+        assert result.aimz == pytest.approx(0.5)
+
+    def test_aim_point_requires_target(self):
+        """'point' mode without target raises ValueError."""
+        from guv_calcs import Lamp
+
+        lamp = Lamp(lamp_id="t", filedata=None)
+        placer = LampPlacer.for_room(x=6, y=6, z=3)
+        with pytest.raises(ValueError, match="requires 'target'"):
+            placer.get_aim(lamp, "point")
+
+    def test_aim_direction(self):
+        """'direction' mode normalizes and offsets from position."""
+        from guv_calcs import Lamp
+
+        lamp = Lamp(lamp_id="t", filedata=None)
+        lamp.move(2.0, 2.0, 2.5)
+        placer = LampPlacer.for_room(x=6, y=6, z=3)
+        result = placer.get_aim(lamp, "direction", direction=(1.0, 0.0, 0.0))
+        assert result.aimx == pytest.approx(3.0)
+        assert result.aimy == pytest.approx(2.0)
+        assert result.aimz == pytest.approx(2.5)
+
+    def test_aim_direction_requires_direction(self):
+        """'direction' mode without direction raises ValueError."""
+        from guv_calcs import Lamp
+
+        lamp = Lamp(lamp_id="t", filedata=None)
+        placer = LampPlacer.for_room(x=6, y=6, z=3)
+        with pytest.raises(ValueError, match="requires 'direction'"):
+            placer.get_aim(lamp, "direction")
+
+    def test_aim_centroid_convex(self):
+        """'centroid' mode on convex room returns polygon centroid."""
+        from guv_calcs import Lamp
+
+        lamp = Lamp(lamp_id="t", filedata=None)
+        lamp.move(1.0, 1.0, 2.5)
+        rect = Polygon2D.rectangle(6, 4)
+        placer = LampPlacer(rect, z=3)
+        result = placer.get_aim(lamp, "centroid")
+        cx, cy = rect.centroid
+        assert result.aimx == pytest.approx(cx)
+        assert result.aimy == pytest.approx(cy)
+        assert result.aimz == pytest.approx(0.0)
+
+    def test_aim_centroid_concave(self):
+        """'centroid' mode on L-shape returns visible centroid inside polygon."""
+        from guv_calcs import Lamp
+
+        l_shape = Polygon2D(vertices=(
+            (0.0, 0.0), (4.0, 0.0), (4.0, 2.0),
+            (2.0, 2.0), (2.0, 4.0), (0.0, 4.0)
+        ))
+        lamp = Lamp(lamp_id="t", filedata=None)
+        lamp.move(1.0, 3.0, 2.5)
+        placer = LampPlacer(l_shape, z=3)
+        result = placer.get_aim(lamp, "centroid")
+        # Result should be inside the L-shape
+        assert l_shape.contains_point(result.aimx, result.aimy)
+
+    def test_aim_furthest_edge(self):
+        """'furthest_edge' mode picks edge center farthest from lamp."""
+        from guv_calcs import Lamp
+
+        lamp = Lamp(lamp_id="t", filedata=None)
+        lamp.move(0.5, 0.5, 2.5)
+        rect = Polygon2D.rectangle(6, 4)
+        placer = LampPlacer(rect, z=3)
+        result = placer.get_aim(lamp, "furthest_edge")
+        # Farthest edge from (0.5, 0.5) should be near top-right area
+        dist = np.hypot(result.aimx - 0.5, result.aimy - 0.5)
+        assert dist > 2.0
+
+    def test_aim_furthest_corner(self):
+        """'furthest_corner' mode picks corner farthest from lamp."""
+        from guv_calcs import Lamp
+
+        lamp = Lamp(lamp_id="t", filedata=None)
+        lamp.move(0.5, 0.5, 2.5)
+        rect = Polygon2D.rectangle(6, 4)
+        placer = LampPlacer(rect, z=3)
+        result = placer.get_aim(lamp, "furthest_corner")
+        # Should be near (6, 4)
+        assert result.aimx == pytest.approx(6.0)
+        assert result.aimy == pytest.approx(4.0)
+
+    def test_aim_invalid_mode(self):
+        """Unknown aim mode raises ValueError."""
+        from guv_calcs import Lamp
+
+        lamp = Lamp(lamp_id="t", filedata=None)
+        placer = LampPlacer.for_room(x=6, y=6, z=3)
+        with pytest.raises(ValueError, match="Unknown aim mode"):
+            placer.get_aim(lamp, "towards_sun")
+
+    def test_get_aims_batch(self):
+        """get_aims returns dict keyed by lamp_id."""
+        from guv_calcs import Lamp
+
+        lamps = [Lamp(lamp_id=f"l{i}", filedata=None) for i in range(3)]
+        for i, lamp in enumerate(lamps):
+            lamp.move(float(i + 1), float(i + 1), 2.5)
+        placer = LampPlacer.for_room(x=6, y=6, z=3)
+        results = placer.get_aims(lamps, "down")
+        assert len(results) == 3
+        for i in range(3):
+            assert f"l{i}" in results
+
+    def test_aim_lamps_mutates(self):
+        """aim_lamps() changes lamp aim points."""
+        from guv_calcs import Lamp
+
+        lamp = Lamp(lamp_id="t", filedata=None)
+        lamp.move(2.0, 2.0, 2.5)
+        lamp.aim(0.0, 0.0, 0.0)  # Set initial aim
+        placer = LampPlacer.for_room(x=6, y=6, z=3)
+        placer.aim_lamps([lamp], "down")
+        assert lamp.aimx == pytest.approx(2.0)
+        assert lamp.aimy == pytest.approx(2.0)
+        assert lamp.aimz == pytest.approx(0.0)
+
+
+class TestVisibleCentroid:
+    """Tests for _visible_centroid helper."""
+
+    def test_convex_returns_centroid(self):
+        """Convex polygon fast-paths to centroid."""
+        rect = Polygon2D.rectangle(6, 4)
+        cx, cy = _visible_centroid((1.0, 1.0), rect)
+        expected_cx, expected_cy = rect.centroid
+        assert cx == pytest.approx(expected_cx)
+        assert cy == pytest.approx(expected_cy)
+
+    def test_concave_returns_inside(self):
+        """L-shape visible centroid is inside polygon."""
+        l_shape = Polygon2D(vertices=(
+            (0.0, 0.0), (4.0, 0.0), (4.0, 2.0),
+            (2.0, 2.0), (2.0, 4.0), (0.0, 4.0)
+        ))
+        cx, cy = _visible_centroid((1.0, 3.0), l_shape)
+        assert l_shape.contains_point(cx, cy)
+
+
+class TestSetHeight:
+    """Tests for set_height() standalone function."""
+
+    def test_set_absolute_z(self):
+        """set_height with z moves all lamps."""
+        from guv_calcs import Lamp
+
+        lamps = [Lamp(lamp_id=f"l{i}", filedata=None) for i in range(3)]
+        for lamp in lamps:
+            lamp.move(1.0, 1.0, 1.0)
+        set_height(lamps, z=2.5)
+        for lamp in lamps:
+            assert lamp.z == pytest.approx(2.5)
+
+    def test_set_ceiling_offset(self):
+        """set_height with ceiling_offset computes z correctly."""
+        from guv_calcs import Lamp
+
+        lamps = [Lamp(lamp_id="l0", filedata=None)]
+        lamps[0].move(1.0, 1.0, 1.0)
+        set_height(lamps, ceiling_offset=0.1, room_z=3.0)
+        assert lamps[0].z == pytest.approx(2.9)
+
+    def test_both_z_and_offset_raises(self):
+        """Providing both z and ceiling_offset raises ValueError."""
+        from guv_calcs import Lamp
+
+        with pytest.raises(ValueError, match="not both"):
+            set_height([Lamp(lamp_id="x", filedata=None)], z=2.0, ceiling_offset=0.1, room_z=3.0)
+
+    def test_neither_z_nor_offset_raises(self):
+        """Providing neither z nor ceiling_offset raises ValueError."""
+        from guv_calcs import Lamp
+
+        with pytest.raises(ValueError, match="Must provide"):
+            set_height([Lamp(lamp_id="x", filedata=None)])
+
+    def test_ceiling_offset_without_room_z_raises(self):
+        """ceiling_offset without room_z raises ValueError."""
+        from guv_calcs import Lamp
+
+        with pytest.raises(ValueError, match="requires 'room_z'"):
+            set_height([Lamp(lamp_id="x", filedata=None)], ceiling_offset=0.1)
+
+    def test_mode_order_constant(self):
+        """_MODE_ORDER has expected values."""
+        assert _MODE_ORDER == ("corner", "edge", "horizontal", "downlight")

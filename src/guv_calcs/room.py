@@ -603,6 +603,61 @@ class Room:
             self.add_lamp(lamp, on_collision=on_collision)
         return self
 
+    def place_lamps(self, lamps_by_mode, *, on_collision=None, tilt=None, max_tilt=None):
+        """Position multiple lamps using mixed placement modes.
+
+        Args:
+            lamps_by_mode: {mode: [lamps]} dict, e.g.
+                {"corner": [lamp1, lamp2], "downlight": [lamp3, lamp4]}
+            on_collision: Registry collision strategy for add_lamp
+            tilt: Force exact tilt angle in degrees
+            max_tilt: Maximum allowed tilt angle in degrees
+        """
+        existing = [(l.position[0], l.position[1]) for l in self.lamps.values()]
+        placer = LampPlacer.for_dims(self.dim, existing=existing)
+
+        resolved = {}
+        for mode, lamps in lamps_by_mode.items():
+            resolved[mode] = list(Lamp.resolve(*lamps))
+            for lamp in resolved[mode]:
+                if lamp.surface.units != self.dim.units:
+                    lamp.set_units(self.dim.units)
+
+        placer.place_lamps(resolved, tilt=tilt, max_tilt=max_tilt)
+
+        for mode_lamps in resolved.values():
+            for lamp in mode_lamps:
+                self.add_lamp(lamp, on_collision=on_collision)
+        return self
+
+    def aim_lamps(self, aim_mode, *, target=None, direction=None, lamp_ids=None):
+        """Aim lamps using the specified aim mode.
+
+        Args:
+            aim_mode: One of "down", "point", "direction", "centroid",
+                "furthest_edge", "furthest_corner"
+            target: (x, y, z) for "point" mode
+            direction: (dx, dy, dz) for "direction" mode
+            lamp_ids: List of lamp IDs to aim. None = all lamps.
+        """
+        lamps = [self.lamps[lid] for lid in lamp_ids] if lamp_ids else list(self.lamps.values())
+        placer = LampPlacer.for_dims(self.dim)
+        placer.aim_lamps(lamps, aim_mode, target=target, direction=direction)
+        return self
+
+    def set_lamp_height(self, *, z=None, ceiling_offset=None, lamp_ids=None):
+        """Set the height of lamps.
+
+        Args:
+            z: Absolute height.
+            ceiling_offset: Distance below ceiling.
+            lamp_ids: List of lamp IDs. None = all lamps.
+        """
+        from .lamp.lamp_placement import set_height
+        lamps = [self.lamps[lid] for lid in lamp_ids] if lamp_ids else list(self.lamps.values())
+        set_height(lamps, z=z, ceiling_offset=ceiling_offset, room_z=self.dim.z)
+        return self
+
     def remove_lamp(self, lamp_id):
         self.lamps.remove(lamp_id)
         return self

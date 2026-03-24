@@ -8,6 +8,7 @@ from .lamp_surface_plotter import LampSurfacePlotter
 from .lamp_placement import (
     LampPlacer,
     PlacementResult,
+    AimResult,
     new_lamp_position,
     get_lamp_positions,
     new_lamp_position_downlight,
@@ -19,6 +20,7 @@ from .lamp_placement import (
     calculate_tilt,
     clamp_aim_to_max_tilt,
     apply_tilt,
+    set_height,
 )
 from .lamp_configs import (
     LAMP_CONFIGS,
@@ -47,6 +49,7 @@ __all__ = [
     # Placement
     "LampPlacer",
     "PlacementResult",
+    "AimResult",
     "new_lamp_position",
     "get_lamp_positions",
     "new_lamp_position_downlight",
@@ -58,6 +61,7 @@ __all__ = [
     "calculate_tilt",
     "clamp_aim_to_max_tilt",
     "apply_tilt",
+    "set_height",
     # Config
     "LAMP_CONFIGS",
     "resolve_keyword",
