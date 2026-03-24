@@ -515,30 +515,35 @@ class SurfaceGrid(_GridBase):
 
     def update_dimensions(self, mins=None, maxs=None, polygon=None,
                           height=None, preserve_spacing=True):
-        """Update grid dimensions."""
+        """Update grid dimensions.
+
+        When *preserve_spacing* is True the current spacing is kept if it
+        still fits the new dimensions; otherwise the method silently falls
+        back to preserving the current number of grid points so the call
+        never raises due to spacing exceeding a span.
+        """
         if not self.is_rectangular:
             # Polygon surface: update polygon and/or height
             new_poly = polygon if polygon is not None else self.polygon
             new_height = height if height is not None else self.height
-            # Rebuild via from_polygon to handle origin/polygon shifting
+            common = dict(
+                polygon=new_poly,
+                height=new_height if new_height is not None else 0.0,
+                direction=self.direction if self.direction is not None else 1,
+                offset=self.offset,
+            )
             if preserve_spacing:
+                old_spacing = self.spacing
+                x_min, y_min, x_max, y_max = new_poly.bounding_box
+                new_spans = (x_max - x_min, y_max - y_min)
+                if any(s > 0 and sp > s for s, sp in zip(new_spans, old_spacing)):
+                    return SurfaceGrid.from_polygon(
+                        **common, num_points_init=self.num_points, spacing_init=None)
                 return SurfaceGrid.from_polygon(
-                    polygon=new_poly,
-                    height=new_height if new_height is not None else 0.0,
-                    direction=self.direction if self.direction is not None else 1,
-                    spacing_init=self.spacing,
-                    num_points_init=None,
-                    offset=self.offset,
-                )
+                    **common, spacing_init=old_spacing, num_points_init=None)
             else:
                 return SurfaceGrid.from_polygon(
-                    polygon=new_poly,
-                    height=new_height if new_height is not None else 0.0,
-                    direction=self.direction if self.direction is not None else 1,
-                    num_points_init=self.num_points_init,
-                    spacing_init=None,
-                    offset=self.offset,
-                )
+                    **common, num_points_init=self.num_points, spacing_init=None)
 
         # Rectangular: use mins/maxs
         if mins is None or maxs is None:
@@ -550,19 +555,19 @@ class SurfaceGrid(_GridBase):
         new_origin = new_origin + np.dot(np.asarray(self.origin), normal) * normal
         new_polygon = Polygon2D.rectangle(span_u, span_v)
         if preserve_spacing:
+            old_spacing = self.spacing
+            new_spans = (span_u, span_v)
+            if any(s > 0 and sp > s for s, sp in zip(new_spans, old_spacing)):
+                return self.update(
+                    polygon=new_polygon, origin=new_origin,
+                    num_points_init=self.num_points, spacing_init=None)
             return self.update(
-                polygon=new_polygon,
-                origin=new_origin,
-                spacing_init=self.spacing,
-                num_points_init=None,
-            )
+                polygon=new_polygon, origin=new_origin,
+                spacing_init=old_spacing, num_points_init=None)
         else:
             return self.update(
-                polygon=new_polygon,
-                origin=new_origin,
-                num_points_init=self.num_points,
-                spacing_init=None,
-            )
+                polygon=new_polygon, origin=new_origin,
+                num_points_init=self.num_points, spacing_init=None)
 
     @classmethod
     def from_dict(cls, data):
@@ -754,22 +759,40 @@ class VolumeGrid(_GridBase):
     # ---- mutation helpers ----
 
     def update_dimensions(self, mins=None, maxs=None, preserve_spacing=True):
+        """Update volume grid dimensions.
+
+        When *preserve_spacing* is True the current spacing is kept if it
+        still fits the new dimensions; otherwise falls back to preserving
+        the current number of grid points.
+        """
         if not self.is_rectangular:
             new_z = maxs[2] if maxs is not None else self.depth
             if preserve_spacing:
-                return self.update(depth=new_z, spacing_init=self.spacing,
-                                   num_points_init=None)
+                old_spacing = self.spacing
+                x_min, y_min, x_max, y_max = self.polygon.bounding_box
+                new_spans = (x_max - x_min, y_max - y_min, new_z)
+                if any(s > 0 and sp > s for s, sp in zip(new_spans, old_spacing)):
+                    return self.update(depth=new_z,
+                                       num_points_init=self.num_points, spacing_init=None)
+                return self.update(depth=new_z,
+                                   spacing_init=old_spacing, num_points_init=None)
             else:
-                return self.update(depth=new_z, num_points_init=self.num_points_init,
-                                   spacing_init=None)
+                return self.update(depth=new_z,
+                                   num_points_init=self.num_points, spacing_init=None)
 
         origin = np.asarray(mins, float)
         spans = np.asarray(maxs, float) - origin
         new_polygon = Polygon2D.rectangle(float(spans[0]), float(spans[1]))
         if preserve_spacing:
+            old_spacing = self.spacing
+            new_spans = (float(spans[0]), float(spans[1]), float(spans[2]))
+            if any(s > 0 and sp > s for s, sp in zip(new_spans, old_spacing)):
+                return self.update(polygon=new_polygon, origin=origin,
+                                   depth=float(spans[2]),
+                                   num_points_init=self.num_points, spacing_init=None)
             return self.update(polygon=new_polygon, origin=origin,
                                depth=float(spans[2]),
-                               spacing_init=self.spacing, num_points_init=None)
+                               spacing_init=old_spacing, num_points_init=None)
         else:
             return self.update(polygon=new_polygon, origin=origin,
                                depth=float(spans[2]),
