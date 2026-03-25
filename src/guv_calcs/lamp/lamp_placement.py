@@ -1825,9 +1825,18 @@ def new_lamp_position_downlight(
         [_distance_to_polygon_boundary(candidates[i], polygon) for i in range(len(candidates))]
     )
 
+    # Among tied candidates, prefer the one closest to the centroid so
+    # placement is visually centered rather than biased by ravel order.
+    centroid = np.array(polygon.centroid)
+    dist_to_centroid = np.sqrt(np.sum((candidates - centroid) ** 2, axis=1))
+    # Small tiebreaker: slightly favour centroid-proximity without
+    # overriding the primary metric (boundary dist or min-dist).
+    eps = np.max(boundary_dists) * 1e-6
+    tiebreak = eps * (1.0 - dist_to_centroid / (np.max(dist_to_centroid) + 1e-12))
+
     if not existing:
         # No existing lamps — place at point farthest from boundary (center-ish)
-        return tuple(candidates[int(np.argmax(boundary_dists))])
+        return tuple(candidates[int(np.argmax(boundary_dists + tiebreak))])
 
     # Vectorized distance to all existing lamps
     existing_arr = np.array(existing)  # (K, 2)
@@ -1837,7 +1846,7 @@ def new_lamp_position_downlight(
 
     # Combine with boundary distances — maximize the minimum
     min_dist = np.minimum(min_dist_to_existing, boundary_dists)
-    return tuple(candidates[int(np.argmax(min_dist))])
+    return tuple(candidates[int(np.argmax(min_dist + tiebreak))])
 
 
 def _find_reflex_vertices(polygon: "Polygon2D") -> list[tuple[float, float]]:
