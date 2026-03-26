@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "guv-calcs"
+dynamic = ["version"]
+description = "A library for carrying out fluence and irradiance calculations for germicidal UV (GUV) applications."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+    { name = "J. Vivian Belenky", email = "j.vivian.belenky@outlook.com" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: MIT License",
+]
+dependencies = [
+    "matplotlib>=3.8.4",
+    "numpy>=1.26.4",
+    "openpyxl>=3.1.0",
+    "pandas>=2.2.2",
+    "photompy==0.3.0",
+    "plotly>=6.1.1",
+    "scipy>=1.13.1",
+    "kaleido>=1.0.0",
+    "seaborn>=0.13.2",
+]
+
+[project.urls]
+Homepage = "https://github.com/jvbelenky/guv-calcs"
+
+[tool.hatch.version]
+path = "src/guv_calcs/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/guv_calcs"]
+
+[tool.uv.sources]
+photompy = { path = "../photompy", editable = true }
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "black",
+    "flake8",
+]

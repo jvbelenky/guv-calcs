@@ -16,7 +16,7 @@ Or install from source:
 ```bash
 git clone https://github.com/jvbelenky/guv-calcs.git
 cd guv-calcs
-pip install .
+uv sync
 ```
 
 ## Quick Start
