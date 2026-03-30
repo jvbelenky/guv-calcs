@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 - performance.py file with both calc time and memory requirements estimations
 - nudge_into_bounds() methods on registry objects
 - Mass lamp operations: batch placement, aiming, and height. Lamp placement now uses lazy cacheing to speed up operations.  Room-level wrappers: Room.place_lamps(), Room.aim_lamps(), Room.set_lamp_height(). Lamps can be aimed with various programmatic methods: "down", "point", "direction", "centroid", "furthest_edge", "furthest_corner". 
+- xlrd dependency: now supports .xls files
 
 ### Fixed
 
