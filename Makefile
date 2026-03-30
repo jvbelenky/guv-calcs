@@ -5,7 +5,7 @@ SHELL := /bin/bash
 all: sync test
 
 sync:
-	uv sync --group local
+	uv sync --all-groups
 
 test:
 	uv run pytest tests/ -v
@@ -20,9 +20,10 @@ test-fast:
 	uv run pytest tests/ -v -x --ignore=tests/test_e2e.py -m "not slow"
 
 local:
-	uv sync --group local
+	uv sync --all-groups
 
 interactive:
+	uv sync --all-groups
 	uv run jupyter notebook notebooks/guv-calcs_test.ipynb --ip=0.0.0.0 --no-browser
 
 format:

@@ -51,6 +51,7 @@ All notable changes to this project will be documented in this file.
 - Optimized downlight placement, rename new_lamp_position_polygon->new_lamp_position_downlight to match corner and edge functions
 - Simplify LampPlace API--separate computation and mutation paths
 - Significant simplification of calc zone spacing/num_points flow--whichever value was last set is what is kept. If spacing is set, that's the spacing forever--if span is then set to smaller than the spacing, the spacing is temporarily clamped, but reverts to its original value when the span is restored.
+- Package management fully migrated from pip to uv
 
 ## [0.6.5] - 2026-03-06
 
