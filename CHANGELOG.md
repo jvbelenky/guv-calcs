@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-03-30
+
 ### Added
 
 - Method on lamp to clear spectrum but preserve wavelength/guv_type
