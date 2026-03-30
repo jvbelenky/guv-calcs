@@ -381,7 +381,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.26.4" },
     { name = "openpyxl", specifier = ">=3.1.0" },
     { name = "pandas", specifier = ">=2.2.2" },
-    { name = "photompy", specifier = "==0.3.0" },
+    { name = "photompy", editable = "../photompy" },
     { name = "plotly", specifier = ">=6.1.1" },
     { name = "scipy", specifier = ">=1.13.1" },
     { name = "seaborn", specifier = ">=0.13.2" },
@@ -865,15 +865,23 @@ wheels = [
 
 [[package]]
 name = "photompy"
-version = "0.3.0"
-source = { registry = "https://pypi.org/simple" }
+source = { editable = "../photompy" }
 dependencies = [
     { name = "matplotlib" },
     { name = "numpy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3f/1f/d2058a9fce493b689ba47be999e10269ec528ceac2eebae2288b309a59d7/photompy-0.3.0.tar.gz", hash = "sha256:3273782d40ab731f53c3f484ef4de2dde108fc7f1099637b7965fd118ddcb90c", size = 69508, upload-time = "2026-03-12T02:11:20.812Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/7d/f5/ce132c4a61be40c15120860e5ac3c0b2db222c201f58d4fb1c3cb7525574/photompy-0.3.0-py3-none-any.whl", hash = "sha256:49e3871892e10166cda190239969100fd12fbd77272920c534cf705c57f3ce17", size = 51631, upload-time = "2026-03-12T02:11:19.527Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "matplotlib" },
+    { name = "numpy" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "black" },
+    { name = "flake8" },
+    { name = "pytest" },
 ]
 
 [[package]]
