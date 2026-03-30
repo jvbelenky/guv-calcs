@@ -6,20 +6,28 @@ from dataclasses import dataclass
 class Axis1D:
     """1D axis with evenly spaced points over a span.
 
-    Spacing is authoritative: span and spacing fully determine the grid.
-    num_points_init is a convenience setter — when provided without spacing,
-    the spacing is derived from span / num_points.  When both are provided,
-    spacing wins and num_points is derived from span / spacing.
+    Resolution is specified by either *spacing_init* (desired spacing) or
+    *num_points_init* (desired point count).  These are mutually exclusive
+    and represent the user's intent — they are stored verbatim and never
+    modified by the class.
+
+    The *spacing* property returns the **effective** spacing: the actual
+    distance between adjacent grid points.  When spacing_init exceeds the
+    span, it is clamped so the grid always contains at least one point.
+    When the span later grows back, the original spacing_init takes effect
+    automatically.
     """
 
     span: float = 1.0
-    spacing_init: float | None = None  # spacing - will override num_points
-    num_points_init: int | None = None  # alternatively, specify point count
+    spacing_init: float | None = None  # desired spacing (user intent)
+    num_points_init: int | None = None  # desired point count (user intent)
     offset: bool = True  # centre the grid inside [lo, hi]
 
     def __post_init__(self):
-        self._check_spacing(self.spacing_init)
-        self._check_num_points(self.num_points_init)
+        if self.spacing_init is not None and self.spacing_init < 0:
+            raise ValueError("spacing_init must be non-negative")
+        if self.num_points_init is not None and self.num_points_init < 1:
+            raise ValueError("num_points_init must be a positive integer")
 
     @property
     def default_spacing(self):
@@ -37,14 +45,15 @@ class Axis1D:
 
     @property
     def spacing(self):
-        """Spacing between grid points.
+        """Effective spacing between grid points.
 
         Priority: spacing_init > derived from num_points_init > default.
+        Clamped to span so the grid always contains at least one point.
         """
         if self.span == 0:
             return 0.0
         if self.spacing_init is not None and self.spacing_init != 0:
-            return self.spacing_init
+            return min(self.spacing_init, self.span)
         # derive from num_points (or default num_points)
         num_points = self.num_points_init or self.default_num_points
         return self._set_spacing(num_points, self.default_spacing)
@@ -83,12 +92,3 @@ class Axis1D:
                 val = testval  # if no rounded value works use the original value
             return val
 
-    def _check_spacing(self, spacing):
-        if spacing is not None and self.span > 0:
-            if spacing > self.span:
-                raise ValueError("Spacing value cannot be larger than dimension")
-
-    def _check_num_points(self, num_points):
-        if num_points is not None:
-            if num_points < 1:
-                raise ValueError("num_points_init must be positive integer")

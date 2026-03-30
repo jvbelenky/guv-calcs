@@ -13,7 +13,7 @@ from .reflectance import ReflectanceManager, Surface, init_room_surfaces
 from .io import parse_guv_file, save_room_data, export_room_zip, generate_report, get_version
 from pathlib import Path
 from .safety import PhotStandard, check_lamps, SafetyCheckResult
-from .standard_zones import create_standard_zones, get_zone_config, WHOLE_ROOM_FLUENCE
+from .standard_zones import create_standard_zones, get_zone_config, WHOLE_ROOM_FLUENCE, STANDARD_ZONE_IDS
 from .units import LengthUnits, convert_length
 from .efficacy import InactivationData
 from .scene_registry import LampRegistry, ZoneRegistry, SurfaceRegistry, ObjectRegistry
@@ -416,7 +416,7 @@ class Room:
         prev = self.standard
         self.standard = standard
         if get_zone_config(prev) != get_zone_config(self.standard):
-            self._update_standard_zones(standard=self.standard)
+            self._rebuild_standard_zones(standard=self.standard)
         return self
 
     # --------------------- Reflectance ----------------------
@@ -498,7 +498,7 @@ class Room:
     def set_dimensions(self, x=None, y=None, z=None):
         """Set room dimensions."""
         self._update_dimensions(x=x, y=y, z=z)
-        self._update_standard_zones(standard=self.standard)
+        self._resize_standard_zones()
         return self
 
     @property
@@ -887,8 +887,32 @@ class Room:
             self.dim = self.dim.with_(z=z)
         self._update_standard_surfaces()
 
-    def _update_standard_zones(self, standard: "PhotStandard"):
-        """Update the standard safety calculation zones."""
+    def _resize_standard_zones(self):
+        """Resize standard zones to match current room dimensions.
+
+        Updates boundaries while preserving the zone's resolution mode
+        (spacing_init or num_points_init).  Use _rebuild_standard_zones
+        when the safety standard itself changes.
+        """
+        x_min, y_min, x_max, y_max = self.dim.polygon.bounding_box
+        for zone_id in STANDARD_ZONE_IDS:
+            if zone_id not in self.calc_zones:
+                continue
+            zone = self.calc_zones[zone_id]
+            if isinstance(zone, CalcVol):
+                zone.set_dimensions(
+                    x1=x_min, x2=x_max,
+                    y1=y_min, y2=y_max,
+                    z1=0, z2=self.dim.z,
+                )
+            elif isinstance(zone, CalcPlane):
+                zone.set_dimensions(
+                    x1=x_min, x2=x_max,
+                    y1=y_min, y2=y_max,
+                )
+
+    def _rebuild_standard_zones(self, standard: "PhotStandard"):
+        """Rebuild standard zones from scratch (e.g. when safety standard changes)."""
         for zone in create_standard_zones(standard, self.dim):
             if zone.zone_id in self.calc_zones:
                 self.calc_zones[zone.zone_id] = zone

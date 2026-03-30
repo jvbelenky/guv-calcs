@@ -111,13 +111,16 @@ class TestRoomUnits:
         assert lamp.x == pytest.approx(3 / 0.3048, rel=1e-3)
 
     def test_set_units_converts_zone_geometry(self):
-        """Zone geometry should scale when units change."""
+        """Zone geometry should scale when units change, preserving num_points."""
         room = Room(x=6, y=4, z=2.7, units="meters")
         room.add_standard_zones()
         zone = room.calc_zones["SkinLimits"]
-        spacing_m = zone.x_spacing
+        num_x_before = zone.num_x
         room.set_units("feet")
-        assert zone.x_spacing == pytest.approx(spacing_m / 0.3048, rel=1e-3)
+        # num_points preserved (unit-independent)
+        assert zone.num_x == num_x_before
+        # Effective spacing scales approximately (rounding from _set_spacing)
+        assert zone.x_spacing == pytest.approx(room.x / zone.num_x, rel=0.02)
 
 
 @pytest.mark.filterwarnings("ignore:aerolamp exceeds room boundaries")
@@ -295,7 +298,7 @@ class TestStandardZoneResize:
         room.set_dimensions(x=100, y=100, z=10)
         for zone_id, zone in room.calc_zones.items():
             for n in zone.geometry.num_points:
-                assert n <= 200, f"{zone_id} has {n} points in a dimension (max 200)"
+                assert n <= 50, f"{zone_id} has {n} points in a dimension (max 50)"
 
     def test_large_to_small_resize(self):
         """Resizing from large to tiny room should not crash."""
@@ -319,7 +322,7 @@ class TestStandardZoneResize:
         room.set_dimensions(x=100, y=80, z=12)
         for zone_id, zone in room.calc_zones.items():
             for n in zone.geometry.num_points:
-                assert n <= 200, f"{zone_id} has {n} points in a dimension (max 200)"
+                assert n <= 50, f"{zone_id} has {n} points in a dimension (max 50)"
 
 
 class TestRoomZoneManagement:

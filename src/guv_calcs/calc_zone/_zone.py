@@ -406,16 +406,7 @@ class CalcZone(ABC):
                     update_state=self.update_state,
                 )
 
-    def set_dimensions(
-        self,
-        x1=None,
-        x2=None,
-        y1=None,
-        y2=None,
-        z1=None,
-        z2=None,
-        preserve_spacing=True,
-    ):
+    def set_dimensions(self, x1=None, x2=None, y1=None, y2=None, z1=None, z2=None):
         if self.geometry is not None:
             mins = self._strip_tpl(
                 self._coalesce(x1, self.geometry.x1),
@@ -427,9 +418,7 @@ class CalcZone(ABC):
                 self._coalesce(y2, self.geometry.y2),
                 self._coalesce(z2, self.geometry.z2),
             )
-            self.geometry = self.geometry.update_dimensions(
-                mins=mins, maxs=maxs, preserve_spacing=preserve_spacing
-            )
+            self.geometry = self.geometry.update_dimensions(mins=mins, maxs=maxs)
         return self
 
     def set_spacing(self, x_spacing=None, y_spacing=None, z_spacing=None):

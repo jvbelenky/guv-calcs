@@ -400,15 +400,26 @@ class TestSerializationMigration:
         g = SurfaceGrid.from_dict(old_dict)
         assert np.isclose(g.x_spacing, 0.5)
 
-    def test_new_spacing_key_surface(self):
-        """New dicts with 'spacing' key should load correctly."""
+    def test_spacing_init_round_trip_surface(self):
+        """spacing_init survives to_dict/from_dict round-trip."""
         g = SurfaceGrid.from_legacy(mins=(0, 0), maxs=(6, 4), height=0,
                                      spacing_init=(0.5, 0.5))
         d = g.to_dict()
-        assert "spacing" in d
+        assert "spacing_init" in d
+        g2 = SurfaceGrid.from_dict(d)
+        assert g == g2
+        assert g2.spacing_init == (0.5, 0.5)
+
+    def test_num_points_init_round_trip_surface(self):
+        """num_points_init survives to_dict/from_dict round-trip."""
+        g = SurfaceGrid.from_legacy(mins=(0, 0), maxs=(6, 4), height=0,
+                                     num_points_init=(10, 10))
+        d = g.to_dict()
+        assert "num_points_init" in d
         assert "spacing_init" not in d
         g2 = SurfaceGrid.from_dict(d)
         assert g == g2
+        assert g2.num_points_init == (10, 10)
 
     def test_old_spacing_init_key_volume(self):
         """Old dicts with 'spacing_init' key should still load."""
@@ -424,11 +435,23 @@ class TestSerializationMigration:
         g = VolumeGrid.from_dict(old_dict)
         assert np.isclose(g.z_spacing, 0.5)
 
-    def test_new_spacing_key_volume(self):
-        """New dicts with 'spacing' key should load correctly."""
+    def test_spacing_init_round_trip_volume(self):
+        """spacing_init survives to_dict/from_dict round-trip."""
         g = VolumeGrid.from_legacy(mins=(0, 0, 0), maxs=(6, 4, 2.7),
                                     spacing_init=(0.5, 0.5, 0.5))
         d = g.to_dict()
-        assert "spacing" in d
+        assert "spacing_init" in d
         g2 = VolumeGrid.from_dict(d)
         assert g == g2
+        assert g2.spacing_init == (0.5, 0.5, 0.5)
+
+    def test_num_points_init_round_trip_volume(self):
+        """num_points_init survives to_dict/from_dict round-trip."""
+        g = VolumeGrid.from_legacy(mins=(0, 0, 0), maxs=(6, 4, 2.7),
+                                    num_points_init=(10, 10, 10))
+        d = g.to_dict()
+        assert "num_points_init" in d
+        assert "spacing_init" not in d
+        g2 = VolumeGrid.from_dict(d)
+        assert g == g2
+        assert g2.num_points_init == (10, 10, 10)

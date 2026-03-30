@@ -4,7 +4,7 @@ import pytest
 from guv_calcs import CalcPlane, CalcVol, PhotStandard, Polygon2D
 from guv_calcs.geometry import RoomDimensions
 from guv_calcs.units import LengthUnits
-from guv_calcs.standard_zones import create_standard_zones, _standard_zone_spacing, MAX_POINTS_PER_DIM
+from guv_calcs.standard_zones import create_standard_zones, DEFAULT_PLANE_NUM_POINTS
 
 
 class TestCreateStandardZones:
@@ -77,10 +77,20 @@ class TestCreateStandardZones:
         zone_map = {z.zone_id: z for z in zones}
         assert tuple(zone_map["WholeRoomFluence"].num_points) == (25, 25, 25)
 
-    def test_spacing_capped_at_max_points(self):
-        """Very large room -> spacing increases so points per dim <= 200."""
+    def test_plane_uses_num_points(self, dims_m):
+        """Standard planes should use num_points_init, not spacing_init."""
+        zones = create_standard_zones(PhotStandard.ACGIH, dims_m)
+        zone_map = {z.zone_id: z for z in zones}
+        for zid in ("EyeLimits", "SkinLimits"):
+            z = zone_map[zid]
+            assert z.geometry.num_points_init is not None
+            assert z.geometry.spacing_init is None
+            assert z.num_x == DEFAULT_PLANE_NUM_POINTS
+
+    def test_large_room_grid_stays_bounded(self):
+        """Very large room should not produce huge grids for standard zones."""
         dims = RoomDimensions(polygon=Polygon2D.rectangle(1000, 1000), z=100)
         zones = create_standard_zones(PhotStandard.ACGIH, dims)
         for zone in zones:
             for n in zone.num_points:
-                assert n <= MAX_POINTS_PER_DIM
+                assert n <= DEFAULT_PLANE_NUM_POINTS

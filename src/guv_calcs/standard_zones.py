@@ -7,7 +7,9 @@ WHOLE_ROOM_FLUENCE = "WholeRoomFluence"
 EYE_LIMITS = "EyeLimits"
 SKIN_LIMITS = "SkinLimits"
 STANDARD_ZONE_IDS = [WHOLE_ROOM_FLUENCE, EYE_LIMITS, SKIN_LIMITS]
-MAX_POINTS_PER_DIM = 200
+
+# Default grid density for standard plane zones (per axis).
+DEFAULT_PLANE_NUM_POINTS = 50
 
 
 @dataclass(frozen=True)
@@ -41,17 +43,6 @@ def get_zone_config(standard):
     return _ZONE_CONFIGS.get(standard.value, _DEFAULT_CONFIG)
 
 
-def _standard_zone_spacing(span, base_spacing):
-    """Compute zone spacing for a given span, capping at MAX_POINTS_PER_DIM."""
-    if span <= 0:
-        return base_spacing
-    if span < base_spacing:
-        return span / 10
-    if span / base_spacing + 1 <= MAX_POINTS_PER_DIM:
-        return base_spacing
-    return span / (MAX_POINTS_PER_DIM - 1)
-
-
 def create_standard_zones(standard, dims):
     """Create the standard calculation zones for a room."""
     cfg = get_zone_config(standard)
@@ -59,12 +50,8 @@ def create_standard_zones(standard, dims):
         height = cfg.height_ft
     else:
         height = convert_length("meters", dims.units, cfg.height_m)
-    base_spacing = convert_length("meters", dims.units, 0.1)
-    x_min, y_min, x_max, y_max = dims.polygon.bounding_box
-    spacing = (
-        _standard_zone_spacing(x_max - x_min, base_spacing),
-        _standard_zone_spacing(y_max - y_min, base_spacing),
-    )
+
+    n = DEFAULT_PLANE_NUM_POINTS
 
     eye_kwargs = {}
     if cfg.eye_fov_horiz is not None:
@@ -79,13 +66,13 @@ def create_standard_zones(standard, dims):
             dims=dims, wall="floor", normal_offset=height,
             zone_id=EYE_LIMITS, name="Eye Dose (8 Hours)",
             calc_mode=cfg.eye_calc_mode,
-            dose=True, hours=8, spacing=spacing,
+            dose=True, hours=8, num_points=(n, n),
             **eye_kwargs,
         ),
         CalcPlane.from_face(
             dims=dims, wall="floor", normal_offset=height,
             zone_id=SKIN_LIMITS, name="Skin Dose (8 Hours)",
             calc_mode=cfg.skin_calc_mode,
-            dose=True, hours=8, spacing=spacing,
+            dose=True, hours=8, num_points=(n, n),
         ),
     ]

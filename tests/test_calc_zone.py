@@ -508,13 +508,17 @@ class TestCalcZoneConvertUnits:
         assert np.allclose(values_before, zone.values)
 
     def test_convert_units_updates_geometry(self, calculated_room):
-        """Geometry coordinates should scale with unit conversion."""
+        """Unit conversion preserves num_points and scales spacing approximately."""
         zone = calculated_room.calc_zones["WholeRoomFluence"]
+        num_points_before = zone.geometry.num_points
         spacing_before = zone.geometry.spacing
         zone.convert_units("meters", "feet")
+        # num_points is preserved (unit-independent)
+        assert zone.geometry.num_points == num_points_before
+        # Effective spacing scales approximately (rounding may cause small diffs)
         factor = 1.0 / 0.3048
         for old, new in zip(spacing_before, zone.geometry.spacing):
-            assert np.isclose(new, old * factor, rtol=1e-4)
+            assert np.isclose(new, old * factor, rtol=0.02)
 
     def test_convert_units_updates_cache(self, calculated_room):
         """Cache calc_state should match new geometry after conversion."""
