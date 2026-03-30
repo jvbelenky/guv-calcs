@@ -43,9 +43,11 @@ photompy = { path = "../photompy", editable = true }
 
 [dependency-groups]
 dev = [
-    "pytest",
-    "pytest-cov",
-    "black",
-    "flake8",
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "flake8>=6.0",
+]
+local = [
     "jupyter",
 ]
