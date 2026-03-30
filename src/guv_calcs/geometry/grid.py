@@ -8,6 +8,11 @@ from .._serialization import init_from_dict, migrate_surface_grid_dict, migrate_
 from ..units import convert_length, convert_length_tuple
 
 
+def _has_values(t):
+    """True if *t* is a non-None tuple containing at least one non-None element."""
+    return t is not None and any(v is not None for v in t)
+
+
 @dataclass(frozen=True, eq=False)
 class _GridBase:
     """Shared machinery for surface and volume grids."""
@@ -34,7 +39,8 @@ class _GridBase:
         # spacing_init and num_points_init are mutually exclusive.
         # If both are provided, keep whichever was most likely intentional
         # (spacing_init takes priority per Axis1D convention) and clear the other.
-        if self.spacing_init is not None and self.num_points_init is not None:
+        # A tuple of all-Nones like (None, None) doesn't count as "set".
+        if _has_values(self.spacing_init) and _has_values(self.num_points_init):
             object.__setattr__(self, "num_points_init", None)
 
         u = np.array(self.u_vec, float)
@@ -175,9 +181,9 @@ class _GridBase:
         # spacing_init and num_points_init are mutually exclusive.
         # When the caller explicitly sets one, clear the other so the
         # old value carried over by `replace` doesn't take priority.
-        if 'spacing_init' in changes and changes['spacing_init'] is not None:
+        if 'spacing_init' in changes and _has_values(changes['spacing_init']):
             changes.setdefault('num_points_init', None)
-        elif 'num_points_init' in changes and changes['num_points_init'] is not None:
+        elif 'num_points_init' in changes and _has_values(changes['num_points_init']):
             changes.setdefault('spacing_init', None)
         new = replace(self, **changes)
         object.__setattr__(new, "_cache", {})
@@ -193,9 +199,9 @@ class _GridBase:
         }
         # Serialize whichever resolution mode is active so the user's
         # intent (spacing vs num_points) survives save/load round-trips.
-        if self.spacing_init is not None:
+        if _has_values(self.spacing_init):
             data["spacing_init"] = tuple(float(x) for x in self.spacing_init)
-        elif self.num_points_init is not None:
+        elif _has_values(self.num_points_init):
             data["num_points_init"] = tuple(int(x) for x in self.num_points_init)
         else:
             # Neither set — serialize resolved spacing as fallback
@@ -234,7 +240,7 @@ class _GridBase:
                        u_vec=new_u_vec, v_vec=new_v_vec)
         # Convert spacing if in spacing mode; num_points stays unchanged
         # (point counts are unit-independent)
-        if self.spacing_init is not None:
+        if _has_values(self.spacing_init):
             updates['spacing_init'] = convert_length_tuple(
                 old_units, new_units, *self.spacing_init)
         updates.update(self._extra_convert_fields(old_units, new_units))

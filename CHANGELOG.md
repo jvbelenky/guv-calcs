@@ -32,7 +32,7 @@ All notable changes to this project will be documented in this file.
 - lamp.nearfield parameter returning float and not bool
 - lamp.irradiance_at() function not using lamp.intensity_factor properly
 - break ties in downlight placement by preferring centroid
-- 
+- properly check for None values in spacing/num_points tuples
 
 ### Changed
 
