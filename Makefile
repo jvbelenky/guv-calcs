@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: all test test-all test-cov test-fast clean format lint publish release interactive
+.PHONY: all test test-all test-cov test-fast clean format lint publish release interactive local
 
 all: sync test
 
@@ -19,8 +19,11 @@ test-cov:
 test-fast:
 	uv run pytest tests/ -v -x --ignore=tests/test_e2e.py -m "not slow"
 
+local:
+	uv sync
+
 interactive:
-	jupyter notebook notebooks/guv-calcs_test.ipynb --ip=0.0.0.0 --no-browser
+	uv run jupyter notebook notebooks/guv-calcs_test.ipynb --ip=0.0.0.0 --no-browser
 
 format:
 	uv run black src/guv_calcs/*
