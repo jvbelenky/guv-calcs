@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Zenodo metadata and script
+- width/length/height properties on Object class
 
 ## [0.7.0] - 2026-03-31
 

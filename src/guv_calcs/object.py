@@ -81,6 +81,42 @@ class Object:
                 rekeyed[new_key] = surface
             self._world_surfaces = rekeyed
 
+    # ---- dimensions ----
+
+    @property
+    def width(self):
+        """Object width (X extent). For boxes, the native width; for extrusions, the bounding box width."""
+        shape = self._shape
+        if shape["type"] == "box":
+            return shape["width"]
+        poly = self._get_polygon()
+        x_min, _, x_max, _ = poly.bounding_box
+        return x_max - x_min
+
+    @property
+    def length(self):
+        """Object length (Y extent). For boxes, the native length; for extrusions, the bounding box length."""
+        shape = self._shape
+        if shape["type"] == "box":
+            return shape["length"]
+        poly = self._get_polygon()
+        _, y_min, _, y_max = poly.bounding_box
+        return y_max - y_min
+
+    @property
+    def height(self):
+        """Object height (Z extent)."""
+        return self._shape["height"]
+
+    def _get_polygon(self):
+        """Return the base Polygon2D for this shape."""
+        shape = self._shape
+        if shape["type"] == "box":
+            w, l = shape["width"], shape["length"]
+            return Polygon2D.rectangle(w, l).translate(-w / 2, -l / 2)
+        poly_data = shape["polygon"]
+        return Polygon2D.from_dict(poly_data) if isinstance(poly_data, dict) else poly_data
+
     # ---- factories ----
 
     @classmethod
