@@ -1,0 +1,67 @@
+{
+  "title": "guv-calcs: An open-source Python library for modeling germicidal UV in indoor environments",
+  "description": "<p><strong>guv-calcs</strong> is an open-source Python scientific computing library for physically based modeling of germicidal ultraviolet (GUV) light in indoor environments, with a focus on far-UVC (200\u2013235 nm) applications. The library provides core numerical tools for representing lamps, spatial geometry, calculation planes and volumes, and exposure metrics such as irradiance, fluence rate, and cumulative dose.</p>\n<p>The package implements vectorized radiative transfer calculations using measured photometric data (IES/ULD files), supports flexible three-dimensional room geometries, and is designed for integration with higher-level tools such as visualization dashboards, airflow models, and risk frameworks for airborne pathogen control. The codebase emphasizes reproducibility, transparency, and modularity so that researchers, engineers, and manufacturers can inspect, extend, and validate the underlying calculations.</p>\n<p>guv-calcs forms the computational backbone of the broader Illuminate ecosystem, but is usable as a standalone library for custom analyses, batch simulations, and method development. The project aims to improve rigor and accessibility in far-UVC modeling by providing a free, auditable, and community-maintained alternative to proprietary software.</p>",
+  "upload_type": "software",
+  "creators": [
+    {
+      "name": "Belenky, Vivian"
+    },
+    {
+      "name": "Claus, Holger"
+    }
+  ],
+  "contributors": [
+    {
+      "name": "Goessling, Louis",
+      "type": "Other"
+    },
+    {
+      "name": "The OSLUV Project",
+      "type": "Sponsor"
+    }
+  ],
+  "license": "MIT",
+  "keywords": [
+    "GUV",
+    "UVGI",
+    "far-UVC",
+    "far-UV",
+    "254 nm",
+    "222 nm",
+    "germicidal UV",
+    "germicidal ultraviolet",
+    "photometry",
+    "lighting simulation",
+    "radiosity",
+    "exposure modeling",
+    "indoor air disinfection",
+    "scientific computing",
+    "python",
+    "radiative transfer",
+    "numerical computing",
+    "photometric data",
+    "infection control",
+    "occupational safety",
+    "exposure limits",
+    "ASHRAE 241",
+    "ACGIH",
+    "ICNIRP",
+    "UL8802",
+    "building science",
+    "airborne transmission mitigation"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/jvbelenky/guv-calcs",
+      "relation": "isSupplementTo",
+      "resource_type": "software",
+      "scheme": "url"
+    },
+    {
+      "identifier": "10.5281/zenodo.18573615",
+      "relation": "isPartOf",
+      "scheme": "doi"
+    }
+  ],
+  "access_right": "open"
+}

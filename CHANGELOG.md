@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Zenodo metadata and script
+
 ## [0.7.0] - 2026-03-31
 
 ### Added
