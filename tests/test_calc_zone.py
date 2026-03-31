@@ -394,6 +394,33 @@ class TestCalcPoint:
         assert pt.fov_vert == 120
         assert pt.fov_horiz == 180
 
+    def test_to_polar_scalar_input(self):
+        """to_polar must handle 0-d (scalar) inputs without raising.
+
+        Regression test: NumPy 2.x disallows nonzero() on 0-d arrays, which
+        the old ``phi[np.where(phi < 0)]`` pattern triggered when
+        transform_to_lamp received a single (3,) coordinate vector.
+        """
+        from guv_calcs.geometry.trigonometry import to_polar
+        # 0-d scalar inputs (as produced when unpacking a (3,) array)
+        theta, phi, r = to_polar(np.float64(1.0), np.float64(-0.5), np.float64(-1.5))
+        assert np.isfinite(theta) and np.isfinite(phi) and np.isfinite(r)
+        # phi should have been wrapped to [0, 2pi)
+        assert phi >= 0
+
+    def test_calcpoint_room_calculate(self):
+        """CalcPoint must survive a full Room.calculate() cycle."""
+        from guv_calcs import Room, Lamp
+        room = Room(x=4, y=4, z=3)
+        lamp = Lamp.from_keyword("ushio_b1", x=2, y=2, z=2.5, aimx=2, aimy=2, aimz=0)
+        room.add_lamp(lamp)
+        pt = CalcPoint.at((2, 2, 1), horiz=True, use_normal=True)
+        room.add_calc_zone(pt)
+        room.calculate()
+        assert pt.values is not None
+        assert pt.values.shape == (1,)
+        assert pt.values[0] > 0
+
 
 class TestCalcPointMoveAim:
     """Tests for CalcPoint move/aim API."""

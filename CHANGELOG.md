@@ -33,6 +33,7 @@ All notable changes to this project will be documented in this file.
 - lamp.irradiance_at() function not using lamp.intensity_factor properly
 - break ties in downlight placement by preferring centroid
 - properly check for None values in spacing/num_points tuples
+- proper handling for 0D arrays in to_polar()
 
 ### Changed
 

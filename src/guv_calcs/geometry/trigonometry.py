@@ -14,7 +14,7 @@ def to_polar(x, y, z, units="degrees"):
 
     theta = np.nan_to_num(theta, nan=0)
     phi = np.arctan2(y, x)
-    phi[np.where(phi < 0)] = phi[np.where(phi < 0)] + 2 * np.pi
+    phi = np.where(phi < 0, phi + 2 * np.pi, phi)
 
     if units == "degrees":
         theta = np.degrees(theta)
