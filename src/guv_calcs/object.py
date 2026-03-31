@@ -195,6 +195,46 @@ class Object:
         """List of face identifiers."""
         return list(self._local_surfaces.keys())
 
+    def get_face_properties(self, face=None):
+        """Return optical properties for one face or all faces.
+
+        If face is given, returns {"R": float, "T": float} for that face.
+        If face is None, returns {face_id: {"R": float, "T": float}, ...} for all faces.
+        """
+        if face is not None:
+            if face not in self._local_surfaces:
+                raise KeyError(f"Unknown face: {face!r}. Available: {self.face_ids}")
+            s = self._local_surfaces[face]
+            return {"R": s.R, "T": s.T}
+        return {fid: {"R": s.R, "T": s.T} for fid, s in self._local_surfaces.items()}
+
+    def set_face_properties(self, R, T, face=None):
+        """Atomically set both R and T for one or all faces.
+
+        Validates R + T <= 1 before applying either value, avoiding
+        ordering issues with separate set_reflectance/set_transmittance calls.
+        """
+        R, T = float(R), float(T)
+        if not (0 <= R <= 1):
+            raise ValueError("R must be in [0, 1]")
+        if not (0 <= T <= 1):
+            raise ValueError("T must be in [0, 1]")
+        if R + T > 1:
+            raise ValueError("R + T must be <= 1")
+
+        if face is None:
+            self.R = R
+            self.T = T
+            for s in self._local_surfaces.values():
+                s.R = R
+                s.T = T
+        else:
+            if face not in self._local_surfaces:
+                raise KeyError(f"Unknown face: {face!r}. Available: {self.face_ids}")
+            self._local_surfaces[face].R = R
+            self._local_surfaces[face].T = T
+        self._rebuild_world_surfaces()
+
     def set_reflectance(self, R, face=None):
         """Set reflectance for one or all faces."""
         if face is None:

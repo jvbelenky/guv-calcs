@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Zenodo metadata and script
 - width/length/height properties on Object class
+- getters and setters on per-face properties for Object class
 
 ## [0.7.0] - 2026-03-31
 
