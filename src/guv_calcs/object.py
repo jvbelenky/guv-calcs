@@ -146,6 +146,16 @@ class Object:
         }
         return cls(_shape=shape, **kwargs)
 
+    def copy(self, **overrides):
+        """Create a deep copy with optional overrides.
+
+        Any keyword argument matching a to_dict() key will override
+        the copied value (e.g., ``obj.copy(object_id="new-id")``).
+        """
+        data = self.to_dict()
+        data.update(overrides)
+        return Object.from_dict(data)
+
     # ---- positioning ----
 
     def move(self, x=None, y=None, z=None):
