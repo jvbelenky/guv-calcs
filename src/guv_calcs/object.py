@@ -117,6 +117,60 @@ class Object:
         poly_data = shape["polygon"]
         return Polygon2D.from_dict(poly_data) if isinstance(poly_data, dict) else poly_data
 
+    def set_dimensions(self, *, width=None, length=None, height=None):
+        """Update shape dimensions in-place, rebuilding surfaces.
+
+        Preserves per-face optical properties, position, rotation, and ID.
+        For boxes, width/length/height update the native dimensions.
+        For extrusions, width/length scale the polygon uniformly and height
+        updates the extrusion height.
+        """
+        # Save per-face properties before rebuild
+        face_props = {k: (s.R, s.T) for k, s in self._local_surfaces.items()}
+
+        shape = dict(self._shape)
+        if shape["type"] == "box":
+            if width is not None:
+                if width <= 0:
+                    raise ValueError("width must be positive")
+                shape["width"] = float(width)
+            if length is not None:
+                if length <= 0:
+                    raise ValueError("length must be positive")
+                shape["length"] = float(length)
+            if height is not None:
+                if height <= 0:
+                    raise ValueError("height must be positive")
+                shape["height"] = float(height)
+        elif shape["type"] == "extrusion":
+            if height is not None:
+                if height <= 0:
+                    raise ValueError("height must be positive")
+                shape["height"] = float(height)
+            if width is not None or length is not None:
+                poly = Polygon2D.from_dict(shape["polygon"]) if isinstance(shape["polygon"], dict) else shape["polygon"]
+                x_min, y_min, x_max, y_max = poly.bounding_box
+                cur_w = x_max - x_min
+                cur_l = y_max - y_min
+                sx = float(width) / cur_w if width is not None and cur_w > 0 else 1.0
+                sy = float(length) / cur_l if length is not None and cur_l > 0 else 1.0
+                if (width is not None and width <= 0) or (length is not None and length <= 0):
+                    raise ValueError("Dimensions must be positive")
+                new_verts = tuple((x * sx, y * sy) for x, y in poly.vertices)
+                shape["polygon"] = Polygon2D(vertices=new_verts).to_dict()
+
+        self._shape = shape
+        self._build_local_surfaces()
+
+        # Restore per-face properties
+        for face_id, (r, t) in face_props.items():
+            if face_id in self._local_surfaces:
+                self._local_surfaces[face_id].R = r
+                self._local_surfaces[face_id].T = t
+
+        self._rebuild_world_surfaces()
+        return self
+
     # ---- factories ----
 
     @classmethod

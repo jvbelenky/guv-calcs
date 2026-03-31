@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - width/length/height properties on Object class
 - getters and setters on per-face properties for Object class
 - copy method on Object class
+- set_dimensions method on Object class
 
 ## [0.7.0] - 2026-03-31
 
