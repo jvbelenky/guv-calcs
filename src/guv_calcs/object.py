@@ -323,6 +323,44 @@ class Object:
             self._local_surfaces[face].set_transmittance(T)
         self._rebuild_world_surfaces()
 
+    def set_num_points(self, num_points, face=None):
+        """Set grid resolution for one or all faces.
+
+        If face is None, rebuilds all surfaces with the new resolution
+        (updates the global _num_points and regenerates geometry).
+        If face is given, sets num_points on that face's CalcPlane only.
+        """
+        if face is None:
+            self._num_points = int(num_points)
+            face_props = {k: (s.R, s.T) for k, s in self._local_surfaces.items()}
+            self._build_local_surfaces()
+            for fid, (r, t) in face_props.items():
+                if fid in self._local_surfaces:
+                    self._local_surfaces[fid].R = r
+                    self._local_surfaces[fid].T = t
+            self._rebuild_world_surfaces()
+        else:
+            if face not in self._local_surfaces:
+                raise KeyError(f"Unknown face: {face!r}. Available: {self.face_ids}")
+            n = int(num_points)
+            self._local_surfaces[face].set_num_points(num_x=n, num_y=n)
+            self._rebuild_world_surfaces()
+
+    def set_spacing(self, x_spacing=None, y_spacing=None, face=None):
+        """Set grid spacing for one or all faces.
+
+        If face is None, applies to all faces.
+        If face is given, applies to that face only.
+        """
+        if face is None:
+            for s in self._local_surfaces.values():
+                s.set_spacing(x_spacing=x_spacing, y_spacing=y_spacing)
+        else:
+            if face not in self._local_surfaces:
+                raise KeyError(f"Unknown face: {face!r}. Available: {self.face_ids}")
+            self._local_surfaces[face].set_spacing(x_spacing=x_spacing, y_spacing=y_spacing)
+        self._rebuild_world_surfaces()
+
     # ---- internal: build surfaces ----
 
     def _build_local_surfaces(self):

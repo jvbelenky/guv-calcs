@@ -318,6 +318,51 @@ class TestSetDimensions:
         assert abs(obj.width - original_width * 2) < 1e-9
 
 
+class TestGridResolution:
+
+    def test_set_num_points_global(self):
+        obj = Object.box(2, 2, 2, num_points=5)
+        assert obj._num_points == 5
+        obj.set_num_points(10)
+        assert obj._num_points == 10
+
+    def test_set_num_points_preserves_face_properties(self):
+        obj = Object.box(1, 1, 1, R=0.1, T=0.2)
+        obj.set_face_properties(R=0.8, T=0.1, face="top")
+        obj.set_num_points(10)
+        assert obj.get_face_properties("top") == {"R": 0.8, "T": 0.1}
+        assert obj.get_face_properties("bottom") == {"R": 0.1, "T": 0.2}
+
+    def test_set_num_points_single_face(self):
+        obj = Object.box(2, 2, 2, num_points=5)
+        obj.set_num_points(20, face="top")
+        top_plane = obj._local_surfaces["top"].plane
+        assert top_plane.num_x == 20
+
+    def test_set_num_points_unknown_face_raises(self):
+        obj = Object()
+        with pytest.raises(KeyError):
+            obj.set_num_points(10, face="nonexistent")
+
+    def test_set_spacing_all(self):
+        obj = Object.box(4, 4, 2, num_points=5)
+        obj.set_spacing(x_spacing=0.5, y_spacing=0.5)
+        for s in obj._local_surfaces.values():
+            # Spacing should be approximately 0.5
+            assert abs(s.plane.x_spacing - 0.5) < 0.1 or abs(s.plane.y_spacing - 0.5) < 0.1
+
+    def test_set_spacing_single_face(self):
+        obj = Object.box(4, 4, 2, num_points=5)
+        obj.set_spacing(x_spacing=0.25, face="floor" if "floor" in obj.face_ids else "bottom")
+        bottom = obj._local_surfaces["bottom"]
+        assert abs(bottom.plane.x_spacing - 0.25) < 0.05
+
+    def test_set_spacing_unknown_face_raises(self):
+        obj = Object()
+        with pytest.raises(KeyError):
+            obj.set_spacing(x_spacing=0.5, face="nonexistent")
+
+
 class TestCopy:
 
     def test_copy_creates_equal_object(self):

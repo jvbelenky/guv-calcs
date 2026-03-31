@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - copy method on Object class
 - set_dimensions method on Object class
 - test coverage for Object class
+- set_spacing / set_num_points handles for Object class 
 
 ## [0.7.0] - 2026-03-31
 
