@@ -234,7 +234,7 @@ class CalcZone(ABC):
 
     @view_direction.setter
     def view_direction(self, value):
-        self._view_direction = value
+        self._view_direction = tuple(value) if value is not None else None
         if value is not None:
             self._view_target = None
 
@@ -244,7 +244,7 @@ class CalcZone(ABC):
 
     @view_target.setter
     def view_target(self, value):
-        self._view_target = value
+        self._view_target = tuple(value) if value is not None else None
         if value is not None:
             self._view_direction = None
 

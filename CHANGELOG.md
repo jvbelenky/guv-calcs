@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
 - test coverage for Object class
 - set_spacing / set_num_points handles for Object class 
 
+### Fixed
+
+- view_direction/view_target now required to be tuples 
+
 ## [0.7.0] - 2026-03-31
 
 ### Added
