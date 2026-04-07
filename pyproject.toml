@@ -42,6 +42,15 @@ packages = ["src/guv_calcs"]
 [tool.uv.sources]
 photompy = { path = "../photompy", editable = true }
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short -m \"not slow\""
+filterwarnings = ["ignore::DeprecationWarning"]
+markers = ["slow: marks tests as slow (excluded by default)"]
+
 [dependency-groups]
 dev = [
     "pytest>=7.0",
