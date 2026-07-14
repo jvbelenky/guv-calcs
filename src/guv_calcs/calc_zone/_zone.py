@@ -6,7 +6,6 @@ from datetime import timedelta
 from ..calc_manager import LightingCalculator
 from ..geometry import SurfaceGrid, VolumeGrid, GridPoint
 from ._io import export_plane, export_volume, export_point
-from ._plot import plot_plane, plot_volume, plot_point
 from ..geometry import RoomDimensions
 from ..geometry import Polygon2D
 from .._serialization import init_from_dict, deserialize_geometry, migrate_zone_dict, migrate_legacy_zone_geometry
@@ -567,8 +566,8 @@ class CalcVol(CalcZone):
     def from_dims(
         cls,
         dims: "RoomDimensions",
-        spacing: float | None = None,
-        num_points: int | None = None,
+        spacing: tuple | None = None,
+        num_points: tuple | None = None,
         offset: bool = True,
         **kwargs,
     ):
@@ -581,6 +580,25 @@ class CalcVol(CalcZone):
             offset=offset,
         )
         return cls(geometry=geometry, **kwargs)
+        
+    @classmethod
+    def from_legacy(
+        cls,
+        x1, x2, y1, y2, z1, z2, 
+        x_spacing=None, y_spacing=None, z_spacing=None,
+        num_x=None, num_y=None, num_z=None,
+        offset=True,
+        **kwargs,
+    ):
+        geometry = VolumeGrid.from_legacy(
+            mins=(x1, y1, z1),
+            maxs=(x2, y2, z2),
+            spacing_init=(x_spacing, y_spacing, z_spacing),
+            num_points_init=(num_x, num_y, num_z),
+            offset=offset,
+            )
+        return cls(geometry=geometry,**kwargs)
+        
 
     def nudge_into_bounds(self, room_dims) -> bool:
         """Shift volume zone into room bounds. Returns True if changed."""
@@ -623,6 +641,7 @@ class CalcVol(CalcZone):
 
     def plot(self, **kwargs):
         """plot fluence values as isosurface"""
+        from ._plot import plot_volume
         return plot_volume(self, **kwargs)
 
     def plot_volume(self, **kwargs):
@@ -794,6 +813,7 @@ class CalcPlane(CalcZone):
 
     def plot(self, **kwargs):
         """Plot the image of the radiation pattern"""
+        from ._plot import plot_plane
         return plot_plane(self, **kwargs)
 
     def plot_plane(self, **kwargs):
@@ -899,4 +919,5 @@ class CalcPoint(CalcZone):
 
     def plot(self, **kwargs):
         """Plot the point in 3D with a normal arrow."""
+        from ._plot import plot_point
         return plot_point(self, **kwargs)
