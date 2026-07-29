@@ -346,6 +346,34 @@ class TestRoomZoneManagement:
         assert "SkinLimits" not in room_with_zones.calc_zones
 
 
+class TestRegistryAssignment:
+    """Direct `registry[key] = obj` must uphold the same invariants as add()."""
+
+    def test_setitem_assigns_id(self, basic_room, basic_lamp):
+        basic_room.lamps["custom"] = basic_lamp
+        assert basic_lamp.lamp_id == "custom"
+        assert basic_room.lamps["custom"].id == "custom"
+
+    def test_setitem_converts_units(self, room_feet, basic_lamp):
+        """LampRegistry._validate converts units; setitem must not skip it."""
+        assert basic_lamp.surface.units != room_feet.dim.units
+        room_feet.lamps["a"] = basic_lamp
+        assert basic_lamp.surface.units == room_feet.dim.units
+
+    def test_setitem_type_checks(self, basic_room, calc_plane):
+        with pytest.raises(TypeError):
+            basic_room.lamps["a"] = calc_plane
+
+    def test_setitem_overwrites_without_incrementing(self, basic_room, basic_lamp):
+        """Unlike add(), setitem targets an exact key regardless of collision."""
+        basic_room.add_lamp(basic_lamp)
+        key = basic_lamp.lamp_id
+        replacement = Lamp.from_keyword("aerolamp")
+        basic_room.lamps[key] = replacement
+        assert len(basic_room.lamps) == 1
+        assert basic_room.lamps[key] is replacement
+
+
 class TestRoomCalculation:
     """Tests for Room.calculate() functionality."""
 

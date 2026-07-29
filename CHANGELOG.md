@@ -7,6 +7,14 @@ All notable changes to this project will be documented in this file.
 ### Added
 - add from_legacy method to calcvols
 
+### Changed
+
+- Object stores world surfaces under bare face ids; the namespaced "{object_id}:{face_id}" keys are now derived by the surfaces property, so renaming an object no longer rekeys or mutates its child surfaces
+
+### Fixed
+
+- Registry.__setitem__ now validates and assigns the key as the object's id, matching add(). Previously `room.lamps["foo"] = lamp` left lamp.lamp_id stale and skipped type checks and unit conversion
+
 ## [0.7.1] - 2026-04-07
 
 ### Added

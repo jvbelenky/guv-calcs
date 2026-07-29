@@ -522,6 +522,13 @@ class TestIdentity:
         obj._assign_id("new")
         assert obj.name == "Custom"
 
+    def test_assign_id_preserves_surface_objects(self):
+        """Renaming must not rebuild surfaces; the ID is not load-bearing."""
+        obj = Object(object_id="old")
+        before = obj.surfaces["old:top"]
+        obj._assign_id("new")
+        assert obj.surfaces["new:top"] is before
+
 
 class TestWorldSurfaces:
 
@@ -539,6 +546,13 @@ class TestWorldSurfaces:
     def test_surface_count_matches_face_ids(self):
         obj = Object.box(1, 1, 1)
         assert len(obj.surfaces) == len(obj.face_ids)
+
+    def test_stored_surfaces_keyed_by_bare_face_id(self):
+        """The namespace lives in the view, not in storage."""
+        obj = Object.box(1, 1, 1, object_id="table")
+        assert set(obj._world_surfaces.keys()) == set(obj.face_ids)
+        for face_id, surface in obj._world_surfaces.items():
+            assert surface.plane.zone_id == face_id
 
 
 class TestRepr:

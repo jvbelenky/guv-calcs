@@ -70,16 +70,7 @@ class Object:
     def _assign_id(self, value):
         if self.name == self._object_id:
             self.name = value
-        old_id = self._object_id
         self._object_id = value
-        if old_id != value:
-            rekeyed = {}
-            for old_key, surface in self._world_surfaces.items():
-                face_id = old_key.split(":", 1)[1]
-                new_key = f"{self._object_id}:{face_id}"
-                surface.plane._zone_id = new_key
-                rekeyed[new_key] = surface
-            self._world_surfaces = rekeyed
 
     # ---- dimensions ----
 
@@ -251,8 +242,11 @@ class Object:
 
     @property
     def surfaces(self):
-        """World-space surfaces with namespaced keys."""
-        return self._world_surfaces
+        """World-space surfaces, keyed by ``"{object_id}:{face_id}"``."""
+        return {
+            f"{self._object_id}:{face_id}": surface
+            for face_id, surface in self._world_surfaces.items()
+        }
 
     @property
     def face_ids(self):
@@ -431,11 +425,10 @@ class Object:
                 origin=new_origin, u_vec=new_u_vec, v_vec=new_v_vec,
             )
 
-            world_key = f"{self._object_id}:{face_id}"
             world_plane = CalcPlane(
-                zone_id=world_key, geometry=world_geom, horiz=True,
+                zone_id=face_id, geometry=world_geom, horiz=True,
             )
-            self._world_surfaces[world_key] = Surface(
+            self._world_surfaces[face_id] = Surface(
                 R=local_surface.R, T=local_surface.T, plane=world_plane,
             )
 

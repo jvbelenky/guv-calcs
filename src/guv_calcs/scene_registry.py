@@ -30,6 +30,9 @@ class Registry(Generic[T], MutableMapping[str, T]):
         return self._items[key]
 
     def __setitem__(self, key: str, value: T) -> None:
+        """Place value at exactly `key`. Unlike add(), ignores on_collision."""
+        value = self._validate(value)
+        value._assign_id(key)
         self._items[key] = value
 
     def __delitem__(self, key: str) -> None:
