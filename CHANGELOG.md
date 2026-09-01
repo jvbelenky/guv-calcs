@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-09-01
+
 ### Added
 - add from_legacy method to calcvols
 
