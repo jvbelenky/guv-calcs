@@ -146,6 +146,37 @@ Currently, only 222nm lamps are available, with data downloaded from reports.osl
 - `uvpro222_b1` - Bioabundance UVPro222 B1
 - `uvpro222_b2` - Bioabundance UVPro222 B2 
 
+## Cutting a Release
+
+Releases are automated via `make release`:
+
+```bash
+make release VERSION=patch   # 0.7.1 -> 0.7.2
+make release VERSION=minor   # 0.7.1 -> 0.8.0
+make release VERSION=major   # 0.7.1 -> 1.0.0
+make release VERSION=1.0.0   # explicit version
+```
+
+Before running it, make sure:
+
+- you are on `main` with a clean working tree (the script refuses otherwise),
+- the `[Unreleased]` section of `CHANGELOG.md` has content — this becomes the release notes,
+- tests pass (`make test`),
+- you have PyPI publish credentials configured for `uv publish`.
+
+The `release` target runs `scripts/release.sh`, which:
+
+1. Bumps `__version__` in `src/guv_calcs/_version.py` (the single source of version truth — `pyproject.toml` reads it via hatch).
+2. Converts `[Unreleased]` in `CHANGELOG.md` into a dated `[X.Y.Z]` section, leaving a fresh `[Unreleased]` header on top.
+3. Stamps `.zenodo.json` with a versioned title and this release's notes (restored to the base description in a follow-up commit).
+4. Commits `Release vX.Y.Z`, tags `vX.Y.Z`, and pushes `main` and the tag.
+
+It then runs `make publish` (`uv build` + `uv publish`) to upload to PyPI.
+
+Pushing the tag triggers the `Release` GitHub Actions workflow (`.github/workflows/release.yml`), which creates a GitHub Release using that version's `CHANGELOG.md` section as the body.
+
+If `uv publish` fails after the tag was pushed (e.g. missing credentials), fix the credentials and run `make publish` again — the git side is already done and doesn't need to be repeated.
+
 ## License
 
 Distributed under the MIT License. See `LICENSE.txt` for more information.

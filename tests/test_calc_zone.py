@@ -421,6 +421,49 @@ class TestCalcPoint:
         assert pt.values.shape == (1,)
         assert pt.values[0] > 0
 
+    def test_calcpoint_room_calculate_feet(self):
+        """CalcPoint must survive Room.calculate() in a non-metric room.
+
+        Regression test: ``_to_meters`` splatted the single-element distance
+        array through ``convert_units``, which returns a bare scalar for a
+        single value; ``np.array(scalar)`` is 0-d, and the nearfield
+        ``np.where(R < phot_dist_m)`` check then raised "Calling nonzero on
+        0d arrays is not allowed".
+        """
+        from guv_calcs import Room, Lamp
+        room = Room(x=13, y=13, z=9, units="feet")
+        lamp = Lamp.from_keyword(
+            "ushio_b1", x=6.5, y=6.5, z=8, aimx=6.5, aimy=6.5, aimz=0
+        )
+        room.add_lamp(lamp)
+        pt = CalcPoint.at((6.5, 6.5, 3), horiz=True, use_normal=True)
+        room.add_calc_zone(pt)
+        room.calculate()
+        assert pt.values is not None
+        assert pt.values.shape == (1,)
+        assert np.isfinite(pt.values[0])
+        assert pt.values[0] > 0
+
+    def test_single_point_plane_room_calculate_feet(self):
+        """A 1x1-point CalcPlane in a feet-units room hits the same 0-d path."""
+        from guv_calcs import Room, Lamp
+        room = Room(x=13, y=13, z=9, units="feet")
+        lamp = Lamp.from_keyword(
+            "ushio_b1", x=6.5, y=6.5, z=8, aimx=6.5, aimy=6.5, aimz=0
+        )
+        room.add_lamp(lamp)
+        plane = CalcPlane(
+            zone_id="single",
+            geometry=SurfaceGrid.from_legacy(
+                mins=(0, 0), maxs=(13, 13), height=3,
+                num_points_init=(1, 1)),
+        )
+        room.add_calc_zone(plane)
+        room.calculate()
+        assert plane.values is not None
+        assert plane.values.size == 1
+        assert np.isfinite(plane.values).all()
+
 
 class TestCalcPointMoveAim:
     """Tests for CalcPoint move/aim API."""

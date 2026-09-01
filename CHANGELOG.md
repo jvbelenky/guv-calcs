@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Registry.__setitem__ now validates and assigns the key as the object's id, matching add(). Previously `room.lamps["foo"] = lamp` left lamp.lamp_id stale and skipped type checks and unit conversion
+- Calculating a single-point zone (CalcPoint, or a 1x1-point plane) in a non-metric room with a nearfield lamp raised "Calling nonzero on 0d arrays is not allowed". _to_meters now preserves array shape instead of collapsing one-element arrays to 0-d
 
 ## [0.7.1] - 2026-04-07
 

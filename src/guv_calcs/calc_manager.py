@@ -227,7 +227,12 @@ class LightingCalculator:
     def _to_meters(self, R, lamp):
         """Convert distance array to meters for inverse-square calculation."""
         if lamp.surface.units != LengthUnits.METERS:
-            return np.array(convert_units(lamp.surface.units, "meters", *R))
+            # convert_units returns a bare scalar for a single value, and
+            # np.array(scalar) is 0-d — atleast_1d keeps single-point zones
+            # (e.g. CalcPoint) indexable by np.where downstream.
+            return np.atleast_1d(
+                np.array(convert_units(lamp.surface.units, "meters", *R))
+            )
         return R
 
     def _irradiance_at(self, lamp, coords):
