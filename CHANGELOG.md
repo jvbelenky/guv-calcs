@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Object stores world surfaces under bare face ids; the namespaced "{object_id}:{face_id}" keys are now derived by the surfaces property, so renaming an object no longer rekeys or mutates its child surfaces
+- Room.get_calc_state() and Room.get_update_state() now hash only valid lamps (enabled and with photometry) — the same set calculate() uses — so adding, moving, or editing a lamp that has no IES data no longer marks the room stale or forces a reflectance incidence recompute
 
 ### Fixed
 

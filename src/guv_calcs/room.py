@@ -328,17 +328,19 @@ class Room:
         """Return hashed calc state per category.
 
         Returns a dict with:
-        - "lamps": single hash of all enabled lamp calc states
+        - "lamps": single hash of all valid (enabled, with photometry) lamp calc states
         - "calc_zones": dict of {zone_id: hash} for each enabled zone
         - "reflectance": hash of reflectance manager calc state
 
         Hash values are ints (consistent within a process lifetime).
         Per-zone hashes enable granular staleness detection on the frontend.
         """
+        # Only lamps that calculate() actually uses (enabled AND with photometry)
+        # contribute — a bare lamp can't change any result, so it must not
+        # mark the room stale.
         lamp_state = {}
-        for key, lamp in self.lamps.items():
-            if lamp.enabled:
-                lamp_state[key] = hash(lamp.calc_state)
+        for key, lamp in self.lamps.valid().items():
+            lamp_state[key] = hash(lamp.calc_state)
 
         zone_state = {}
         for key, zone in self.calc_zones.items():
@@ -361,14 +363,16 @@ class Room:
         """Return hashed update state per category.
 
         Returns a dict with:
-        - "lamps": single hash of all lamp update states
+        - "lamps": single hash of all valid (enabled, with photometry) lamp update states
         - "calc_zones": dict of {zone_id: hash} for each zone
         - "reflectance": hash of reflectance/units state
 
         These capture state that should NOT trigger recalculation, only an update.
         """
+        # Same predicate as get_calc_state: a lamp that contributes no values
+        # has nothing to update either.
         lamp_state = {}
-        for key, lamp in self.lamps.items():
+        for key, lamp in self.lamps.valid().items():
             lamp_state[key] = hash(lamp.update_state)
 
         zone_state = {}

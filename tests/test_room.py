@@ -3,6 +3,7 @@
 import pytest
 import numpy as np
 from guv_calcs import Room, Lamp, CalcPlane, CalcVol, Polygon2D
+from guv_calcs.lamp.lamp_type import LampUnitType
 
 
 class TestRoomInitialization:
@@ -393,6 +394,52 @@ class TestRoomCalculation:
         """calculate() should return self for method chaining."""
         result = room_with_zones.calculate()
         assert result is room_with_zones
+
+
+class TestRoomCalcState:
+    """Tests for Room.get_calc_state() staleness tracking."""
+
+    def test_lamp_without_photometry_does_not_change_calc_state(self, room_with_lamp):
+        """A bare lamp is skipped by calculate(), so it must not mark the room stale."""
+        before = room_with_lamp.get_calc_state()["lamps"]
+        bare = Lamp(x=1, y=1, z=2.7, wavelength=222, guv_type="KRCL")
+        room_with_lamp.add_lamp(bare)
+        assert room_with_lamp.get_calc_state()["lamps"] == before
+        bare.move(2, 2, 2.7)
+        assert room_with_lamp.get_calc_state()["lamps"] == before
+
+    def test_lamp_gaining_photometry_changes_calc_state(self, basic_room):
+        """Once a lamp has photometry it joins the calculation and the state must change."""
+        bare = Lamp(x=1, y=1, z=2.7, wavelength=222, guv_type="KRCL")
+        basic_room.add_lamp(bare)
+        before = basic_room.get_calc_state()["lamps"]
+        basic_room.add_lamp(Lamp.from_keyword("aerolamp").move(3, 2, 2.7))
+        assert basic_room.get_calc_state()["lamps"] != before
+
+    def test_disabled_lamp_does_not_change_calc_state(self, room_with_lamp):
+        before = room_with_lamp.get_calc_state()["lamps"]
+        extra = Lamp.from_keyword("aerolamp").move(1, 1, 2.7)
+        extra.enabled = False
+        room_with_lamp.add_lamp(extra)
+        assert room_with_lamp.get_calc_state()["lamps"] == before
+
+    def test_lamp_without_photometry_does_not_change_update_state(self, room_with_lamp):
+        """A bare lamp contributes no values, so its wavelength can't affect an update either."""
+        before = room_with_lamp.get_update_state()["lamps"]
+        bare = Lamp(x=1, y=1, z=2.7, wavelength=222, guv_type="KRCL")
+        room_with_lamp.add_lamp(bare)
+        assert room_with_lamp.get_update_state()["lamps"] == before
+
+    def test_valid_lamp_wavelength_changes_update_state(self, basic_room):
+        lamp = Lamp.from_keyword("aerolamp").move(3, 2, 2.7)
+        basic_room.add_lamp(lamp)
+        before = basic_room.get_update_state()["lamps"]
+        lamp.intensity_units = (
+            LampUnitType.UW_PER_CM2
+            if lamp.intensity_units != LampUnitType.UW_PER_CM2
+            else LampUnitType.MW_PER_SR
+        )
+        assert basic_room.get_update_state()["lamps"] != before
 
 
 class TestRoomSerialization:
