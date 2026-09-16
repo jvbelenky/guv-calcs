@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-09-16
+
 ### Added
 - Room.set_dimensions() accepts polygon=; Room.set_polygon() sets the floor plan after construction. Passing x/y to a polygon room converts it back to a rectangle
 - generate_report() lists every floor plan vertex for polygon rooms and reports floor area for all rooms
