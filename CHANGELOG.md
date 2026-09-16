@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Room.set_dimensions() accepts polygon=; Room.set_polygon() sets the floor plan after construction. Passing x/y to a polygon room converts it back to a rectangle
+
+### Fixed
+- Changing a room's floor plan left stale wall surfaces behind (e.g. wall_5 after going from 6 walls to 5, or wall_N alongside cardinal names after going back to a rectangle); surfaces are now rebuilt from the new faces, with reflectance, transmittance and grid resolution carried over by edge index across the cardinal/wall_N renaming
+- Standard zones ignored floor plan changes (SurfaceGrid.update_dimensions() is a no-op for polygon grids); Room._resize_standard_zones() now rebuilds them from the polygon, keeping spacing/num_points and plane height
+- Room floor plans accepted degenerate outlines; coincident consecutive vertices or zero area now raise ValueError (RoomDimensions), and Polygon2D rejects non-finite or non-pair vertices
+
 ## [0.7.2] - 2026-09-01
 
 ### Added

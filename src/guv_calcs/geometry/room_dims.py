@@ -56,6 +56,21 @@ class WallFace(NamedTuple):
         )
 
 
+def _check_floor_plan(polygon: Polygon2D) -> None:
+    """A room outline must be a proper polygon: distinct corners, non-zero area."""
+    verts = polygon.vertices
+    n = len(verts)
+    for i in range(n):
+        (x1, y1), (x2, y2) = verts[i], verts[(i + 1) % n]
+        if abs(x2 - x1) < 1e-9 and abs(y2 - y1) < 1e-9:
+            raise ValueError(
+                f"Polygon vertices {i} and {(i + 1) % n} coincide; "
+                "consecutive vertices must be distinct"
+            )
+    if polygon.area < 1e-12:
+        raise ValueError("Polygon must enclose a non-zero area")
+
+
 @dataclass(frozen=True, repr=False)
 class RoomDimensions:
     """Room dimensions defined by a 2D polygon floor plan with uniform ceiling height.
@@ -81,6 +96,7 @@ class RoomDimensions:
         if not isinstance(self.polygon, Polygon2D):
             poly = Polygon2D(vertices=tuple(tuple(v) for v in self.polygon))
             object.__setattr__(self, "polygon", poly)
+        _check_floor_plan(self.polygon)
 
     @property
     def is_polygon(self) -> bool:
@@ -184,8 +200,13 @@ class RoomDimensions:
             new_z = self.z if z is None else z
 
             if polygon is not None:
+                if not isinstance(polygon, Polygon2D):
+                    polygon = Polygon2D(vertices=tuple(tuple(v) for v in polygon))
                 new_polygon = polygon
-            elif (x is not None or y is not None) and not self.is_polygon:
+            elif x is not None or y is not None:
+                # Explicit x/y always yields an axis-aligned rectangle. For a
+                # polygon room the unspecified axis falls back to the polygon's
+                # bounding box, so this doubles as "convert back to rectangle".
                 bb = self.polygon.bounding_box  # (x_min, y_min, x_max, y_max)
 
                 if isinstance(x, (tuple, list)):

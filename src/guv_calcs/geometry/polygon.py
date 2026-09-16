@@ -26,8 +26,15 @@ class Polygon2D:
 
         # Convert to tuples if needed and validate
         verts = tuple(tuple(float(c) for c in v) for v in self.vertices)
+        if any(len(v) != 2 for v in verts):
+            raise ValueError("Polygon vertices must be (x, y) pairs")
+        if not all(np.isfinite(c) for v in verts for c in v):
+            raise ValueError("Polygon vertices must be finite numbers")
         object.__setattr__(self, "vertices", verts)
 
+        # Degenerate (zero-area) polygons are allowed here: calc grids use
+        # zero-span rectangles for point-like zones. Room floor plans are
+        # checked more strictly by RoomDimensions.
         if not self._is_simple():
             raise ValueError("Polygon edges must not self-intersect")
 
@@ -140,17 +147,26 @@ class Polygon2D:
 
     def _is_simple(self) -> bool:
         """Check that polygon edges don't self-intersect (other than at vertices)."""
-        n = len(self.vertices)
+        # Collapse consecutive duplicate vertices first: a zero-length edge
+        # can't cross anything, but it would make its neighbours look
+        # non-adjacent and their shared corner register as a crossing.
+        verts = []
+        for v in self.vertices:
+            if not verts or v != verts[-1]:
+                verts.append(v)
+        if len(verts) > 1 and verts[0] == verts[-1]:
+            verts.pop()
+        n = len(verts)
         if n < 4:
             return True  # Triangle can't self-intersect
 
         for i in range(n):
-            p1, p2 = self.vertices[i], self.vertices[(i + 1) % n]
+            p1, p2 = verts[i], verts[(i + 1) % n]
             # Check against non-adjacent edges
             for j in range(i + 2, n):
                 if j == (i - 1) % n or (i == 0 and j == n - 1):
                     continue  # Skip adjacent edges
-                p3, p4 = self.vertices[j], self.vertices[(j + 1) % n]
+                p3, p4 = verts[j], verts[(j + 1) % n]
                 if self._segments_intersect(p1, p2, p3, p4):
                     return False
         return True

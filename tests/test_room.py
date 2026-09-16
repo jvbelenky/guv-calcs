@@ -642,3 +642,125 @@ class TestEstimateCalculationTime:
         est_one = room_one.estimate_calculation_time()
         est_two = room_two.estimate_calculation_time()
         assert est_two > est_one
+
+
+class TestPolygonRoomMutation:
+    """Changing a room's floor plan after creation."""
+
+    L_SHAPE = [(0, 0), (6, 0), (6, 2), (3, 2), (3, 4), (0, 4)]
+    PENTAGON = [(0, 0), (6, 0), (6, 3), (3, 5), (0, 3)]
+
+    def test_rectangle_to_polygon(self):
+        room = Room(x=6, y=4, z=2.7)
+        room.set_dimensions(polygon=self.L_SHAPE)
+        assert room.is_polygon is True
+        assert room.polygon.n_vertices == 6
+        assert np.isclose(room.volume, (6 * 2 + 3 * 2) * 2.7)
+        assert list(room.surfaces.keys()) == [
+            "floor", "ceiling", "wall_0", "wall_1", "wall_2", "wall_3", "wall_4", "wall_5"
+        ]
+
+    def test_set_polygon_alias_with_height(self):
+        room = Room(x=6, y=4, z=2.7)
+        room.set_polygon(self.PENTAGON, z=3.5)
+        assert room.polygon.n_vertices == 5
+        assert room.z == 3.5
+
+    def test_polygon_to_rectangle_via_xy(self):
+        room = Room(polygon=self.L_SHAPE, z=2.7)
+        room.set_dimensions(x=8)
+        assert room.is_polygon is False
+        assert room.polygon is None
+        assert (room.x, room.y) == (8.0, 4.0)  # y keeps the bounding-box extent
+        assert list(room.surfaces.keys()) == ["floor", "ceiling", "south", "east", "north", "west"]
+
+    def test_polygon_and_xy_together_rejected(self):
+        room = Room(x=6, y=4, z=2.7)
+        with pytest.raises(ValueError):
+            room.set_dimensions(x=3, polygon=self.L_SHAPE)
+
+    def test_reflectance_carried_over_by_edge_index(self):
+        room = Room(x=6, y=4, z=2.7)
+        room.set_reflectance(0.3, wall_id="south")
+        room.set_reflectance(0.5, wall_id="east")
+        room.set_reflectance(0.1, wall_id="floor")
+        room.set_dimensions(polygon=self.L_SHAPE)
+        assert room.surfaces["wall_0"].R == 0.3
+        assert room.surfaces["wall_1"].R == 0.5
+        assert room.surfaces["floor"].R == 0.1
+        room.set_dimensions(x=6, y=4)
+        assert room.surfaces["south"].R == 0.3
+        assert room.surfaces["east"].R == 0.5
+
+    def test_stale_wall_surfaces_removed(self):
+        room = Room(polygon=self.L_SHAPE, z=2.7)
+        room.set_dimensions(polygon=self.PENTAGON)
+        assert "wall_5" not in room.surfaces
+        assert len(room.surfaces) == 7
+        room.set_dimensions(x=6, y=5)
+        assert not any(k.startswith("wall_") for k in room.surfaces)
+
+    def test_standard_zones_follow_polygon(self):
+        room = Room(x=6, y=4, z=2.7).add_standard_zones()
+        rect_points = room.calc_zones["EyeLimits"].num_points
+        room.set_dimensions(polygon=self.L_SHAPE)
+        eye = room.calc_zones["EyeLimits"]
+        wrf = room.calc_zones["WholeRoomFluence"]
+        assert eye.geometry.polygon.n_vertices == 6
+        assert wrf.geometry.polygon.n_vertices == 6
+        # Masked grid has fewer points than the full bounding-box grid
+        assert eye.num_points[0] < rect_points[0] * rect_points[1]
+        assert np.isclose(eye.geometry.origin[2], 1.8)
+        assert np.isclose(wrf.geometry.depth, 2.7)
+        # Every point lies inside the polygon
+        xy = eye.coords[:, :2]
+        assert room.dim.polygon.contains_points(xy).all()
+
+    def test_standard_zones_follow_polygon_height(self):
+        room = Room(polygon=self.L_SHAPE, z=2.7).add_standard_zones()
+        room.set_dimensions(z=3.5)
+        assert np.isclose(room.calc_zones["WholeRoomFluence"].geometry.depth, 3.5)
+
+    def test_units_conversion_scales_vertices(self):
+        room = Room(polygon=self.L_SHAPE, z=2.7)
+        room.set_units("feet")
+        x_max = max(v[0] for v in room.polygon.vertices)
+        assert np.isclose(x_max, 6 / 0.3048)
+
+    def test_polygon_roundtrip_after_mutation(self):
+        room = Room(x=6, y=4, z=2.7)
+        room.set_dimensions(polygon=self.L_SHAPE)
+        loaded = Room.from_dict(room.to_dict())
+        assert loaded.is_polygon is True
+        assert loaded.polygon.vertices == room.polygon.vertices
+
+
+class TestFloorPlanValidation:
+    def test_coincident_consecutive_vertices_rejected(self):
+        with pytest.raises(ValueError, match="coincide"):
+            Room(polygon=[(0, 0), (1, 0), (1, 0), (0, 1)])
+
+    def test_collinear_zero_area_rejected(self):
+        with pytest.raises(ValueError, match="non-zero area"):
+            Room(polygon=[(0, 0), (1, 1), (2, 2)])
+
+    def test_set_polygon_rejects_degenerate(self):
+        room = Room(x=6, y=4, z=2.7)
+        with pytest.raises(ValueError, match="coincide"):
+            room.set_polygon([(0, 0), (1, 0), (1, 0), (0, 1)])
+
+    def test_self_intersection_rejected(self):
+        with pytest.raises(ValueError, match="self-intersect"):
+            Polygon2D(vertices=[(0, 0), (2, 2), (2, 0), (0, 2)])
+
+    def test_zero_span_grid_polygons_still_allowed(self):
+        # Point-like calc grids rely on zero-area rectangles
+        assert Polygon2D.rectangle(0.0, 0.0).area == 0
+
+    def test_non_finite_rejected(self):
+        with pytest.raises(ValueError, match="finite"):
+            Polygon2D(vertices=[(0, 0), (float("nan"), 0), (1, 1)])
+
+    def test_wrong_arity_rejected(self):
+        with pytest.raises(ValueError, match="pairs"):
+            Polygon2D(vertices=[(0, 0, 0), (1, 0, 0), (1, 1, 0)])

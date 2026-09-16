@@ -9,6 +9,7 @@ from .calc_zone import CalcPlane, CalcPoint, CalcVol, CalcZone
 from .room_plotter import RoomPlotter
 from .geometry import RoomDimensions
 from .geometry import Polygon2D
+from .geometry.grid import SurfaceGrid, VolumeGrid
 from .reflectance import ReflectanceManager, Surface, init_room_surfaces
 from .io import parse_guv_file, save_room_data, export_room_zip, generate_report, get_version
 from pathlib import Path
@@ -25,6 +26,15 @@ DEFAULT_DIMS = {}
 for member in list(LengthUnits):
     base = (6.0, 4.0, 2.7)  # meters
     DEFAULT_DIMS[member] = convert_length("meters", member, *base, sigfigs=0)
+
+_CARDINAL_WALL_IDS = ("south", "east", "north", "west")
+
+
+def _is_room_wall_id(key: str) -> bool:
+    """True for surface keys that name a room wall (cardinal or ``wall_N``)."""
+    if key in _CARDINAL_WALL_IDS:
+        return True
+    return key.startswith("wall_") and key[5:].isdigit()
 
 
 class Room:
@@ -499,11 +509,25 @@ class Room:
             
         return self
 
-    def set_dimensions(self, x=None, y=None, z=None):
-        """Set room dimensions."""
-        self._update_dimensions(x=x, y=y, z=z)
+    def set_dimensions(self, x=None, y=None, z=None, polygon=None):
+        """Set room dimensions.
+
+        ``x``/``y`` set the extents of an axis-aligned rectangular floor plan;
+        on a polygon room this converts it back to a rectangle (the
+        unspecified axis keeps its bounding-box extent). ``polygon`` replaces
+        the floor plan with an explicit polygon (a ``Polygon2D`` or a list of
+        ``(x, y)`` vertices). ``z`` sets the ceiling height in either case.
+        Standard zones and room surfaces are rebuilt to match.
+        """
+        if polygon is not None and (x is not None or y is not None):
+            raise ValueError("Specify either polygon or x/y, not both")
+        self._update_dimensions(x=x, y=y, z=z, polygon=polygon)
         self._resize_standard_zones()
         return self
+
+    def set_polygon(self, vertices, z=None):
+        """Set the floor plan to a polygon given as ``(x, y)`` vertices."""
+        return self.set_dimensions(polygon=vertices, z=z)
 
     @property
     def is_polygon(self) -> bool:
@@ -883,10 +907,12 @@ class Room:
 
     def _update_dimensions(self, x=None, y=None, z=None, polygon=None):
         """Update dimensions and rebuild dependent objects."""
-        if polygon is not None and self.dim.is_polygon:
+        if polygon is not None:
             self.dim = self.dim.with_(z=z, polygon=polygon)
-        elif not self.dim.is_polygon:
+            self._explicit_polygon = True
+        elif x is not None or y is not None:
             self.dim = self.dim.with_(x=x, y=y, z=z)
+            self._explicit_polygon = False
         else:
             self.dim = self.dim.with_(z=z)
         self._update_standard_surfaces()
@@ -894,25 +920,32 @@ class Room:
     def _resize_standard_zones(self):
         """Resize standard zones to match current room dimensions.
 
-        Updates boundaries while preserving the zone's resolution mode
-        (spacing_init or num_points_init).  Use _rebuild_standard_zones
+        Rebuilds each standard zone's grid from the room's floor polygon and
+        height while preserving the zone's resolution mode (spacing_init or
+        num_points_init) and its plane height. Use _rebuild_standard_zones
         when the safety standard itself changes.
         """
-        x_min, y_min, x_max, y_max = self.dim.polygon.bounding_box
+        polygon = self.dim.polygon
         for zone_id in STANDARD_ZONE_IDS:
             if zone_id not in self.calc_zones:
                 continue
             zone = self.calc_zones[zone_id]
+            geometry = zone.geometry
+            if geometry is None:
+                continue
+            common = dict(
+                spacing_init=geometry.spacing_init,
+                num_points_init=geometry.num_points_init,
+                offset=geometry.offset,
+            )
             if isinstance(zone, CalcVol):
-                zone.set_dimensions(
-                    x1=x_min, x2=x_max,
-                    y1=y_min, y2=y_max,
-                    z1=0, z2=self.dim.z,
+                zone.geometry = VolumeGrid.from_polygon(
+                    polygon, z_height=self.dim.z, **common,
                 )
             elif isinstance(zone, CalcPlane):
-                zone.set_dimensions(
-                    x1=x_min, x2=x_max,
-                    y1=y_min, y2=y_max,
+                zone.geometry = SurfaceGrid.from_polygon(
+                    polygon, height=float(geometry.origin[2]),
+                    direction=1, **common,
                 )
 
     def _rebuild_standard_zones(self, standard: "PhotStandard"):
@@ -938,16 +971,36 @@ class Room:
             self.add_surface(val, on_collision="overwrite")
 
     def _update_standard_surfaces(self):
-        """Update surfaces to match current dimensions."""
-        keys = self.dim.faces.keys()
-        existing_keys = [k for k in keys if k in self.surfaces]
-        reflectances = {key: self.surfaces[key].R for key in existing_keys}
-        num_x = {key: self.surfaces[key].plane.num_x for key in existing_keys}
-        num_y = {key: self.surfaces[key].plane.num_y for key in existing_keys}
+        """Update surfaces to match current dimensions.
+
+        Wall surfaces are matched by edge index rather than by name, so
+        reflectance settings survive the cardinal <-> ``wall_N`` renaming
+        that happens when a room changes between rectangular and polygon
+        shapes. Surfaces for edges that no longer exist are removed.
+        """
+        new_keys = list(self.dim.faces.keys())
+        old_wall_keys = [k for k in self.surfaces.keys() if _is_room_wall_id(k)]
+        new_wall_keys = [k for k in new_keys if k not in ("floor", "ceiling")]
+
+        # Map old surface key -> new surface key (floor/ceiling by name,
+        # walls by edge order).
+        key_map = {k: k for k in ("floor", "ceiling") if k in self.surfaces}
+        for old_key, new_key in zip(old_wall_keys, new_wall_keys):
+            key_map[old_key] = new_key
+
+        reflectances = {new: self.surfaces[old].R for old, new in key_map.items()}
+        transmittances = {new: self.surfaces[old].T for old, new in key_map.items()}
+        num_x = {new: self.surfaces[old].plane.num_x for old, new in key_map.items()}
+        num_y = {new: self.surfaces[old].plane.num_y for old, new in key_map.items()}
+
+        for stale in old_wall_keys:
+            if stale not in new_keys:
+                self.surfaces.remove(stale)
 
         room_surfaces = init_room_surfaces(
             dims=self.dim,
             reflectances=reflectances,
+            transmittances=transmittances,
             num_x=num_x,
             num_y=num_y,
         )
