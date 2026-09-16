@@ -289,3 +289,42 @@ class TestRoomGenerateReport:
         result = room.generate_report()
         text = result.decode("cp1252")
         assert "Room Parameters" in text
+
+    def test_generate_report_lists_polygon_vertices(self):
+        """Polygon rooms list every floor plan vertex in the report."""
+        verts = [(0, 0), (6, 0), (6, 4), (3, 6), (0, 4)]
+        room = Room(polygon=verts, z=2.7)
+        text = room.generate_report().decode("cp1252")
+        assert "Floor Plan" in text
+        for i, (x, y) in enumerate(verts):
+            assert f",,{i},{float(x)},{float(y)},meters" in text
+        assert ",Floor area,30.0,m 2" in text
+
+    def test_generate_report_rect_room_has_no_floor_plan(self):
+        """Rectangular rooms keep the plain dimensions row without a vertex list."""
+        text = Room(x=6, y=4, z=2.7).generate_report().decode("cp1252")
+        assert "Floor Plan" not in text
+        assert ",Floor area,24.0,m 2" in text
+
+    def test_generate_report_reflectance_header_matches_surfaces(self):
+        """Reflectance labels line up with the surface each value belongs to."""
+        room = Room(x=6, y=4, z=2.7)
+        room.set_reflectance(0.1, wall_id="north")
+        room.set_reflectance(0.2, wall_id="south")
+        lines = room.generate_report().decode("cp1252").splitlines()
+        i = next(i for i, l in enumerate(lines) if l.startswith(",,Floor,Ceiling"))
+        header = lines[i].split(",")
+        values = lines[i + 1].split(",")
+        assert values[header.index("North")] == "0.1"
+        assert values[header.index("South")] == "0.2"
+
+    def test_generate_report_polygon_reflectance_header(self):
+        """Polygon rooms label reflectance columns by wall index."""
+        room = Room(polygon=[(0, 0), (6, 0), (6, 4), (3, 6), (0, 4)], z=2.7)
+        room.set_reflectance(0.3, wall_id="wall_3")
+        lines = room.generate_report().decode("cp1252").splitlines()
+        i = next(i for i, l in enumerate(lines) if l.startswith(",,Floor,Ceiling"))
+        header = lines[i].split(",")
+        values = lines[i + 1].split(",")
+        assert header[2:] == ["Floor", "Ceiling", "Wall 0", "Wall 1", "Wall 2", "Wall 3", "Wall 4", "Enabled"]
+        assert values[header.index("Wall 3")] == "0.3"

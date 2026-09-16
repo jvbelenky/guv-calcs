@@ -30,13 +30,20 @@ def _build_room_rows(room):
     rows += [["", "Dimensions", "x", "y", "z", "units"]]
     d = room.dim
     rows += [["", "", fmt(d.x), fmt(d.y), fmt(d.z), d.units]]
+    if d.is_polygon:
+        rows += [["", "Floor Plan", "vertex", "x", "y", "units"]]
+        for i, (vx, vy) in enumerate(d.polygon.vertices):
+            rows += [["", "", i, fmt(vx), fmt(vy), d.units]]
+    area_units = "ft 2" if room.units == "feet" else "m 2"
     vol_units = "ft 3" if room.units == "feet" else "m 3"
+    rows += [["", "Floor area", fmt(d.polygon.area), area_units]]
     rows += [["", "Volume", fmt(room.volume), vol_units]]
     rows += [[""]]
 
     # ───  Reflectance  ──────────────────────────────────
     rows += [["", "Reflectance"]]
-    rows += [["", "", "Floor", "Ceiling", "North", "South", "East", "West", "Enabled"]]
+    labels = [k.replace("_", " ").title() for k in room.surfaces]
+    rows += [["", "", *labels, "Enabled"]]
     rows += [
         ["", "", *[v.R for v in room.surfaces.values()], room.ref_manager.enabled]
     ]

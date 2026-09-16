@@ -6,8 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Room.set_dimensions() accepts polygon=; Room.set_polygon() sets the floor plan after construction. Passing x/y to a polygon room converts it back to a rectangle
+- generate_report() lists every floor plan vertex for polygon rooms and reports floor area for all rooms
 
 ### Fixed
+- generate_report() reflectance header was hardcoded to Floor/Ceiling/North/South/East/West, which mislabeled the wall columns (values are ordered south/east/north/west) and didn't fit polygon rooms' wall_N surfaces; labels now come from the room's actual surfaces
 - Changing a room's floor plan left stale wall surfaces behind (e.g. wall_5 after going from 6 walls to 5, or wall_N alongside cardinal names after going back to a rectangle); surfaces are now rebuilt from the new faces, with reflectance, transmittance and grid resolution carried over by edge index across the cardinal/wall_N renaming
 - Standard zones ignored floor plan changes (SurfaceGrid.update_dimensions() is a no-op for polygon grids); Room._resize_standard_zones() now rebuilds them from the polygon, keeping spacing/num_points and plane height
 - Room floor plans accepted degenerate outlines; coincident consecutive vertices or zero area now raise ValueError (RoomDimensions), and Polygon2D rejects non-finite or non-pair vertices
