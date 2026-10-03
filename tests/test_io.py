@@ -317,6 +317,13 @@ class TestRoomGenerateReport:
         assert "Footprint" in text
         assert text.count(",,,") >= 6  # six footprint vertex rows
 
+    def test_generate_report_shows_origin_when_floor_plan_is_offset(self):
+        text = Room(x=4, y=6, z=3, origin=(2, 12)).generate_report().decode("cp1252")
+        assert ",Origin,x,y\r\n,,2.0,12.0\r\n" in text
+        assert "Floor Plan" not in text  # still a rectangle
+        plain = Room(x=4, y=6, z=3).generate_report().decode("cp1252")
+        assert "Origin" not in plain
+
     def test_generate_report_rect_room_has_no_floor_plan(self):
         """Rectangular rooms keep the plain dimensions row without a vertex list."""
         text = Room(x=6, y=4, z=2.7).generate_report().decode("cp1252")

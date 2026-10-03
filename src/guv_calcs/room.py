@@ -54,6 +54,7 @@ class Room:
         y: "float | tuple[float, float] | list[float]" = None,
         z: "float | tuple[float, float] | list[float]" = None,
         polygon: "Polygon2D | list[tuple[float, float]]" = None,
+        origin: "tuple[float, float] | None" = None,
         units: str = "meters",
         standard: str = "ANSI IES RP 27.1-22 (ACGIH Limits)",
         enable_reflectance: bool = True,
@@ -88,6 +89,10 @@ class Room:
 
             x1, x2 = _parse_range(x, DEFAULT_DIMS[units][0])
             y1, y2 = _parse_range(y, DEFAULT_DIMS[units][1])
+            # origin places the rectangle's minimum corner; (0, 0) by default
+            if origin is not None:
+                ox, oy = float(origin[0]), float(origin[1])
+                x1, x2, y1, y2 = x1 + ox, x2 + ox, y1 + oy, y2 + oy
             polygon = Polygon2D(vertices=(
                 (x1, y1), (x2, y1), (x2, y2), (x1, y2)
             ))

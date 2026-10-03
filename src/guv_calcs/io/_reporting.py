@@ -30,6 +30,12 @@ def _build_room_rows(room):
     rows += [["", "Dimensions", "x", "y", "z", "units"]]
     d = room.dim
     rows += [["", "", fmt(d.x), fmt(d.y), fmt(d.z), d.units]]
+    # x/y above are bounding-box extents; a floor plan that does not start at
+    # the origin (a traced room, or Room(..., origin=)) also reports where it sits
+    x_min, y_min, _, _ = d.polygon.bounding_box
+    if x_min != 0 or y_min != 0:
+        rows += [["", "Origin", "x", "y"]]
+        rows += [["", "", fmt(x_min), fmt(y_min)]]
     if d.is_polygon:
         rows += [["", "Floor Plan", "vertex", "x", "y"]]
         for i, (vx, vy) in enumerate(d.polygon.vertices):

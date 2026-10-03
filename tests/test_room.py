@@ -502,6 +502,24 @@ class TestRoomReflectance:
 class TestPolygonRoom:
     """Tests for polygon-based room shapes."""
 
+    def test_origin_places_rectangle(self):
+        room = Room(x=4, y=6, z=3, origin=(2, 12))
+        assert room.dim.polygon.bounding_box == (2.0, 12.0, 6.0, 18.0)
+        assert (room.x, room.y, room.z) == (4.0, 6.0, 3.0)
+        assert room.is_polygon is False
+        # standard zones and surfaces follow the room
+        room.add_standard_zones()
+        zone = room.calc_zones["SkinLimits"]
+        assert (zone.x1, zone.x2, zone.y1, zone.y2) == (2.0, 6.0, 12.0, 18.0)
+        assert room.surfaces["floor"].plane.geometry.x1 == 2.0
+        # and the position survives a save/load round trip
+        again = Room.from_dict(room.to_dict())
+        assert again.dim.polygon.bounding_box == (2.0, 12.0, 6.0, 18.0)
+
+    def test_origin_shifts_explicit_ranges(self):
+        room = Room(x=(1, 5), y=(0, 6), origin=(2, 12))
+        assert room.dim.polygon.bounding_box == (3.0, 12.0, 7.0, 18.0)
+
     def test_polygon_room_creation_from_list(self):
         """Polygon room can be created from list of vertices."""
         vertices = [(0, 0), (4, 0), (4, 2), (2, 2), (2, 4), (0, 4)]

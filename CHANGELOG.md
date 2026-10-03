@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Room(x, y, z, origin=(x0, y0)) places a rectangular room with its minimum corner at (x0, y0) instead of the origin (x/y ranges given as tuples are shifted too)
+- generate_report() prints an Origin row (x_min, y_min) when the floor plan does not start at the origin; the Dimensions row is the bounding-box extents
 - generate_report() lists the room's objects (id, name, shape, size, base centre, rotation, reflectance, transmittance, enabled) and the footprint vertices of extruded objects
 
 ### Changed
