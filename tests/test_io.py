@@ -295,10 +295,27 @@ class TestRoomGenerateReport:
         verts = [(0, 0), (6, 0), (6, 4), (3, 6), (0, 4)]
         room = Room(polygon=verts, z=2.7)
         text = room.generate_report().decode("cp1252")
-        assert "Floor Plan" in text
+        assert ",Floor Plan,vertex,x,y\r\n" in text
         for i, (x, y) in enumerate(verts):
-            assert f",,{i},{float(x)},{float(y)},meters" in text
+            assert f",,{i},{float(x)},{float(y)}\r\n" in text
+        # units are stated once in the header, not on every vertex row
+        for x, y in verts:
+            assert f",{float(x)},{float(y)},meters" not in text
         assert ",Floor area,30.0,m 2" in text
+
+    def test_generate_report_lists_objects(self):
+        from guv_calcs import Object
+        room = Room(x=4, y=6, z=2.7)
+        room.add_object(Object.box(1.2, 0.6, 0.75, object_id="desk", name="Desk",
+                                   position=(2, 3, 0), yaw=30, R=0.1))
+        room.add_object(Object.extrusion([(0, 0), (2, 0), (2, 1), (1, 1), (1, 2), (0, 2)], 1.0,
+                                         object_id="L", position=(1, 1, 0)))
+        text = room.generate_report().decode()
+        assert "Objects" in text
+        assert "desk,Desk,box,1.2,0.6,0.75,2.0,3.0,0.0,30.0,0.0,0.0,0.1,0.0,True" in text
+        assert "L,L,extrusion" in text
+        assert "Footprint" in text
+        assert text.count(",,,") >= 6  # six footprint vertex rows
 
     def test_generate_report_rect_room_has_no_floor_plan(self):
         """Rectangular rooms keep the plain dimensions row without a vertex list."""

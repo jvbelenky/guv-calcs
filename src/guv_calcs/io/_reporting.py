@@ -31,9 +31,9 @@ def _build_room_rows(room):
     d = room.dim
     rows += [["", "", fmt(d.x), fmt(d.y), fmt(d.z), d.units]]
     if d.is_polygon:
-        rows += [["", "Floor Plan", "vertex", "x", "y", "units"]]
+        rows += [["", "Floor Plan", "vertex", "x", "y"]]
         for i, (vx, vy) in enumerate(d.polygon.vertices):
-            rows += [["", "", i, fmt(vx), fmt(vy), d.units]]
+            rows += [["", "", i, fmt(vx), fmt(vy)]]
     area_units = "ft 2" if room.units == "feet" else "m 2"
     vol_units = "ft 3" if room.units == "feet" else "m 3"
     rows += [["", "Floor area", fmt(d.polygon.area), area_units]]
@@ -90,6 +90,59 @@ def _build_room_rows(room):
                     fmt(lamp.scaling_factor),
                 ]
             ]
+        rows += [[""]]
+
+    # ───  Objects (obstacles)  ─────────────────────────
+    if room.objects:
+        rows += [["Objects"]]
+        rows += [["", "", "", "", "Size", "", "", "Base centre", "", "", "Rotation"]]
+        rows += [
+            [
+                "",
+                "ID",
+                "Name",
+                "Shape",
+                "Width",
+                "Length",
+                "Height",
+                "x",
+                "y",
+                "z",
+                "Yaw",
+                "Pitch",
+                "Roll",
+                "Reflectance",
+                "Transmittance",
+                "Enabled",
+            ]
+        ]
+        for obj in room.objects.values():
+            data = obj.to_dict()
+            shape = data["shape"]
+            rows += [
+                [
+                    "",
+                    obj.id,
+                    obj.name,
+                    shape["type"],
+                    fmt(obj.width),
+                    fmt(obj.length),
+                    fmt(obj.height),
+                    fmt(obj.x),
+                    fmt(obj.y),
+                    fmt(obj.z),
+                    fmt(data["yaw"]),
+                    fmt(data["pitch"]),
+                    fmt(data["roll"]),
+                    obj.R,
+                    obj.T,
+                    obj.enabled,
+                ]
+            ]
+            if shape["type"] == "extrusion":
+                rows += [["", "", "Footprint", "vertex", "x", "y"]]
+                for i, (vx, vy) in enumerate(shape["polygon"]["vertices"]):
+                    rows += [["", "", "", i, fmt(vx), fmt(vy)]]
         rows += [[""]]
 
     # ----- Calc zones ------------------------
