@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- generate_report() lists the room's objects (id, name, shape, size, base centre, rotation, reflectance, transmittance, enabled) and the footprint vertices of extruded objects
+
+### Changed
+- generate_report() no longer repeats the unit on every floor plan vertex row; the unit is given once, in the Dimensions row
+
+### Fixed
+- SurfaceGrid.x1/x2/y1/y2 (mins/maxs) for a polygon grid ignored the grid's origin, so a plane built from a floor outline that does not touch the axes (e.g. a traced room starting at (2, 12)) reported extents shifted to (0, 0); standard zones in such rooms were drawn in the wrong place by clients that position them from these extents. VolumeGrid was already correct
+- Object side faces had their normals pointing into the object (SurfaceGrid.from_wall gives an inward normal for a CCW edge, which is the room convention), so object reflectance contributed nothing to zones below R=1 and diverged at R=1 as the inward-facing faces bounced light inside a closed cavity. Walls are now built with outward normals, and every object face uses use_normal so it cannot be lit from behind
+- Changing the occluder set (an object added, moved, disabled or removed) did not invalidate a zone's cached per-lamp values, so a soft calculate() after disabling an object kept the stale shadowed result. LightingCalculator.compute now recomputes every lamp when the occluder geometry differs from the cached scene state
+- Direct incidence on room surfaces and object faces is now shadowed by the other surfaces when occlusion is active (ReflectanceManager.calculate_incidence gained enable_occlusion, which Room.calculate passes), so a wall behind an opaque object no longer reflects light it never received
+
 ## [0.7.3] - 2026-09-16
 
 ### Added
