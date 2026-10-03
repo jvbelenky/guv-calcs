@@ -578,3 +578,102 @@ class TestRepr:
         a = Object.box(1, 2, 3)
         b = Object.box(1, 2, 4)
         assert a != b
+
+
+class TestObjectInRoom:
+    """Objects as reflectors and occluders inside a Room."""
+
+    @staticmethod
+    def _outward_dots(obj, centre):
+        dots = {}
+        for fid, s in obj.surfaces.items():
+            g = s.plane.geometry
+            face_centre = np.asarray(g.boundary_vertices).mean(axis=0)
+            dots[fid] = float(np.dot(np.asarray(g.normal), face_centre - centre))
+        return dots
+
+    def test_box_face_normals_point_outward(self):
+        obj = Object.box(1, 2, 1, object_id="o", position=(2, 3, 0))
+        dots = self._outward_dots(obj, np.array([2, 3, 0.5]))
+        assert all(d > 0 for d in dots.values()), dots
+
+    def test_extrusion_face_normals_point_outward(self):
+        # L shape; the centroid of the footprint lies inside the L
+        obj = Object.extrusion([(0, 0), (2, 0), (2, 1), (1, 1), (1, 2), (0, 2)], 1.0,
+                               object_id="L", position=(5, 5, 0))
+        cx, cy = 5.0, 5.0
+        for fid, s in obj.surfaces.items():
+            if not fid.endswith(("top", "bottom")):
+                g = s.plane.geometry
+                face_centre = np.asarray(g.boundary_vertices).mean(axis=0)
+                # every wall faces away from the vertical axis through its own midpoint
+                # pushed slightly inward: test with the outward offset instead
+                n = np.asarray(g.normal)
+                assert abs(n[2]) < 1e-9, fid
+                probe_in = face_centre - 0.05 * n
+                from guv_calcs import Polygon2D
+                poly = Polygon2D(vertices=tuple((x + cx - 5 / 6, y + cy - 5 / 6) for x, y in
+                                                [(0, 0), (2, 0), (2, 1), (1, 1), (1, 2), (0, 2)]))
+                assert poly.contains_point_inclusive(probe_in[0], probe_in[1]), fid
+
+    @staticmethod
+    def _room_with_panel(R, enable_reflectance=True):
+        from guv_calcs import Room, Lamp, CalcPlane, SurfaceGrid, Polygon2D
+        room = Room(x=4, y=6, z=2.7, enable_reflectance=enable_reflectance)
+        room.add_lamp(Lamp.from_keyword("ushio_b1").move(2, 3, 2.7).aim(2, 3, 0))
+        geom = SurfaceGrid.from_polygon(Polygon2D.rectangle(4, 6), height=1.0, direction=1,
+                                        num_points_init=(10, 10))
+        zone = CalcPlane(zone_id="plane", geometry=geom)
+        room.add_calc_zone(zone)
+        room.add_object(Object.box(0.2, 3.0, 2.5, object_id="panel", position=(1.0, 3, 0), R=R, T=0))
+        room.calculate()
+        return room, zone
+
+    def test_object_reflectance_adds_light_and_stays_finite(self):
+        _, z0 = self._room_with_panel(0.0)
+        _, z5 = self._room_with_panel(0.5)
+        _, z1 = self._room_with_panel(1.0)
+        m0, m5, m1 = (float(np.nanmean(z.values)) for z in (z0, z5, z1))
+        assert np.isfinite(m1)
+        assert m5 > m0 * 1.01, (m0, m5)
+        assert m1 > m5, (m5, m1)
+        # A single reflector cannot return more than the direct light it receives
+        assert m1 < m0 * 3, (m0, m1)
+
+    def test_disabling_object_invalidates_cached_zone_values(self):
+        from guv_calcs import Room, Lamp, CalcPlane, SurfaceGrid, Polygon2D
+        room = Room(x=4, y=6, z=2.7, enable_reflectance=False)
+        room.add_lamp(Lamp.from_keyword("ushio_b1").move(2, 3, 2.7).aim(2, 3, 0))
+        geom = SurfaceGrid.from_polygon(Polygon2D.rectangle(4, 6), height=1.0, direction=1,
+                                        num_points_init=(10, 10))
+        zone = CalcPlane(zone_id="plane", geometry=geom)
+        room.add_calc_zone(zone)
+        room.calculate()
+        clear = float(np.nanmean(zone.values))
+        slab = Object.box(3, 3, 0.3, object_id="slab", position=(2, 3, 1.9))
+        room.add_object(slab)
+        room.calculate()
+        shadowed = float(np.nanmean(zone.values))
+        assert shadowed < clear
+        slab.enabled = False
+        room.calculate()  # soft: must notice the occluder set changed
+        assert float(np.nanmean(zone.values)) == pytest.approx(clear, rel=1e-6)
+        slab.enabled = True
+        room.calculate()
+        assert float(np.nanmean(zone.values)) == pytest.approx(shadowed, rel=1e-6)
+        room.remove_object("slab")
+        room.calculate()
+        assert float(np.nanmean(zone.values)) == pytest.approx(clear, rel=1e-6)
+
+    def test_object_shadows_room_surfaces_for_reflectance(self):
+        """Direct incidence on a room wall is blocked by an opaque object in the way."""
+        from guv_calcs import Room, Lamp
+        def west_wall_mean(with_panel):
+            room = Room(x=4, y=6, z=2.7, enable_reflectance=True)
+            room.set_reflectance(0.5, wall_id="west")
+            room.add_lamp(Lamp.from_keyword("ushio_b1").move(2, 3, 2.7).aim(2, 3, 0))
+            if with_panel:
+                room.add_object(Object.box(0.2, 5.0, 2.6, object_id="panel", position=(1.0, 3, 0)))
+            room.calculate()
+            return float(np.nanmean(room.surfaces["west"].plane.values))
+        assert west_wall_mean(True) < west_wall_mean(False) * 0.5

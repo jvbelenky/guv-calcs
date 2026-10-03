@@ -765,12 +765,13 @@ class Room:
 
         valid_lamps = self.lamps.valid()
         all_surfs = self.all_surfaces
+        enable_occlusion = self._needs_occlusion(valid_lamps)
 
         # calculate incidence on the surfaces (for reflectance)
         if self.recalculate_incidence or hard:
-            self.ref_manager.calculate_incidence(valid_lamps, all_surfs, hard=hard)
-
-        enable_occlusion = self._needs_occlusion(valid_lamps)
+            self.ref_manager.calculate_incidence(
+                valid_lamps, all_surfs, hard=hard, enable_occlusion=enable_occlusion
+            )
 
         for name, zone in self.calc_zones.items():
             zone.calculate_values(
@@ -797,9 +798,11 @@ class Room:
         valid_lamps = self.lamps.valid()
         if len(valid_lamps) > 0:
             all_surfs = self.all_surfaces
-            if self.recalculate_incidence or hard:
-                self.ref_manager.calculate_incidence(valid_lamps, all_surfs, hard=hard)
             enable_occlusion = self._needs_occlusion(valid_lamps)
+            if self.recalculate_incidence or hard:
+                self.ref_manager.calculate_incidence(
+                    valid_lamps, all_surfs, hard=hard, enable_occlusion=enable_occlusion
+                )
             self.calc_zones[zone_id].calculate_values(
                 lamps=valid_lamps, surfaces=all_surfs,
                 enable_occlusion=enable_occlusion,

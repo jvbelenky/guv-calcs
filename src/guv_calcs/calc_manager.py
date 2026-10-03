@@ -135,10 +135,21 @@ class LightingCalculator:
 
         occluders = surfaces if enable_occlusion else None
 
+        # Direct values depend on which surfaces occlude the lamp→point rays, so
+        # a change in the occluder set (an object added, moved, disabled or
+        # removed, or occlusion switched on/off) invalidates every lamp entry,
+        # not just the ones whose own state changed.
+        scene_geo = None
+        if occluders:
+            scene_geo = tuple(s.calc_state for s in occluders.values())
+        occluders_changed = scene_geo != self.cache.scene_geometry_state
+
         lamp_cache = {}
         for lamp_id, lamp in lamps.items():
             # potentially expensive
-            base_values = self.calculate_lamp(lamp, zv, surfaces=occluders, hard=hard)
+            base_values = self.calculate_lamp(
+                lamp, zv, surfaces=occluders, hard=hard or occluders_changed
+            )
             # always cheap
             values = self.apply_filters(lamp, base_values.copy(), zv)
             lamp_cache[lamp_id] = LampCacheEntry(
@@ -148,12 +159,7 @@ class LightingCalculator:
                 update_state=lamp.update_state,
             )
 
-        # build scene geometry state for occlusion cache invalidation
-        scene_geo = None
-        if surfaces:
-            scene_geo = tuple(s.calc_state for s in surfaces.values())
-
-        # update cache
+        # update cache (scene_geo doubles as the reflectance occlusion key)
         self.cache = ZoneCache(
             lamp_cache=lamp_cache,
             surface_cache=self.cache.surface_cache,  # preserve across compute calls

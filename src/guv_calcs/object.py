@@ -383,7 +383,7 @@ class Object:
         )
         surfaces["bottom"] = Surface(
             R=self.R, T=self.T,
-            plane=CalcPlane(zone_id="bottom", geometry=bottom_geom, horiz=True),
+            plane=CalcPlane(zone_id="bottom", geometry=bottom_geom, horiz=True, use_normal=True),
         )
 
         # top (normal points up, outward from object)
@@ -392,18 +392,22 @@ class Object:
         )
         surfaces["top"] = Surface(
             R=self.R, T=self.T,
-            plane=CalcPlane(zone_id="top", geometry=top_geom, horiz=True),
+            plane=CalcPlane(zone_id="top", geometry=top_geom, horiz=True, use_normal=True),
         )
 
-        # walls (normals point outward via CCW winding)
+        # walls. SurfaceGrid.from_wall gives a normal that points INWARD for a
+        # CCW edge (the room convention, where light comes from inside), so the
+        # edge is traversed backwards here to make the normal point outward,
+        # away from the object. use_normal rejects light arriving from behind
+        # the face (through the object), which an opaque face cannot receive.
         for i, ((x1, y1), (x2, y2)) in enumerate(polygon.edges):
             wall_geom = SurfaceGrid.from_wall(
-                (x1, y1), (x2, y2), z_height=h, num_points_init=np_init
+                (x2, y2), (x1, y1), z_height=h, num_points_init=np_init
             )
             face_id = f"wall_{i}"
             surfaces[face_id] = Surface(
                 R=self.R, T=self.T,
-                plane=CalcPlane(zone_id=face_id, geometry=wall_geom, horiz=True),
+                plane=CalcPlane(zone_id=face_id, geometry=wall_geom, horiz=True, use_normal=True),
             )
 
         self._local_surfaces = surfaces
@@ -426,7 +430,7 @@ class Object:
             )
 
             world_plane = CalcPlane(
-                zone_id=face_id, geometry=world_geom, horiz=True,
+                zone_id=face_id, geometry=world_geom, horiz=True, use_normal=True,
             )
             self._world_surfaces[face_id] = Surface(
                 R=local_surface.R, T=local_surface.T, plane=world_plane,

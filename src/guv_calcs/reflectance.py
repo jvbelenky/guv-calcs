@@ -58,12 +58,23 @@ class ReflectanceManager:
     def calc_state(self):
         return (self.max_num_passes, self.threshold, self.enabled)
 
-    def calculate_incidence(self, lamps, surfaces, hard=False):
-        """Calculate incident irradiance on all surfaces, then run interreflection."""
+    def calculate_incidence(self, lamps, surfaces, hard=False, enable_occlusion=False):
+        """Calculate incident irradiance on all surfaces, then run interreflection.
+
+        With enable_occlusion, the direct lamp → surface pass is shadowed by
+        the other surfaces (an object standing between a lamp and a wall), the
+        same way zone values are. A surface never shadows itself: a ray to a
+        point on a plane meets that plane only at its endpoint.
+        """
         if self.enabled:
             # first pass: direct lamp → surface
             for wall, surface in surfaces.items():
-                surface.calculate_incidence(lamps, hard=hard)
+                occluders = None
+                if enable_occlusion:
+                    occluders = {k: s for k, s in surfaces.items() if k != wall}
+                surface.calculate_incidence(
+                    lamps, surfaces=occluders, hard=hard, reflect=False
+                )
             # subsequent passes: surface ↔ surface bounces
             self._interreflectance(lamps, surfaces, hard=hard)
 
@@ -223,10 +234,15 @@ class Surface:
     def set_num_points(self, num_x=None, num_y=None):
         self.plane.set_num_points(num_x=num_x, num_y=num_y)
 
-    def calculate_incidence(self, lamps, surfaces=None, hard=False):
-        """calculate incoming radiation onto all surfaces"""
+    def calculate_incidence(self, lamps, surfaces=None, hard=False, reflect=True):
+        """calculate incoming radiation onto this surface.
+
+        ``surfaces`` act as occluders and, unless ``reflect`` is False, as
+        reflectors contributing bounced light.
+        """
         return self.plane.calculate_values(
-            lamps=lamps, surfaces=surfaces, hard=hard
+            lamps=lamps, surfaces=surfaces, hard=hard,
+            enable_reflectance=reflect,
         )
 
     # -- stateless computation, called by LightingCalculator --
