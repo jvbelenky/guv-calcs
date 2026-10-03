@@ -86,6 +86,25 @@ class TestSurfaceGridProperties:
         assert g.x_spacing == 0.5
         assert g.y_spacing == 0.5
 
+    def test_mins_maxs_polygon_include_origin(self):
+        """A polygon grid whose outline does not touch the axes reports world extents."""
+        poly = Polygon2D(vertices=((8, 12), (8, 14), (107, 14), (107, 76), (2, 76), (2, 12)))
+        grid = SurfaceGrid.from_polygon(poly, height=5.9, direction=1, num_points_init=(50, 50))
+        assert grid.origin == (2, 12, 5.9)
+        assert grid.mins == (2.0, 12.0)
+        assert grid.maxs == (107.0, 76.0)
+        assert (grid.x1, grid.x2, grid.y1, grid.y2) == (2.0, 107.0, 12.0, 76.0)
+        # and the extents enclose every calculation point
+        coords = grid.coords
+        assert coords[:, 0].min() >= 2.0 and coords[:, 0].max() <= 107.0
+        assert coords[:, 1].min() >= 12.0 and coords[:, 1].max() <= 76.0
+
+    def test_mins_maxs_polygon_flipped_direction(self):
+        """direction=-1 puts the origin at y_max with v pointing -y; extents are unchanged."""
+        poly = Polygon2D(vertices=((2, 12), (107, 12), (107, 76), (2, 76)))
+        grid = SurfaceGrid.from_polygon(poly, height=1.0, direction=-1, num_points_init=(5, 5))
+        assert (grid.x1, grid.x2, grid.y1, grid.y2) == (2.0, 107.0, 12.0, 76.0)
+
     def test_mins_maxs_rectangular(self):
         g = SurfaceGrid.from_legacy(mins=(1, 2), maxs=(5, 7), height=0)
         assert g.x1 == 1

@@ -305,19 +305,21 @@ class SurfaceGrid(_GridBase):
 
     @property
     def mins(self):
-        if not self.is_rectangular:
-            x_min, y_min, _, _ = self.polygon.bounding_box
-            return (x_min, y_min)
         idx = self._in_plane_indices
+        if not self.is_rectangular:
+            # The polygon is stored in the grid's local (u, v) frame; its world
+            # extents come from the transformed boundary, origin included.
+            pts = self.boundary_vertices
+            return tuple(float(pts[:, i].min()) for i in idx)
         ext = self.extent
         return tuple(min(self.origin[i], ext[i]) for i in idx)
 
     @property
     def maxs(self):
-        if not self.is_rectangular:
-            _, _, x_max, y_max = self.polygon.bounding_box
-            return (x_max, y_max)
         idx = self._in_plane_indices
+        if not self.is_rectangular:
+            pts = self.boundary_vertices
+            return tuple(float(pts[:, i].max()) for i in idx)
         ext = self.extent
         return tuple(max(self.origin[i], ext[i]) for i in idx)
 
