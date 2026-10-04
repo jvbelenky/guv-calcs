@@ -1,7 +1,15 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 import numpy as np
-from ..units import convert_units, LengthUnits
+from ..units import convert_units, convert_length, LengthUnits
+
+# IES header unit codes (LM-63): 1 = feet, 2 = meters
+_IES_UNITS = {1: LengthUnits.FEET, 2: LengthUnits.METERS}
+
+
+def ies_units(ies) -> LengthUnits:
+    """Length units an IESFile's dimensions are expressed in."""
+    return _IES_UNITS[ies.units]
 from .lamp_surface_plotter import LampSurfacePlotter
 from .intensity_map import IntensityMap
 
@@ -167,15 +175,17 @@ class LampSurface:
         Only overwrites values if user didn't explicitly provide them.
         """
         if ies is not None:
+            src = ies_units(ies)
             if self._user_units is None or override:
-                units_dict = {1: LengthUnits.FEET, 2: LengthUnits.METERS}
-                self.units = units_dict[ies.units]
+                self.units = src
+            # the IES file only knows feet or meters; the surface may be in any
+            # unit (e.g. a lamp restored into a centimeter room), so convert
             if self._user_width is None or override:
-                self.width = abs(ies.width)
+                self.width = convert_length(src, self.units, abs(ies.width))
             if self._user_length is None or override:
-                self.length = abs(ies.length)
+                self.length = convert_length(src, self.units, abs(ies.length))
             if self._user_height is None or override:
-                self.height = abs(ies.height)
+                self.height = convert_length(src, self.units, abs(ies.height))
 
             self._recompute()
 

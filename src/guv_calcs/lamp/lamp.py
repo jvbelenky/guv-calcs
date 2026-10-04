@@ -8,7 +8,7 @@ import numpy as np
 import hashlib
 from photompy import Photometry, IESFile
 from .spectrum import Spectrum
-from .lamp_surface import LampSurface
+from .lamp_surface import LampSurface, ies_units
 from .lamp_plotter import LampPlotter
 from .lamp_orientation import LampOrientation
 from .lamp_geometry import LampGeometry
@@ -52,8 +52,10 @@ class Lamp:
         Optional. Data source for spectrum.
     width, length, height: floats, default=None
         x, y, and z axes of luminous opening. If not provided, read from IES file.
-    units: str or int in [1, 2] or None
-        `feet` or `meters`. 1=feet, 2=meters. Defaults to IES file value.
+    units: str or LengthUnits, default="meters"
+        Units of the luminous opening and position: "meters", "feet", "inches",
+        "centimeters", "millimeters", "yards" (or aliases such as "ft", "in").
+        The IES file's own dimensions are converted into these units.
     housing_width, housing_length, housing_height: floats, default=None
         Physical fixture housing dimensions. Defaults to luminous surface size.
     housing_units: str or LengthUnits, default=None
@@ -954,9 +956,8 @@ class Lamp:
         new_units = LengthUnits.from_any(units)
         old_units = self.surface.units
 
-        if self.ies is not None:
-            # IES standard only supports feet (1) and meters (2)
-            self.ies.update(units=1 if new_units == LengthUnits.FEET else 2)
+        # the IES file keeps its native units (it only knows feet and meters);
+        # the surface carries the user-facing units and converts at the boundary
         self.surface.set_units(units)
 
         # Convert fixture dimensions if units changed
@@ -978,14 +979,14 @@ class Lamp:
     def set_width(self, width):
         """Change y-axis extent of lamp emissive surface."""
         if self.ies is not None:
-            self.ies.update(width=width)
+            self.ies.update(width=convert_length(self.surface.units, ies_units(self.ies), width))
         self.surface.set_width(width)
         return self
 
     def set_length(self, length):
         """Change x-axis extent of lamp emissive surface."""
         if self.ies is not None:
-            self.ies.update(length=length)
+            self.ies.update(length=convert_length(self.surface.units, ies_units(self.ies), length))
         self.surface.set_length(length)
         return self
 
