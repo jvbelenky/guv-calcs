@@ -4,6 +4,7 @@ import warnings
 from .room import Room
 from .scene_registry import RoomRegistry
 from .safety import PhotStandard
+from .units import LengthUnits
 
 
 # Keys that map to Room.__init__ parameters for default propagation
@@ -34,7 +35,7 @@ class Project:
         reflectance_threshold=0.02,
     ):
         self._standard = PhotStandard.from_any(standard)
-        self.units = units
+        self.units = LengthUnits.from_any(units)
         self.precision = precision
         self.colormap = colormap
         self.on_collision = on_collision

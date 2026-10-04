@@ -139,7 +139,7 @@ class RoomPlotter:
     def _plot_lamp(self, lamp, fig, select_id=None, color="#cc61ff"):
         """plot lamp as a photometric web"""
 
-        init_scale = convert_units(self.room.units, "meters", lamp.values.max())
+        init_scale = convert_units("meters", self.room.units, lamp.values.max())
         coords = lamp.transform_to_world(lamp.photometric_coords, scale=init_scale)
         scale = lamp.get_total_power() / 100
         coords = (coords.T - lamp.position) * scale + lamp.surface.position
