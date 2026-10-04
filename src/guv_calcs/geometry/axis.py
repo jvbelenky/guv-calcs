@@ -1,6 +1,9 @@
 import numpy as np
 from dataclasses import dataclass
 
+# relative slack when dividing span by spacing, so float noise never drops a point
+_EPS = 1e-9
+
 
 @dataclass(slots=True, frozen=True)
 class Axis1D:
@@ -66,7 +69,8 @@ class Axis1D:
         """
         if self.span == 0:
             return 1
-        return max(1, int(self.span / self.spacing))
+        # tolerate float noise (e.g. after a unit conversion) so 7.9999999 is 8 points
+        return max(1, int(self.span / self.spacing + _EPS))
 
     @property
     def points(self):
@@ -79,14 +83,14 @@ class Axis1D:
     def _set_spacing(self, num, spacing):
         """set the spacing value conservatively from a num_points value"""
 
-        if spacing > 0 and int(self.span / spacing) == int(num):
+        if spacing > 0 and int(self.span / spacing + _EPS) == int(num):
             return spacing  # no changes needed
         else:
             testval = self.span / num
             i = 1
             while i < 6:
                 val = round(testval, i)
-                if val != 0 and int(self.span / val) == int(num):
+                if val != 0 and int(self.span / val + _EPS) == int(num):
                     break
                 i += 1
                 val = testval  # if no rounded value works use the original value
