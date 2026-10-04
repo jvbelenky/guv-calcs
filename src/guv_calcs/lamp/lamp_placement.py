@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from math import atan, degrees, hypot
 import numpy as np
 from ..geometry import Polygon2D
+from ..units import LengthUnits, convert_length
 from .lamp_configs import resolve_keyword
 
 
@@ -15,6 +16,35 @@ _MODE_ORDER = ("corner", "edge", "horizontal", "downlight")
 _VALID_MODES = set(_MODE_ORDER)
 
 _VALID_AIM_MODES = {"down", "point", "direction", "centroid", "furthest_edge", "furthest_corner"}
+
+# Placement distances are physical quantities, declared in meters and scaled
+# into the room's units with _per_meter() so a centimeter or inch room gets the
+# same clearance as a meter room.
+WALL_OFFSET_M = 0.05  # default inset from a corner or edge
+CEILING_OFFSET_M = 0.1  # default drop below the ceiling for a lamp with no fixture dims
+FIXTURE_MARGIN_M = 0.02  # extra drop below a fixture's housing height
+MIN_OFFSET_M = 0.01  # fallback inset when the normal inset leaves the polygon
+OCCUPIED_TOLERANCE_M = 0.2  # a corner/edge within this of an existing lamp is taken
+OCCUPIED_MARGIN_M = 0.1  # added to the clearance when judging occupancy
+
+
+def _per_meter(units) -> float:
+    """Room units per meter, e.g. 100 for centimeters."""
+    return convert_length(LengthUnits.METERS, units, 1.0)
+
+
+def _lamp_per_meter(lamp) -> float:
+    surface = getattr(lamp, "surface", None)
+    return _per_meter(surface.units) if surface is not None else 1.0
+
+
+def _corner_tolerance(wall_offset: float, scale: float) -> float:
+    # the lamp sits wall_offset along the diagonal, so allow ~1.5x plus a margin
+    return max(OCCUPIED_TOLERANCE_M * scale, wall_offset * 1.5 + OCCUPIED_MARGIN_M * scale)
+
+
+def _edge_tolerance(wall_offset: float, scale: float) -> float:
+    return max(OCCUPIED_TOLERANCE_M * scale, wall_offset + OCCUPIED_MARGIN_M * scale)
 
 
 # =============================================================================
@@ -115,9 +145,12 @@ class LampPlacer:
         polygon: Polygon2D,
         z: float = None,
         existing_positions: list[tuple[float, float]] = None,
+        units="meters",
     ):
         self.polygon = polygon
         self.z = z
+        self.units = LengthUnits.from_any(units)
+        self.scale = _per_meter(self.units)  # room units per meter
         self._existing = list(existing_positions) if existing_positions else []
         # Lazy caches for batch operations (populated on first use)
         self._corner_cache = None  # list[int] — ranked corner indices
@@ -132,18 +165,19 @@ class LampPlacer:
         z: float = None,
         polygon: Polygon2D = None,
         existing: list[tuple[float, float]] = None,
+        units="meters",
     ) -> "LampPlacer":
         """Create placer from room dimensions or polygon."""
         if polygon is None:
             if x is None or y is None:
                 raise ValueError("Must provide either polygon or both x and y")
             polygon = Polygon2D.rectangle(x, y)
-        return cls(polygon, z=z, existing_positions=existing)
+        return cls(polygon, z=z, existing_positions=existing, units=units)
 
     @classmethod
     def for_dims(cls, dims, existing: list[tuple[float, float]] = None) -> "LampPlacer":
-        """Create placer from a RoomDimensions object."""
-        return cls(dims.polygon, z=dims.z, existing_positions=existing)
+        """Create placer from a RoomDimensions object (placement distances follow its units)."""
+        return cls(dims.polygon, z=dims.z, existing_positions=existing, units=dims.units)
 
     def get_placement(
         self,
@@ -172,11 +206,11 @@ class LampPlacer:
             tilt: Force exact tilt angle in degrees (0=down, 90=horizontal)
             max_tilt: Maximum allowed tilt angle in degrees. If None, uses the
                 lamp's config default.
-            offset: Distance below ceiling to place lamp. If None, calculated from
-                fixture.housing_height + 0.02 margin (minimum 0.05).
-            wall_clearance: Distance from walls for corner/edge modes. If None,
-                calculated from fixture diagonal to account for rotation when aiming
-                (minimum 0.05).
+            offset: Distance below ceiling to place lamp (room units). If None,
+                calculated from fixture.housing_height + 2 cm margin (minimum 5 cm).
+            wall_clearance: Distance from walls for corner/edge modes (room units).
+                If None, calculated from fixture diagonal to account for rotation
+                when aiming (minimum 5 cm).
             position_index: 0-based rank for cycling (wraps via modulo).
                 If None, uses auto-placement.
 
@@ -273,16 +307,17 @@ class LampPlacer:
 
     def _place_corner(self, idx: int, **kwargs) -> PlacementResult:
         beam_angle = kwargs.get("beam_angle", 30.0)
-        wall_offset = kwargs.get("wall_offset", 0.05)
+        wall_offset = kwargs.get("wall_offset", WALL_OFFSET_M * self.scale)
         (x, y), (aim_x, aim_y) = new_lamp_position_corner(
-            idx, self.polygon, self._existing, beam_angle=beam_angle, wall_offset=wall_offset
+            idx, self.polygon, self._existing, beam_angle=beam_angle,
+            wall_offset=wall_offset, scale=self.scale,
         )
         return PlacementResult(x=x, y=y, aimx=aim_x, aimy=aim_y)
 
     def _place_edge(self, idx: int, **kwargs) -> PlacementResult:
-        wall_offset = kwargs.get("wall_offset", 0.05)
+        wall_offset = kwargs.get("wall_offset", WALL_OFFSET_M * self.scale)
         (x, y), (aim_x, aim_y) = new_lamp_position_edge(
-            idx, self.polygon, self._existing, wall_offset=wall_offset
+            idx, self.polygon, self._existing, wall_offset=wall_offset, scale=self.scale,
         )
         return PlacementResult(x=x, y=y, aimx=aim_x, aimy=aim_y)
 
@@ -290,33 +325,35 @@ class LampPlacer:
     def ceiling_offset(lamp) -> float:
         """Compute ceiling offset from fixture housing dimensions.
 
-        Returns the distance below the ceiling to place a lamp, based on
-        its fixture housing height plus a small margin.
+        Returns the distance below the ceiling to place a lamp, in the lamp's
+        units, based on its fixture housing height plus a small margin.
         """
+        m = _lamp_per_meter(lamp)
         fixture = getattr(lamp, "fixture", None)
         if fixture is not None and fixture.housing_height > 0:
-            return max(fixture.housing_height + 0.02, 0.05)
-        return 0.1
+            return max(fixture.housing_height + FIXTURE_MARGIN_M * m, WALL_OFFSET_M * m)
+        return CEILING_OFFSET_M * m
 
     @staticmethod
     def wall_clearance(lamp) -> float:
         """Compute wall clearance from fixture dimensions.
 
-        Returns the minimum distance from walls to avoid fixture collision,
-        based on the 2D diagonal of the fixture footprint.
+        Returns the minimum distance from walls to avoid fixture collision, in
+        the lamp's units, based on the 2D diagonal of the fixture footprint.
         """
+        m = _lamp_per_meter(lamp)
         fixture = getattr(lamp, "fixture", None)
         if fixture is None or not fixture.has_dimensions:
-            return 0.05
+            return WALL_OFFSET_M * m
         w = fixture.housing_width or 0
         l = fixture.housing_length or 0
         h = fixture.housing_height or 0
         diagonal_2d = (w**2 + l**2) ** 0.5
-        return max(diagonal_2d / 2 + h / 2, 0.05)
+        return max(diagonal_2d / 2 + h / 2, WALL_OFFSET_M * m)
 
     def _ranked_corner(self, index: int, **kwargs) -> PlacementResult:
         """Return placement for the Nth-ranked corner."""
-        wall_offset = kwargs.get("wall_offset", 0.05)
+        wall_offset = kwargs.get("wall_offset", WALL_OFFSET_M * self.scale)
         beam_angle = kwargs.get("beam_angle", 30.0)
 
         corners = get_corners(self.polygon)
@@ -329,7 +366,7 @@ class LampPlacer:
         position = _offset_inward(corner, inward, offset=wall_offset)
 
         if not self.polygon.contains_point(*position):
-            position = _offset_inward(corner, inward, offset=min(wall_offset, 0.01))
+            position = _offset_inward(corner, inward, offset=min(wall_offset, MIN_OFFSET_M * self.scale))
         if not self.polygon.contains_point(*position):
             position = corner
 
@@ -338,7 +375,7 @@ class LampPlacer:
 
     def _ranked_edge(self, index: int, **kwargs) -> PlacementResult:
         """Return placement for the Nth-ranked edge."""
-        wall_offset = kwargs.get("wall_offset", 0.05)
+        wall_offset = kwargs.get("wall_offset", WALL_OFFSET_M * self.scale)
 
         ranked = _rank_edges_by_sightline(self.polygon)
         count = len(ranked)
@@ -379,7 +416,7 @@ class LampPlacer:
     def _nudge_into_bounds(self, lamp, max_iterations: int = 3):
         """Nudge lamp so its bounding box stays within the room polygon and z bounds."""
         from ..geometry import RoomDimensions
-        room_dims = RoomDimensions(polygon=self.polygon, z=self.z)
+        room_dims = RoomDimensions(polygon=self.polygon, z=self.z, units=self.units)
         lamp.nudge_into_bounds(room_dims, max_iterations=max_iterations)
 
     # ----- Lazy cache helpers -----
@@ -479,7 +516,7 @@ class LampPlacer:
         ranked = self._get_corner_cache()
         corners = get_corners(self.polygon)
 
-        tolerance = max(0.2, wall_clearance * 1.5 + 0.1)
+        tolerance = _corner_tolerance(wall_clearance, self.scale)
         occupied = set()
         for ex, ey in self._existing:
             for i, (cx, cy) in enumerate(corners):
@@ -492,7 +529,7 @@ class LampPlacer:
             inward = _get_corner_inward_direction(corner, self.polygon)
             position = _offset_inward(corner, inward, offset=wall_clearance)
             if not self.polygon.contains_point(*position):
-                position = _offset_inward(corner, inward, offset=min(wall_clearance, 0.01))
+                position = _offset_inward(corner, inward, offset=min(wall_clearance, MIN_OFFSET_M * self.scale))
             if not self.polygon.contains_point(*position):
                 position = corner
             aim = _calculate_corner_aim(position, self.polygon, beam_angle)
@@ -508,7 +545,7 @@ class LampPlacer:
         best_positions = cache["best_positions"]
         edge_centers = cache["edge_centers"]
 
-        tolerance = max(0.2, wall_clearance + 0.1)
+        tolerance = _edge_tolerance(wall_clearance, self.scale)
         occupied_edges = set()
         for ex, ey in self._existing:
             for _, _, edge_idx in edge_centers:
@@ -1215,7 +1252,8 @@ def new_lamp_position_corner(
     polygon: Polygon2D,
     existing_positions: list[tuple[float, float]] | None = None,
     beam_angle: float = 30.0,
-    wall_offset: float = 0.05,
+    wall_offset: float = WALL_OFFSET_M,
+    scale: float = 1.0,
 ) -> tuple[tuple[float, float], tuple[float, float]]:
     """
     Get position and aim point for corner placement.
@@ -1228,7 +1266,8 @@ def new_lamp_position_corner(
         polygon: Room polygon
         existing_positions: Positions of already-placed lamps
         beam_angle: Lamp beam angle in degrees
-        wall_offset: Distance to offset from corner (default 0.05)
+        wall_offset: Distance to offset from corner (default 5 cm in room units)
+        scale: Room units per meter, used to scale the occupancy tolerance
 
     Returns:
         (position, aim_point) tuple
@@ -1240,9 +1279,7 @@ def new_lamp_position_corner(
     ranked_indices = _rank_corners_by_visibility(polygon)
 
     # Find available corners (not already occupied)
-    # Tolerance must account for the wall_offset (lamp is offset from corner)
-    # Use wall_offset * sqrt(2) since offset is along the diagonal, plus margin
-    tolerance = max(0.2, wall_offset * 1.5 + 0.1)
+    tolerance = _corner_tolerance(wall_offset, scale)
     occupied_corners = set()
     for ex, ey in existing_positions:
         for i, (cx, cy) in enumerate(corners):
@@ -1262,7 +1299,7 @@ def new_lamp_position_corner(
 
         # Verify position is inside polygon; if not, reduce offset
         if not polygon.contains_point(*position):
-            position = _offset_inward(corner, inward, offset=min(wall_offset, 0.01))
+            position = _offset_inward(corner, inward, offset=min(wall_offset, MIN_OFFSET_M * scale))
 
         # Final check - if still outside, use corner directly
         if not polygon.contains_point(*position):
@@ -1272,7 +1309,9 @@ def new_lamp_position_corner(
         return position, aim
     else:
         # All corners occupied, delegate to edge placement
-        return new_lamp_position_edge(lamp_idx, polygon, existing_positions, wall_offset=wall_offset)
+        return new_lamp_position_edge(
+            lamp_idx, polygon, existing_positions, wall_offset=wall_offset, scale=scale
+        )
 
 
 # =============================================================================
@@ -1378,7 +1417,8 @@ def new_lamp_position_edge(
     lamp_idx: int,
     polygon: Polygon2D,
     existing_positions: list[tuple[float, float]] | None = None,
-    wall_offset: float = 0.05,
+    wall_offset: float = WALL_OFFSET_M,
+    scale: float = 1.0,
 ) -> tuple[tuple[float, float], tuple[float, float]]:
     """
     Get position and aim point for edge placement.
@@ -1390,7 +1430,8 @@ def new_lamp_position_edge(
         lamp_idx: 1-based lamp index
         polygon: Room polygon
         existing_positions: Positions of already-placed lamps
-        wall_offset: Distance to offset from edge (default 0.05)
+        wall_offset: Distance to offset from edge (default 5 cm in room units)
+        scale: Room units per meter, used to scale the occupancy tolerance
 
     Returns:
         (position, aim_point) tuple
@@ -1401,8 +1442,7 @@ def new_lamp_position_edge(
     edge_centers = get_edge_centers(polygon)
 
     # Find available edges (not already occupied by a nearby lamp)
-    # Tolerance must exceed wall_offset since lamps are offset inward from the edge
-    tolerance = max(0.2, wall_offset + 0.1)
+    tolerance = _edge_tolerance(wall_offset, scale)
     occupied_edges = set()
     for ex, ey in existing_positions:
         for i, (_, _, edge_idx) in enumerate(edge_centers):
