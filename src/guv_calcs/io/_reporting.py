@@ -40,8 +40,9 @@ def _build_room_rows(room):
         rows += [["", "Floor Plan", "vertex", "x", "y"]]
         for i, (vx, vy) in enumerate(d.polygon.vertices):
             rows += [["", "", i, fmt(vx), fmt(vy)]]
-    area_units = "ft 2" if room.units == "feet" else "m 2"
-    vol_units = "ft 3" if room.units == "feet" else "m 3"
+    abbr = d.units.abbreviation
+    area_units = f"{abbr} 2"
+    vol_units = f"{abbr} 3"
     rows += [["", "Floor area", fmt(d.polygon.area), area_units]]
     rows += [["", "Volume", fmt(room.volume), vol_units]]
     rows += [[""]]

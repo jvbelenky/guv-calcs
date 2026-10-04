@@ -5,14 +5,24 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- LengthUnits.abbreviation ("m", "ft", "in", "cm", "mm", "yd"), LengthUnits.is_metric and LengthUnits.decimals (default display precision per unit), plus round_length(units, *values); "yd" is accepted as an alias for yards
+- LampPlacer accepts units= (for_dims takes them from the RoomDimensions) and scales its physical placement distances (5 cm wall inset, 10 cm ceiling drop, 2 cm fixture margin, occupancy tolerances) into the room's units, so corner/edge/downlight placement behaves the same in centimeters, inches or millimeters as in meters
 - Room(x, y, z, origin=(x0, y0)) places a rectangular room with its minimum corner at (x0, y0) instead of the origin (x/y ranges given as tuples are shifted too)
 - generate_report() prints an Origin row (x_min, y_min) when the floor plan does not start at the origin; the Dimensions row is the bounding-box extents
 - generate_report() lists the room's objects (id, name, shape, size, base centre, rotation, reflectance, transmittance, enabled) and the footprint vertices of extruded objects
 
 ### Changed
+- create_standard_zones() rounds converted plane heights to the unit's display precision (1.8 m -> 70.9 in, 180 cm, 1800 mm), matching the hand-rounded feet values
+- Project(units=...) validates the unit through LengthUnits and stores the canonical token
+- Lamp.set_units() no longer rewrites the IES header's unit code; the IES file keeps its native feet/meters and the lamp surface converts at the boundary (set_width/set_length write the IES value in the IES's own units)
 - generate_report() no longer repeats the unit on every floor plan vertex row; the unit is given once, in the Dimensions row
 
 ### Fixed
+- generate_report() labeled floor area and volume as m 2 / m 3 for every unit other than feet; the labels now use the room unit's abbreviation (cm 2, in 3, ...)
+- Room.get_efficacy_data() reported CADR in cfm for millimeter rooms; metric units (m, cm, mm) now all get lps
+- A lamp restored from to_dict()/a .guv file into a non-meter room had its emissive surface width/length re-read from the IES file in meters but labeled in the room's units (e.g. 0.06 "feet"); LampSurface.set_ies now converts IES dimensions into the surface's units
+- Grid axes could lose a point after a unit conversion when span / spacing landed a hair under an integer (7.9999999 -> 7); the point count now tolerates float noise
+- RoomPlotter sized photometric webs with the conversion the wrong way round (room units -> meters instead of meters -> room units), so webs in feet rooms drew too small
 - SurfaceGrid.x1/x2/y1/y2 (mins/maxs) for a polygon grid ignored the grid's origin, so a plane built from a floor outline that does not touch the axes (e.g. a traced room starting at (2, 12)) reported extents shifted to (0, 0); standard zones in such rooms were drawn in the wrong place by clients that position them from these extents. VolumeGrid was already correct
 - Object side faces had their normals pointing into the object (SurfaceGrid.from_wall gives an inward normal for a CCW edge, which is the room convention), so object reflectance contributed nothing to zones below R=1 and diverged at R=1 as the inward-facing faces bounced light inside a closed cavity. Walls are now built with outward normals, and every object face uses use_normal so it cannot be lit from behind
 - Changing the occluder set (an object added, moved, disabled or removed) did not invalidate a zone's cached per-lamp values, so a soft calculate() after disabling an object kept the stale shadowed result. LightingCalculator.compute now recomputes every lamp when the occluder geometry differs from the cached scene state

@@ -72,17 +72,42 @@ class UnitEnum(ParseableEnum):
         return cls.from_token(arg)
 
 
+# token -> (abbreviation, is_metric, default display decimals)
+_LENGTH_META = {
+    "meters": ("m", True, 2),
+    "feet": ("ft", False, 2),
+    "inches": ("in", False, 1),
+    "centimeters": ("cm", True, 1),
+    "millimeters": ("mm", True, 0),
+    "yards": ("yd", False, 2),
+}
+
+
 class LengthUnits(UnitEnum):
     METERS = ("meters", 1.0, ("m", "meter"))
     FEET = ("feet", 0.3048, ("ft", "foot"))
     INCHES = ("inches", 0.0254, ("in", "inch"))
     CENTIMETERS = ("centimeters", 0.01, ("cm", "centimeter"))
     MILLIMETERS = ("millimeters", 0.001, ("mm", "millimeter", "milimeter"))
-    YARDS = ("yards", 0.9144, ("yard",))
+    YARDS = ("yards", 0.9144, ("yd", "yard"))
 
     @classmethod
     def default(cls):
         return cls.METERS
+
+    @property
+    def abbreviation(self) -> str:
+        """Short symbol: m, ft, in, cm, mm, yd."""
+        return _LENGTH_META[self.value][0]
+
+    @property
+    def is_metric(self) -> bool:
+        return _LENGTH_META[self.value][1]
+
+    @property
+    def decimals(self) -> int:
+        """Default number of decimal places for displaying a length in this unit."""
+        return _LENGTH_META[self.value][2]
 
 
 class TimeUnits(UnitEnum):
@@ -119,6 +144,13 @@ def convert(
 
 def convert_length(src, dst, *args, sigfigs: int | None = 12):
     return convert(LengthUnits, src, dst, *args, sigfigs=sigfigs)
+
+
+def round_length(units, *args):
+    """Round lengths to the display precision of ``units`` (see LengthUnits.decimals)."""
+    decimals = LengthUnits.from_any(units).decimals
+    out = tuple(None if a is None else float(np.round(a, decimals)) for a in args)
+    return out[0] if len(out) == 1 else out
 
 
 def convert_length_tuple(src, dst, *args, sigfigs: int | None = 12):

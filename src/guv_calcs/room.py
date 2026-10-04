@@ -857,7 +857,7 @@ class Room:
             data = InactivationData()
         else:
             data = InactivationData(fluence=fluence_dict, volume_m3=self.dim.cubic_meters)
-        use_metric = self.dim.units in [LengthUnits.METERS, LengthUnits.CENTIMETERS]
+        use_metric = self.dim.units.is_metric
 
         if zone.calctype == "Plane" and zone.horiz:
             medium = "Surface"

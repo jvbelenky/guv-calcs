@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from .calc_zone import CalcPlane, CalcVol
-from .units import convert_length
+from .units import convert_length, round_length
 
 WHOLE_ROOM_FLUENCE = "WholeRoomFluence"
 EYE_LIMITS = "EyeLimits"
@@ -49,7 +49,10 @@ def create_standard_zones(standard, dims):
     if dims.units == "feet":
         height = cfg.height_ft
     else:
-        height = convert_length("meters", dims.units, cfg.height_m)
+        # round to the unit's display precision so planes land on friendly
+        # values (1.8 m -> 70.9 in, 180 cm, 1800 mm), as the hand-picked
+        # height_ft values do
+        height = round_length(dims.units, convert_length("meters", dims.units, cfg.height_m))
 
     n = DEFAULT_PLANE_NUM_POINTS
 
