@@ -30,6 +30,7 @@ from .lamp_configs import (
 )
 from .spectrum import Spectrum, sum_spectrum, log_interp
 from .fixture import Fixture, FixtureShape
+from .photometric_axis import PhotometricAxis
 from .intensity_map import IntensityMap
 
 __all__ = [
@@ -74,6 +75,7 @@ __all__ = [
     # Fixture
     "Fixture",
     "FixtureShape",
+    "PhotometricAxis",
     # Intensity Map
     "IntensityMap",
 ]
