@@ -247,9 +247,20 @@ class Surface:
 
     # -- stateless computation, called by LightingCalculator --
 
+    def _grid_shape(self):
+        """Shape the surface's points are summed over: (nx, ny) for a
+        rectangular grid, or (N, 1) for a polygon-masked grid, whose points
+        are a flat list of the cells inside the outline."""
+        shape = tuple(self.plane.num_points)
+        if len(shape) == 2:
+            return shape
+        return (int(np.prod(shape)), 1)
+
     def _calculate_values(self, form_factors, theta_zone, zv):
 
-        I_r = self.plane.values[:, :, np.newaxis, np.newaxis, np.newaxis]
+        I_r = self.plane.values.reshape(*self._grid_shape())[
+            :, :, np.newaxis, np.newaxis, np.newaxis
+        ]
 
         values = (I_r * form_factors).astype("float32")
 
@@ -271,7 +282,7 @@ class Surface:
         rectangular surface element, eliminating grid-resolution artifacts
         that appear when zone points are close to coarse surface elements.
         """
-        surface_points = self.plane.coords.reshape(*self.plane.num_points, 3)
+        surface_points = self.plane.coords.reshape(*self._grid_shape(), 3)
         zone_points = zv.coords.reshape(*zv.num_points, 3)
 
         differences = (

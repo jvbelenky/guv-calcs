@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- A reflective surface with a polygon-masked grid (the floor or ceiling of a polygon room, the top or bottom of a non-rectangular object) raised IndexError in the interreflection form-factor calculation, which assumed an (nx, ny) grid; masked grids are now summed as a flat list of cells
+
 ## [0.8.0] - 2026-10-04
 
 ### Added

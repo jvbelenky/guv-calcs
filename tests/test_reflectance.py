@@ -96,3 +96,42 @@ class TestInitRoomSurfaces:
         surfaces = init_room_surfaces(dims, reflectances={"floor": 0.5})
         assert surfaces["floor"].R == 0.5
         assert surfaces["ceiling"].R == 0.0
+
+
+class TestNonRectangularReflectors:
+    """A masked polygon grid (polygon-room floor, polygon-object top) has a
+    flat point list rather than an (nx, ny) grid; it must still act as a
+    reflector."""
+
+    @staticmethod
+    def _room(**kwargs):
+        from guv_calcs import Room, Lamp
+        room = Room(z=2.7, enable_reflectance=True, **kwargs)
+        room.set_reflectance(0.078)
+        lamp = Lamp.from_keyword("aerolamp")
+        lamp.move(2, 3, 2.6)
+        room.add_lamp(lamp)
+        return room
+
+    def test_polygon_room_calculates_with_reflections(self):
+        room = self._room(polygon=[(0, 0), (4, 0), (4, 3), (2, 3), (2, 6), (0, 6)])
+        assert len(room.surfaces["floor"].plane.num_points) == 1  # masked grid
+        room.calculate()
+        floor = room.surfaces["floor"].plane
+        assert floor.values is not None and np.isfinite(floor.values).any()
+        assert floor.reflected_values is not None
+
+    def test_reflective_polygon_object_calculates(self):
+        from guv_calcs import Object
+        room = self._room(x=4, y=6)
+        obj = Object.extrusion(
+            [(0, 0), (1, 0), (1, 0.5), (0.5, 0.5), (0.5, 1), (0, 1)], 1.0,
+            object_id="l", position=(2, 3, 0), R=0.5,
+        )
+        room.add_object(obj)
+        assert len(obj.surfaces["l:top"].plane.num_points) == 1  # masked grid
+        room.calculate()
+        top = obj.surfaces["l:top"].plane
+        assert top.values is not None and np.isfinite(top.values).any()
+        # The room floor received bounced light from the object's faces too
+        assert room.surfaces["floor"].plane.reflected_values is not None
