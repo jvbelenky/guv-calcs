@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-04
+
 ### Added
 - Lamp(photometric_axis=...) / Lamp.set_photometric_axis(): declare where the beam points in the IES file's frame ("down", "up", "horizontal_0/90/180/270"). The aim always means the beam; file dimensions are permuted into the aim frame; serialized in to_dict
 - Fixture.photometric_depth: how far the photometric center sits behind the emitting face, so a housing can be centered on the point
