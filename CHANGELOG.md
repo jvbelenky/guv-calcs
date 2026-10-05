@@ -5,13 +5,17 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Lamp(photometric_axis=...) / Lamp.set_photometric_axis(): declare where the beam points in the IES file's frame ("down", "up", "horizontal_0/90/180/270"). The aim always means the beam; file dimensions are permuted into the aim frame; serialized in to_dict
+- Fixture.photometric_depth: how far the photometric center sits behind the emitting face, so a housing can be centered on the point
 - LengthUnits.abbreviation ("m", "ft", "in", "cm", "mm", "yd"), LengthUnits.is_metric and LengthUnits.decimals (default display precision per unit), plus round_length(units, *values); "yd" is accepted as an alias for yards
 - LampPlacer accepts units= (for_dims takes them from the RoomDimensions) and scales its physical placement distances (5 cm wall inset, 10 cm ceiling drop, 2 cm fixture margin, occupancy tolerances) into the room's units, so corner/edge/downlight placement behaves the same in centimeters, inches or millimeters as in meters
 - Room(x, y, z, origin=(x0, y0)) places a rectangular room with its minimum corner at (x0, y0) instead of the origin (x/y ranges given as tuples are shifted too)
 - generate_report() prints an Origin row (x_min, y_min) when the floor plan does not start at the origin; the Dimensions row is the bounding-box extents
 - generate_report() lists the room's objects (id, name, shape, size, base centre, rotation, reflectance, transmittance, enabled) and the footprint vertices of extruded objects
+- Object.set_num_points(num_x, num_y, face=None) sets per-axis grid counts per face or for every face, matching Room.set_reflectance_num_points; a single positional count still gives a square grid. Per-face counts survive set_dimensions/convert_units and round-trip through to_dict (face_grids)
 
 ### Changed
+- Housing bounding box shows a 3D luminous opening (surface height) in both directions along the aim axis instead of only in front
 - create_standard_zones() rounds converted plane heights to the unit's display precision (1.8 m -> 70.9 in, 180 cm, 1800 mm), matching the hand-rounded feet values
 - Project(units=...) validates the unit through LengthUnits and stores the canonical token
 - Lamp.set_units() no longer rewrites the IES header's unit code; the IES file keeps its native feet/meters and the lamp surface converts at the boundary (set_width/set_length write the IES value in the IES's own units)

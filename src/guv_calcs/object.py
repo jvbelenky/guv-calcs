@@ -117,7 +117,7 @@ class Object:
         updates the extrusion height.
         """
         # Save per-face properties before rebuild
-        face_props = {k: (s.R, s.T) for k, s in self._local_surfaces.items()}
+        face_props = self._face_snapshot()
 
         shape = dict(self._shape)
         if shape["type"] == "box":
@@ -154,10 +154,7 @@ class Object:
         self._build_local_surfaces()
 
         # Restore per-face properties
-        for face_id, (r, t) in face_props.items():
-            if face_id in self._local_surfaces:
-                self._local_surfaces[face_id].R = r
-                self._local_surfaces[face_id].T = t
+        self._restore_faces(face_props)
 
         self._rebuild_world_surfaces()
         return self
@@ -317,28 +314,31 @@ class Object:
             self._local_surfaces[face].set_transmittance(T)
         self._rebuild_world_surfaces()
 
-    def set_num_points(self, num_points, face=None):
-        """Set grid resolution for one or all faces.
+    def set_num_points(self, num_x=None, num_y=None, face=None):
+        """Set grid resolution per axis for one or all faces, like
+        ``Room.set_reflectance_num_points``.
 
-        If face is None, rebuilds all surfaces with the new resolution
-        (updates the global _num_points and regenerates geometry).
-        If face is given, sets num_points on that face's CalcPlane only.
+        ``num_x``/``num_y`` left as None keep that axis's current count. A
+        single positional count (``set_num_points(10)``) gives a square grid.
+        With face=None the counts apply to every face; a square count also
+        becomes the object's default resolution for faces built later.
         """
+        if num_x is not None:
+            num_x = int(num_x)
+        if num_y is not None:
+            num_y = int(num_y)
+        if num_x is not None and num_y is None and face is None:
+            num_y = num_x
         if face is None:
-            self._num_points = int(num_points)
-            face_props = {k: (s.R, s.T) for k, s in self._local_surfaces.items()}
-            self._build_local_surfaces()
-            for fid, (r, t) in face_props.items():
-                if fid in self._local_surfaces:
-                    self._local_surfaces[fid].R = r
-                    self._local_surfaces[fid].T = t
-            self._rebuild_world_surfaces()
+            if num_x is not None and num_x == num_y:
+                self._num_points = num_x
+            for s in self._local_surfaces.values():
+                s.set_num_points(num_x=num_x, num_y=num_y)
         else:
             if face not in self._local_surfaces:
                 raise KeyError(f"Unknown face: {face!r}. Available: {self.face_ids}")
-            n = int(num_points)
-            self._local_surfaces[face].set_num_points(num_x=n, num_y=n)
-            self._rebuild_world_surfaces()
+            self._local_surfaces[face].set_num_points(num_x=num_x, num_y=num_y)
+        self._rebuild_world_surfaces()
 
     def set_spacing(self, x_spacing=None, y_spacing=None, face=None):
         """Set grid spacing for one or all faces.
@@ -356,6 +356,22 @@ class Object:
         self._rebuild_world_surfaces()
 
     # ---- internal: build surfaces ----
+
+    def _face_snapshot(self):
+        """Per-face optics and grid counts, to restore after a rebuild."""
+        return {
+            k: (s.R, s.T, s.plane.num_x, s.plane.num_y)
+            for k, s in self._local_surfaces.items()
+        }
+
+    def _restore_faces(self, snapshot):
+        for face_id, (r, t, nx, ny) in snapshot.items():
+            s = self._local_surfaces.get(face_id)
+            if s is None:
+                continue
+            s.R = r
+            s.T = t
+            s.set_num_points(num_x=nx, num_y=ny)
 
     def _build_local_surfaces(self):
         """Build local-space surfaces from shape definition."""
@@ -515,6 +531,11 @@ class Object:
         for face_id, s in self._local_surfaces.items():
             if s.R != self.R or s.T != self.T:
                 face_props[face_id] = {"R": s.R, "T": s.T}
+        face_grids = {}
+        for face_id, s in self._local_surfaces.items():
+            nx, ny = s.plane.num_x, s.plane.num_y
+            if nx != self._num_points or ny != self._num_points:
+                face_grids[face_id] = {"num_x": int(nx), "num_y": int(ny)}
 
         return {
             "object_id": self._object_id,
@@ -529,6 +550,7 @@ class Object:
             "num_points": self._num_points,
             "shape": shape,
             "face_properties": face_props,
+            "face_grids": face_grids,
         }
 
     @classmethod
@@ -536,6 +558,7 @@ class Object:
         data = dict(data)
         shape = data.get("shape", {})
         face_props = data.pop("face_properties", {})
+        face_grids = data.pop("face_grids", {})
 
         obj = cls(
             object_id=data.get("object_id"),
@@ -557,13 +580,18 @@ class Object:
             if "T" in props:
                 obj.set_transmittance(props["T"], face=face_id)
 
+        for face_id, grid in face_grids.items():
+            obj.set_num_points(
+                num_x=grid.get("num_x"), num_y=grid.get("num_y"), face=face_id
+            )
+
         return obj
 
     # ---- units ----
 
     def convert_units(self, old_units, new_units):
         """Convert all spatial dimensions and position."""
-        face_props = {k: (s.R, s.T) for k, s in self._local_surfaces.items()}
+        face_props = self._face_snapshot()
 
         factor = convert_length(old_units, new_units, 1.0)
         self.position = convert_length_tuple(old_units, new_units, *self.position)
@@ -583,10 +611,7 @@ class Object:
         self._build_local_surfaces()
 
         # restore per-face properties
-        for face_id, (r, t) in face_props.items():
-            if face_id in self._local_surfaces:
-                self._local_surfaces[face_id].set_reflectance(r)
-                self._local_surfaces[face_id].set_transmittance(t)
+        self._restore_faces(face_props)
 
         self._rebuild_world_surfaces()
 

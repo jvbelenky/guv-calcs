@@ -344,6 +344,41 @@ class TestGridResolution:
         with pytest.raises(KeyError):
             obj.set_num_points(10, face="nonexistent")
 
+    def test_set_num_points_per_axis_single_face(self):
+        obj = Object.box(2, 2, 2, num_points=5)
+        obj.set_num_points(num_x=8, num_y=3, face="wall_0")
+        plane = obj._local_surfaces["wall_0"].plane
+        assert (plane.num_x, plane.num_y) == (8, 3)
+        # Other faces untouched
+        assert obj._local_surfaces["top"].plane.num_x == 5
+
+    def test_set_num_points_one_axis_keeps_other(self):
+        obj = Object.box(2, 2, 2, num_points=5)
+        obj.set_num_points(num_x=8, num_y=3, face="top")
+        obj.set_num_points(num_y=7, face="top")
+        plane = obj._local_surfaces["top"].plane
+        assert (plane.num_x, plane.num_y) == (8, 7)
+
+    def test_set_num_points_per_axis_all_faces(self):
+        obj = Object.box(2, 2, 2, num_points=5)
+        obj.set_num_points(num_x=6, num_y=4)
+        for s in obj._local_surfaces.values():
+            assert (s.plane.num_x, s.plane.num_y) == (6, 4)
+
+    def test_set_num_points_square_all_faces_updates_default(self):
+        obj = Object.box(2, 2, 2, num_points=5)
+        obj.set_num_points(10)
+        assert obj._num_points == 10
+        for s in obj._local_surfaces.values():
+            assert (s.plane.num_x, s.plane.num_y) == (10, 10)
+
+    def test_set_dimensions_preserves_face_resolution(self):
+        obj = Object.box(2, 2, 2, num_points=5)
+        obj.set_num_points(num_x=8, num_y=3, face="top")
+        obj.set_dimensions(width=4)
+        plane = obj._local_surfaces["top"].plane
+        assert (plane.num_x, plane.num_y) == (8, 3)
+
     def test_set_spacing_all(self):
         obj = Object.box(4, 4, 2, num_points=5)
         obj.set_spacing(x_spacing=0.5, y_spacing=0.5)
@@ -408,6 +443,17 @@ class TestSerialization:
         # faces matching the default should not appear
         assert "bottom" not in data["face_properties"]
 
+    def test_to_dict_round_trips_face_resolution(self):
+        obj = Object.box(2, 2, 2, num_points=5)
+        obj.set_num_points(num_x=8, num_y=3, face="top")
+        data = obj.to_dict()
+        assert data["face_grids"] == {"top": {"num_x": 8, "num_y": 3}}
+        assert "bottom" not in data["face_grids"]
+        restored = Object.from_dict(data)
+        plane = restored._local_surfaces["top"].plane
+        assert (plane.num_x, plane.num_y) == (8, 3)
+        assert restored._local_surfaces["bottom"].plane.num_x == 5
+
     def test_from_dict_restores_face_overrides(self):
         obj = Object.box(1, 1, 1, R=0.0, T=0.0)
         obj.set_face_properties(R=0.5, T=0.3, face="top")
@@ -428,6 +474,7 @@ class TestSerialization:
         expected_keys = {
             "object_id", "name", "position", "yaw", "pitch", "roll",
             "R", "T", "enabled", "num_points", "shape", "face_properties",
+            "face_grids",
         }
         assert set(data.keys()) == expected_keys
 
