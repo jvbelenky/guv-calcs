@@ -100,8 +100,9 @@ class LampGeometry:
         The bounding box is computed from:
         - Surface center (= lamp position, = origin in local frame)
         - housing_width/length for XY extent (symmetric around surface)
-        - housing_height extending "behind" surface (in -Z direction, away from aim)
-        - LampSurface.height (luminous z-extent) extends both directions from surface
+        - housing_height extending behind the emitting face, which sits
+          photometric_depth in front of the lamp position
+        - LampSurface.height (luminous z-extent) extends both directions
 
         Returns:
             (8, 3) array of corner coordinates
@@ -109,14 +110,16 @@ class LampGeometry:
         hl = self._fixture.housing_length / 2
         hw = self._fixture.housing_width / 2
         hh = self._fixture.housing_height
+        d = self._fixture.photometric_depth
 
-        # Surface z-extent (for 3D luminous openings like cylinders)
+        # Luminous z-extent (3D openings like cylinders) shows in both directions
         surface_z = self._surface.height / 2
 
-        # Local coordinate system: length along X, width along Y,
-        # +Z points OPPOSITE to aim direction (away from where light goes)
-        z_min = -surface_z
-        z_max = hh
+        # Local frame: length along X, width along Y, +Z opposite to aim.
+        # The emitting face sits `d` in front of the point (toward the aim);
+        # the housing extends `hh` behind the face.
+        z_min = min(-d, -surface_z)
+        z_max = max(hh - d, surface_z)
 
         local_corners = np.array([
             [-hl, -hw, z_min],

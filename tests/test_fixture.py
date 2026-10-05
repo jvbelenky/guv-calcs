@@ -106,3 +106,16 @@ class TestFixtureSerialization:
         assert f.housing_height == 0.1
         # Should not have height or mount_type attributes
         assert not hasattr(f, 'height') or not f.__dataclass_fields__.get('height')
+
+
+class TestPhotometricDepth:
+    def test_default_zero(self):
+        assert Fixture().photometric_depth == 0.0
+
+    def test_round_trip(self):
+        f = Fixture(housing_width=0.5, housing_height=0.1, photometric_depth=0.05)
+        assert Fixture.from_dict(f.to_dict()) == f
+
+    def test_legacy_dict_without_depth(self):
+        f = Fixture.from_dict({"housing_width": 0.5, "housing_length": 0.3, "housing_height": 0.1, "shape": "rectangular"})
+        assert f.photometric_depth == 0.0

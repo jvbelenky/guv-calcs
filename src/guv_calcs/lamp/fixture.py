@@ -51,12 +51,15 @@ class Fixture:
         housing_width: Y-axis extent of physical housing
         housing_length: X-axis extent of physical housing
         housing_height: How far fixture extends behind the luminous surface
+        photometric_depth: Distance from the emitting face back to the photometric
+            center (lamp position). 0 = face at the point; housing_height/2 = centered.
         shape: Physical shape of the housing
     """
 
     housing_width: float = 0.0
     housing_length: float = 0.0
     housing_height: float = 0.0
+    photometric_depth: float = 0.0
     shape: FixtureShape = FixtureShape.RECTANGULAR
 
     def __repr__(self):
@@ -71,6 +74,7 @@ class Fixture:
             "housing_width": self.housing_width,
             "housing_length": self.housing_length,
             "housing_height": self.housing_height,
+            "photometric_depth": self.photometric_depth,
             "shape": self.shape.value,
         }
 

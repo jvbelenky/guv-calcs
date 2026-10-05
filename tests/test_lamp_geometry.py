@@ -355,3 +355,29 @@ class TestHousingUnits:
         )
         # 1 foot should stay 1 foot (no conversion)
         assert lamp.fixture.housing_width == 1.0
+
+
+class TestBoundingBoxDepth:
+    """Housing box extent along the aim axis (local z, +z = behind)."""
+
+    @staticmethod
+    def _z_range(lamp):
+        corners = lamp.geometry.get_bounding_box_corners()
+        return corners[:, 2].min(), corners[:, 2].max()
+
+    def test_default_unchanged_for_flat_presets(self):
+        lamp = Lamp.from_keyword("beacon", x=0, y=0, z=0, aimx=0, aimy=0, aimz=-1)
+        zmin, zmax = self._z_range(lamp)
+        assert zmin == pytest.approx(0.0)
+        assert zmax == pytest.approx(0.08)
+
+    def test_luminous_volume_shown_both_ways(self):
+        # a 0.12 m tall luminous volume with no housing is centered on the point
+        lamp = Lamp.from_keyword("sterilray", x=0, y=0, z=0, aimx=0, aimy=0, aimz=-1, height=0.12, housing_height=0.0)
+        zmin, zmax = self._z_range(lamp)
+        assert (zmin, zmax) == pytest.approx((-0.06, 0.06))
+
+    def test_depth_slides_housing_forward(self):
+        lamp = Lamp.from_keyword("beacon", x=0, y=0, z=0, aimx=0, aimy=0, aimz=-1, housing_height=0.12, photometric_depth=0.06)
+        zmin, zmax = self._z_range(lamp)
+        assert (zmin, zmax) == pytest.approx((-0.06, 0.06))
