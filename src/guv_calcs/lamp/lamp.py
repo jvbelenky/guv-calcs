@@ -13,6 +13,7 @@ from .lamp_plotter import LampPlotter
 from .lamp_orientation import LampOrientation
 from .lamp_geometry import LampGeometry
 from .fixture import Fixture
+from .photometric_axis import PhotometricAxis
 from ..geometry import to_polar
 from .._serialization import init_from_dict, migrate_lamp_dict, identify_preset
 from ..safety import get_tlvs, PhotStandard
@@ -60,6 +61,12 @@ class Lamp:
         Physical fixture housing dimensions. Defaults to luminous surface size.
     housing_units: str or LengthUnits, default=None
         Units for housing dimensions. If different from `units`, dimensions are converted.
+    photometric_axis: str or PhotometricAxis, default="down"
+        Direction in the IES file's frame that the beam goes. "down" (theta=0)
+        is the usual convention; wall-mounted upper-room fixtures are often
+        "horizontal_0" (theta=90 toward phi=0). The aim always means the beam.
+    photometric_depth: float, default=0.0
+        Distance from the fixture's emitting face back to the photometric center.
         Accepts: "meters", "feet", "inches", "centimeters", "yards" (or aliases).
         Defaults to same as `units`.
     source_density: int, default=1
@@ -96,6 +103,8 @@ class Lamp:
         housing_length: float | None = None,
         housing_height: float | None = None,
         housing_units=None,
+        photometric_axis=None,
+        photometric_depth: float = 0.0,
         source_density: int = 1,
         intensity_map=None,
         enabled: bool = True,
@@ -106,6 +115,7 @@ class Lamp:
         self._lamp_id = lamp_id or "Lamp"
         self.name = str(self.lamp_id) if name is None else str(name)
         self.enabled = True if enabled is None else enabled
+        self._photometric_axis = PhotometricAxis.from_any(photometric_axis)
 
         # Create pose (orientation)
         pose = LampOrientation(
@@ -138,12 +148,14 @@ class Lamp:
                 housing_length = convert_length(h_units, target_units, housing_length)
             if housing_height is not None:
                 housing_height = convert_length(h_units, target_units, housing_height)
+            photometric_depth = convert_length(h_units, target_units, photometric_depth)
 
         # Create initial fixture with placeholder dimensions (will be finalized after IES load)
         fixture = Fixture(
             housing_width=housing_width if housing_width is not None else (width or 0.0),
             housing_length=housing_length if housing_length is not None else (length or 0.0),
             housing_height=housing_height or 0.0,
+            photometric_depth=photometric_depth or 0.0,
         )
 
         # Create geometry container (owns pose, surface, fixture)
@@ -161,6 +173,7 @@ class Lamp:
                 housing_width=self.surface.width,
                 housing_length=self.surface.length,
                 housing_height=housing_height or 0.0,
+                photometric_depth=photometric_depth or 0.0,
             )
 
         # Spectral data
@@ -262,6 +275,7 @@ class Lamp:
         data["aimx"] = float(self.pose.aimx)
         data["aimy"] = float(self.pose.aimy)
         data["aimz"] = float(self.pose.aimz)
+        data["photometric_axis"] = self._photometric_axis.value
         data["intensity_units"] = self.intensity_units.value
         data["guv_type"] = self.guv_type.value if self.guv_type is not None else None
         data["wavelength"] = self.wavelength
@@ -321,6 +335,7 @@ class Lamp:
             data["housing_width"] = fixture_data.get("housing_width", 0.0)
             data["housing_length"] = fixture_data.get("housing_length", 0.0)
             data["housing_height"] = fixture_data.get("housing_height", 0.0)
+            data["photometric_depth"] = fixture_data.get("photometric_depth", 0.0)
 
         # Flatten nested surface dict -> user intent params
         if "surface" in data:
@@ -383,9 +398,11 @@ class Lamp:
 
         # Apply fixture defaults from config (user kwargs override)
         fixture_cfg = config.get("fixture", {})
-        for k in ("housing_width", "housing_length", "housing_height"):
+        for k in ("housing_width", "housing_length", "housing_height", "photometric_depth"):
             if fixture_cfg.get(k) is not None:
                 kwargs.setdefault(k, fixture_cfg[k])
+        if config.get("photometric_axis") is not None:
+            kwargs.setdefault("photometric_axis", config["photometric_axis"])
 
         kwargs.setdefault("lamp_id", canonical)
         kwargs.setdefault("preset_id", canonical)
@@ -484,6 +501,7 @@ class Lamp:
             self.aimx,
             self.aimy,
             self.aimz,
+            self._photometric_axis.value,
             self.surface.length,  # only for nearfield
             self.surface.width,  # ""
             self.surface.height,  # luminous z-extent
@@ -518,7 +536,7 @@ class Lamp:
             self.ies.scale(self.scaling_factor)
 
         # update length/width/units
-        self.surface.set_ies(self.ies, override=override)
+        self.surface.set_ies(self.ies, override=override, axis=self._photometric_axis)
         
         return self.ies
 
@@ -686,14 +704,21 @@ class Lamp:
 
     def transform_to_world(self, coords, scale=1, which="cartesian"):
         """
-        Transform coordinates from the lamp frame of reference to the world.
+        Transform photometric (ies-frame) coordinates to the world.
         Scale parameter should generally only be used for photometric_coords.
         """
+        coords = (self.photometric_axis_matrix @ np.asarray(coords, dtype=float).T).T
         return self.pose.transform_to_world(coords, scale=scale, which=which)
 
     def transform_to_lamp(self, coords, which="cartesian"):
-        """Transform coordinates to align with the lamp's coordinates."""
-        return self.pose.transform_to_lamp(coords, which=which)
+        """Transform world-relative coordinates into the photometric (ies) frame."""
+        local = self.pose.transform_to_lamp(coords, which="cartesian")
+        ies = self.photometric_axis_matrix.T @ local
+        if which == "polar":
+            return to_polar(*ies)
+        elif which == "cartesian":
+            return ies
+        raise ValueError(f"`which` must be polar or cartesian, not {which}")
 
     def set_orientation(self, orientation, dimensions=None, distance=None):
         """
@@ -785,7 +810,7 @@ class Lamp:
             # Convert (theta, phi, r) to world-space target
             th, ph = np.radians(theta), np.radians(phi)
             local = np.array([r*np.sin(th)*np.cos(ph), r*np.sin(th)*np.sin(ph), -r*np.cos(th)])
-            target = self.pose.inverse_rotation_matrix @ local + self.surface.position
+            target = self.pose.inverse_rotation_matrix @ (self.photometric_axis_matrix @ local) + self.surface.position
 
             # Per-source-point angles and distances
             rel = target - self.surface.surface_points  # (N, 3)
@@ -919,6 +944,24 @@ class Lamp:
     def wavelength(self):
         return self.lamp_type.wavelength
 
+    # ---------------------- Photometric axis ---------------------------
+
+    @property
+    def photometric_axis(self):
+        return self._photometric_axis
+
+    @property
+    def photometric_axis_matrix(self):
+        """rotation taking ies-frame vectors into the aim frame"""
+        return self._photometric_axis.matrix
+
+    def set_photometric_axis(self, axis):
+        """Declare where the beam points in the IES frame; re-derives file dimensions."""
+        self._photometric_axis = PhotometricAxis.from_any(axis)
+        if self.ies is not None:
+            self.surface.set_ies(self.ies, axis=self._photometric_axis)
+        return self
+
     # ---------------------- Surface ---------------------------
 
     @property
@@ -961,17 +1004,19 @@ class Lamp:
         self.surface.set_units(units)
 
         # Convert fixture dimensions if units changed
-        if old_units != new_units and self.fixture.has_dimensions:
-            hw, hl, hh = convert_length(
+        if old_units != new_units:
+            hw, hl, hh, pd = convert_length(
                 old_units, new_units,
                 self.fixture.housing_width,
                 self.fixture.housing_length,
                 self.fixture.housing_height,
+                self.fixture.photometric_depth,
             )
             self.geometry._fixture = Fixture(
                 housing_width=hw,
                 housing_length=hl,
                 housing_height=hh,
+                photometric_depth=pd,
                 shape=self.fixture.shape,
             )
         return self

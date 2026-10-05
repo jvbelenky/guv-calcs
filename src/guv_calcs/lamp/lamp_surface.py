@@ -12,6 +12,7 @@ def ies_units(ies) -> LengthUnits:
     return _IES_UNITS[ies.units]
 from .lamp_surface_plotter import LampSurfacePlotter
 from .intensity_map import IntensityMap
+from .photometric_axis import PhotometricAxis
 
 if TYPE_CHECKING:
     from .lamp_geometry import LampGeometry
@@ -169,23 +170,26 @@ class LampSurface:
             self.units = units
             self._recompute()
 
-    def set_ies(self, ies, override=False):
+    def set_ies(self, ies, override=False, axis=None):
         """
         Populate length/width/height/units values from an IESFile object.
-        Only overwrites values if user didn't explicitly provide them.
+        Only overwrites values if user didn't explicitly provide them. `axis`
+        (a PhotometricAxis) permutes the file's extents into the aim frame.
         """
         if ies is not None:
             src = ies_units(ies)
+            axis = PhotometricAxis.from_any(axis)
+            length, width, height = axis.permute_extents(abs(ies.length), abs(ies.width), abs(ies.height))
             if self._user_units is None or override:
                 self.units = src
             # the IES file only knows feet or meters; the surface may be in any
             # unit (e.g. a lamp restored into a centimeter room), so convert
             if self._user_width is None or override:
-                self.width = convert_length(src, self.units, abs(ies.width))
+                self.width = convert_length(src, self.units, width)
             if self._user_length is None or override:
-                self.length = convert_length(src, self.units, abs(ies.length))
+                self.length = convert_length(src, self.units, length)
             if self._user_height is None or override:
-                self.height = convert_length(src, self.units, abs(ies.height))
+                self.height = convert_length(src, self.units, height)
 
             self._recompute()
 
