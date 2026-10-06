@@ -207,10 +207,10 @@ class LampPlacer:
             max_tilt: Maximum allowed tilt angle in degrees. If None, uses the
                 lamp's config default.
             offset: Distance below ceiling to place lamp (room units). If None,
-                calculated from fixture.housing_height + 2 cm margin (minimum 5 cm).
+                calculated from the housing box behind the emitter + 2 cm margin (minimum 5 cm).
             wall_clearance: Distance from walls for corner/edge modes (room units).
-                If None, calculated from fixture diagonal to account for rotation
-                when aiming (minimum 5 cm).
+                If None, calculated from the housing box around the emitter to account
+                for rotation when aiming (minimum 5 cm).
             position_index: 0-based rank for cycling (wraps via modulo).
                 If None, uses auto-placement.
 
@@ -323,33 +323,31 @@ class LampPlacer:
 
     @staticmethod
     def ceiling_offset(lamp) -> float:
-        """Compute ceiling offset from fixture housing dimensions.
+        """Distance below the ceiling: the housing's extent behind the emitter plus a margin.
 
-        Returns the distance below the ceiling to place a lamp, in the lamp's
-        units, based on its fixture housing height plus a small margin.
+        In the lamp's units; 10 cm when the housing has no extent behind the emitter.
         """
         m = _lamp_per_meter(lamp)
         fixture = getattr(lamp, "fixture", None)
-        if fixture is not None and fixture.housing_height > 0:
-            return max(fixture.housing_height + FIXTURE_MARGIN_M * m, WALL_OFFSET_M * m)
+        if fixture is not None and fixture.has_dimensions:
+            _, hi = fixture.aim_bounds()
+            if hi[2] > 0:
+                return max(hi[2] + FIXTURE_MARGIN_M * m, WALL_OFFSET_M * m)
         return CEILING_OFFSET_M * m
 
     @staticmethod
     def wall_clearance(lamp) -> float:
-        """Compute wall clearance from fixture dimensions.
+        """Minimum distance from walls: farthest housing corner in plan plus half the depth behind.
 
-        Returns the minimum distance from walls to avoid fixture collision, in
-        the lamp's units, based on the 2D diagonal of the fixture footprint.
+        In the lamp's units; leaves room for the housing to rotate when the lamp is aimed.
         """
         m = _lamp_per_meter(lamp)
         fixture = getattr(lamp, "fixture", None)
         if fixture is None or not fixture.has_dimensions:
             return WALL_OFFSET_M * m
-        w = fixture.housing_width or 0
-        l = fixture.housing_length or 0
-        h = fixture.housing_height or 0
-        diagonal_2d = (w**2 + l**2) ** 0.5
-        return max(diagonal_2d / 2 + h / 2, WALL_OFFSET_M * m)
+        lo, hi = fixture.aim_bounds()
+        reach = hypot(max(-lo[0], hi[0]), max(-lo[1], hi[1]))
+        return max(reach + max(hi[2], 0.0) / 2, WALL_OFFSET_M * m)
 
     def _ranked_corner(self, index: int, **kwargs) -> PlacementResult:
         """Return placement for the Nth-ranked corner."""

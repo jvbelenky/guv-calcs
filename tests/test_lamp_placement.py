@@ -1147,3 +1147,32 @@ class TestSetHeight:
     def test_mode_order_constant(self):
         """_MODE_ORDER has expected values."""
         assert _MODE_ORDER == ("corner", "edge", "horizontal", "downlight")
+
+
+class TestPlacementWithLayout:
+    def test_ceiling_offset_uses_box_behind_emitter(self):
+        from guv_calcs import Lamp
+        from guv_calcs.lamp.lamp_placement import LampPlacer, FIXTURE_MARGIN_M
+        lamp = Lamp(lamp_id="t", housing_width=0.2, housing_length=0.2, housing_height=0.1,
+                    emitter_offset=(0, 0, 0.04))  # recessed 4 cm: 6 cm of box behind it
+        assert LampPlacer.ceiling_offset(lamp) == pytest.approx(0.06 + FIXTURE_MARGIN_M)
+
+    def test_ceiling_offset_default_unchanged(self):
+        from guv_calcs import Lamp
+        from guv_calcs.lamp.lamp_placement import LampPlacer, FIXTURE_MARGIN_M
+        lamp = Lamp(lamp_id="t", housing_width=0.2, housing_length=0.2, housing_height=0.1)
+        assert LampPlacer.ceiling_offset(lamp) == pytest.approx(0.1 + FIXTURE_MARGIN_M)
+
+    def test_wall_clearance_default_unchanged(self):
+        from guv_calcs import Lamp
+        from guv_calcs.lamp.lamp_placement import LampPlacer
+        lamp = Lamp(lamp_id="t", housing_width=0.3, housing_length=0.2, housing_height=0.1)
+        assert LampPlacer.wall_clearance(lamp) == pytest.approx((0.3**2 + 0.2**2) ** 0.5 / 2 + 0.05)
+
+    def test_wall_clearance_grows_with_offset(self):
+        from guv_calcs import Lamp
+        from guv_calcs.lamp.lamp_placement import LampPlacer
+        centered = Lamp(lamp_id="a", housing_width=0.2, housing_length=0.2, housing_height=0.1)
+        off = Lamp(lamp_id="b", housing_width=0.2, housing_length=0.2, housing_height=0.1,
+                   emitter_offset=(0.08, 0, 0))
+        assert LampPlacer.wall_clearance(off) > LampPlacer.wall_clearance(centered)

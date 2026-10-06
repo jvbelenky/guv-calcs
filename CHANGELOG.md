@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Fixture.beam_face (HousingFace: bottom/top/front/back/left/right), Fixture.roll (0/90/180/270) and Fixture.emitter_offset (x, y, z from the beam face center, in housing axes, any sign): the housing box is described in its own frame and can sit anywhere relative to the emitter; Lamp(beam_face=, housing_roll=, emitter_offset=), Lamp.update_fixture(**changes), Fixture.aim_bounds()/aim_corners()/aim_to_housing_extents()
+
+### Changed
+- Fixture.photometric_depth is derived from emitter_offset (still accepted by Fixture(), Lamp() and from_dict, may be negative)
+- LampPlacer.ceiling_offset and wall_clearance use the housing box's real extent around the emitter
+
 ## [0.8.1] - 2026-10-05
 
 ### Fixed
