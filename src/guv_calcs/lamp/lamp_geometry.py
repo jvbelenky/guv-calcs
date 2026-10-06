@@ -97,42 +97,14 @@ class LampGeometry:
         """
         Calculate 8 corners of fixture housing in world coordinates.
 
-        The bounding box is computed from:
-        - Surface center (= lamp position, = origin in local frame)
-        - housing_width/length for XY extent (symmetric around surface)
-        - housing_height extending behind the emitting face, which sits
-          photometric_depth in front of the lamp position
-        - LampSurface.height (luminous z-extent) extends both directions
+        The housing box comes from Fixture.aim_corners (housing frame rotated
+        into the aim frame, emitter at the origin), unioned with the luminous
+        opening's z-extent (LampSurface.height) in both directions.
 
         Returns:
             (8, 3) array of corner coordinates
         """
-        hl = self._fixture.housing_length / 2
-        hw = self._fixture.housing_width / 2
-        hh = self._fixture.housing_height
-        d = self._fixture.photometric_depth
-
-        # Luminous z-extent (3D openings like cylinders) shows in both directions
-        surface_z = self._surface.height / 2
-
-        # Local frame: length along X, width along Y, +Z opposite to aim.
-        # The emitting face sits `d` in front of the point (toward the aim);
-        # the housing extends `hh` behind the face.
-        z_min = min(-d, -surface_z)
-        z_max = max(hh - d, surface_z)
-
-        local_corners = np.array([
-            [-hl, -hw, z_min],
-            [hl, -hw, z_min],
-            [hl, hw, z_min],
-            [-hl, hw, z_min],
-            [-hl, -hw, z_max],
-            [hl, -hw, z_max],
-            [hl, hw, z_max],
-            [-hl, hw, z_max],
-        ])
-
-        # Transform to world coordinates
+        local_corners = self._fixture.aim_corners(self._surface.height)
         world_corners = self._pose.transform_to_world(local_corners)
         return world_corners.T  # Return as (8, 3)
 

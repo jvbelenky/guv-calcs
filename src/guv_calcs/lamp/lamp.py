@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 import warnings
 import copy
+from dataclasses import replace
 import numpy as np
 import hashlib
 from photompy import Photometry, IESFile
@@ -66,7 +67,15 @@ class Lamp:
         is the usual convention; wall-mounted upper-room fixtures are often
         "horizontal_0" (theta=90 toward phi=0). The aim always means the beam.
     photometric_depth: float, default=0.0
-        Distance from the fixture's emitting face back to the photometric center.
+        Distance from the fixture's emitting face back to the photometric center
+        (legacy; sets the inward component of `emitter_offset`).
+    beam_face: str or HousingFace, default="bottom"
+        Face of the housing the beam leaves through (housing W/L/H are in the
+        housing's own frame).
+    housing_roll: int, default=0
+        Emitter rotation about the beam relative to the housing (0/90/180/270).
+    emitter_offset: (x, y, z), default=None
+        Emitter position in housing axes from the center of the beam face.
         Accepts: "meters", "feet", "inches", "centimeters", "yards" (or aliases).
         Defaults to same as `units`.
     source_density: int, default=1
@@ -105,6 +114,9 @@ class Lamp:
         housing_units=None,
         photometric_axis=None,
         photometric_depth: float = 0.0,
+        beam_face=None,
+        housing_roll=None,
+        emitter_offset=None,
         source_density: int = 1,
         intensity_map=None,
         enabled: bool = True,
@@ -149,13 +161,17 @@ class Lamp:
             if housing_height is not None:
                 housing_height = convert_length(h_units, target_units, housing_height)
             photometric_depth = convert_length(h_units, target_units, photometric_depth)
+            if emitter_offset is not None:
+                emitter_offset = convert_length(h_units, target_units, *emitter_offset)
 
         # Create initial fixture with placeholder dimensions (will be finalized after IES load)
+        layout = dict(beam_face=beam_face, roll=housing_roll or 0,
+                      emitter_offset=emitter_offset, photometric_depth=photometric_depth or 0.0)
         fixture = Fixture(
             housing_width=housing_width if housing_width is not None else (width or 0.0),
             housing_length=housing_length if housing_length is not None else (length or 0.0),
             housing_height=housing_height or 0.0,
-            photometric_depth=photometric_depth or 0.0,
+            **layout,
         )
 
         # Create geometry container (owns pose, surface, fixture)
@@ -167,13 +183,15 @@ class Lamp:
         self._scaling_factor = scaling_factor  # used in load_ies
         self.load_ies(filedata)
 
-        # Finalize fixture with surface dimensions if user didn't specify housing
+        # Finalize fixture with surface dimensions if user didn't specify housing;
+        # the surface footprint is in the aim frame, the housing in its own
         if housing_width is None and housing_length is None:
+            L, W, H = fixture.aim_to_housing_extents(self.surface.length, self.surface.width, 0.0)
             self.geometry._fixture = Fixture(
-                housing_width=self.surface.width,
-                housing_length=self.surface.length,
-                housing_height=housing_height or 0.0,
-                photometric_depth=photometric_depth or 0.0,
+                housing_width=W,
+                housing_length=L,
+                housing_height=housing_height if housing_height is not None else H,
+                **layout,
             )
 
         # Spectral data
@@ -336,6 +354,9 @@ class Lamp:
             data["housing_length"] = fixture_data.get("housing_length", 0.0)
             data["housing_height"] = fixture_data.get("housing_height", 0.0)
             data["photometric_depth"] = fixture_data.get("photometric_depth", 0.0)
+            data["beam_face"] = fixture_data.get("beam_face")
+            data["housing_roll"] = fixture_data.get("roll")
+            data["emitter_offset"] = fixture_data.get("emitter_offset")
 
         # Flatten nested surface dict -> user intent params
         if "surface" in data:
@@ -398,9 +419,12 @@ class Lamp:
 
         # Apply fixture defaults from config (user kwargs override)
         fixture_cfg = config.get("fixture", {})
-        for k in ("housing_width", "housing_length", "housing_height", "photometric_depth"):
+        for k in ("housing_width", "housing_length", "housing_height", "photometric_depth",
+                  "beam_face", "emitter_offset"):
             if fixture_cfg.get(k) is not None:
                 kwargs.setdefault(k, fixture_cfg[k])
+        if fixture_cfg.get("roll") is not None:
+            kwargs.setdefault("housing_roll", fixture_cfg["roll"])
         if config.get("photometric_axis") is not None:
             kwargs.setdefault("photometric_axis", config["photometric_axis"])
 
@@ -1005,20 +1029,24 @@ class Lamp:
 
         # Convert fixture dimensions if units changed
         if old_units != new_units:
-            hw, hl, hh, pd = convert_length(
+            f = self.fixture
+            hw, hl, hh, ox, oy, oz = convert_length(
                 old_units, new_units,
-                self.fixture.housing_width,
-                self.fixture.housing_length,
-                self.fixture.housing_height,
-                self.fixture.photometric_depth,
+                f.housing_width, f.housing_length, f.housing_height, *f.emitter_offset,
             )
-            self.geometry._fixture = Fixture(
-                housing_width=hw,
-                housing_length=hl,
-                housing_height=hh,
-                photometric_depth=pd,
-                shape=self.fixture.shape,
+            self.geometry._fixture = replace(
+                f, housing_width=hw, housing_length=hl, housing_height=hh, emitter_offset=(ox, oy, oz)
             )
+        return self
+
+    def update_fixture(self, **changes):
+        """Replace fixture fields (None = keep); photometric_depth sets the inward offset."""
+        depth = changes.pop("photometric_depth", None)
+        changes = {k: v for k, v in changes.items() if v is not None}
+        fixture = replace(self.fixture, **changes)
+        if depth is not None and "emitter_offset" not in changes:
+            fixture = fixture.with_photometric_depth(depth)
+        self.geometry._fixture = fixture
         return self
 
     def set_width(self, width):
