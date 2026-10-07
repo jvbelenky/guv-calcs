@@ -1,6 +1,7 @@
 """Tests for the Fixture class."""
 
 import pytest
+from dataclasses import replace
 from guv_calcs.lamp import Fixture, FixtureShape
 
 
@@ -129,30 +130,38 @@ FACES = ["bottom", "top", "front", "back", "left", "right"]
 
 
 class TestHousingFace:
-    @pytest.mark.parametrize("face", FACES)
-    def test_rotation_sends_outward_normal_to_beam(self, face):
-        f = HousingFace.from_any(face)
-        np.testing.assert_allclose(f.rotation @ f.normal, [0, 0, -1], atol=1e-12)
-
     @pytest.mark.parametrize("token,face", [("-z", "bottom"), ("+z", "top"), ("+x", "front"),
                                              ("-x", "back"), ("+y", "left"), ("-y", "right")])
     def test_axis_aliases(self, token, face):
         assert HousingFace.from_token(token) is HousingFace(face)
 
-    def test_default_bottom(self):
-        assert HousingFace.from_any(None) is HousingFace.BOTTOM
+    def test_default_top(self):
+        assert HousingFace.from_any(None) is HousingFace.TOP
 
     def test_unknown_raises(self):
         with pytest.raises(ValueError):
             HousingFace.from_token("sideways")
 
+    @pytest.mark.parametrize("face", FACES)
+    def test_opposite(self, face):
+        f = HousingFace(face)
+        np.testing.assert_array_equal(f.opposite.normal, -f.normal)
+        assert f.opposite.opposite is f
 
-class TestFixtureLayout:
+
+class TestMountLayout:
+    @pytest.mark.parametrize("face", FACES)
+    @pytest.mark.parametrize("roll", [0, 90, 180, 270])
+    def test_mount_normal_points_behind_the_emitter(self, face, roll):
+        # aim frame: beam on -z, so the mount (wall/ceiling) is on +z
+        f = Fixture(mount_face=face, roll=roll)
+        np.testing.assert_allclose(f.housing_matrix @ f.mount_face.normal, [0, 0, 1], atol=1e-12)
+
     def test_defaults(self):
         f = Fixture()
-        assert f.beam_face is HousingFace.BOTTOM
+        assert f.mount_face is HousingFace.TOP
         assert f.roll == 0
-        assert f.emitter_offset == (0.0, 0.0, 0.0)
+        assert f.emitter_offset is None
         np.testing.assert_array_equal(f.housing_matrix, np.eye(3))
 
     def test_roll_normalised_and_validated(self):
@@ -166,82 +175,102 @@ class TestFixtureLayout:
             Fixture(emitter_offset=(0.0, 1.0))
 
     def test_all_24_orientations_distinct(self):
-        mats = {Fixture(beam_face=f, roll=r).housing_matrix.round(6).tobytes()
+        mats = {Fixture(mount_face=f, roll=r).housing_matrix.round(6).tobytes()
                 for f in FACES for r in (0, 90, 180, 270)}
         assert len(mats) == 24
 
-    def test_legacy_depth_equivalence(self):
-        # today's box: z from -d to h-d, xy centered
+    def test_default_emitter_sits_on_the_front_face(self):
+        # classic layout: emitting face at the point, housing behind it
+        f = Fixture(housing_width=0.2, housing_length=0.4, housing_height=0.1)
+        np.testing.assert_allclose(f.emitter_position(), [0, 0, -0.05], atol=1e-12)
+        lo, hi = f.aim_bounds()
+        np.testing.assert_allclose(lo, [-0.2, -0.1, 0.0], atol=1e-12)
+        np.testing.assert_allclose(hi, [0.2, 0.1, 0.1], atol=1e-12)
+        assert f.photometric_depth == 0.0
+
+    def test_default_stays_flush_when_the_housing_grows(self):
+        f = replace(Fixture(housing_width=0.2, housing_length=0.2), housing_height=0.2)
+        lo, hi = f.aim_bounds()
+        assert (lo[2], hi[2]) == pytest.approx((0.0, 0.2))
+
+    def test_offset_from_the_mounting_point(self):
+        # light center 6 cm below the ceiling plate of a 10 cm tall housing
+        f = Fixture(housing_width=0.2, housing_length=0.2, housing_height=0.1, emitter_offset=(0, 0, -0.06))
+        lo, hi = f.aim_bounds()
+        assert (lo[2], hi[2]) == pytest.approx((-0.04, 0.06))
+        assert f.photometric_depth == pytest.approx(0.04)
+
+    def test_explicit_offset_stays_put_relative_to_the_mount(self):
+        f = Fixture(housing_width=0.2, housing_length=0.2, housing_height=0.1, emitter_offset=(0, 0, -0.06))
+        g = replace(f, housing_height=0.2)
+        lo, hi = g.aim_bounds()
+        assert (lo[2], hi[2]) == pytest.approx((-0.14, 0.06))
+
+    def test_legacy_depth(self):
+        # 0.8.x: depth d behind the emitting face, housing h behind that face
         f = Fixture(housing_width=0.2, housing_length=0.4, housing_height=0.1, photometric_depth=0.03)
-        assert f.emitter_offset == pytest.approx((0.0, 0.0, 0.03))
+        assert f.emitter_offset == pytest.approx((0.0, 0.0, -0.07))
         assert f.photometric_depth == pytest.approx(0.03)
         lo, hi = f.aim_bounds()
         np.testing.assert_allclose(lo, [-0.2, -0.1, -0.03], atol=1e-12)
         np.testing.assert_allclose(hi, [0.2, 0.1, 0.07], atol=1e-12)
 
-    def test_corner_order_matches_legacy(self):
+    def test_wall_mount(self):
+        # Lumalier-style wall box: back face on the wall, 0.29 deep along the beam
+        f = Fixture(housing_length=0.29, housing_width=1.19, housing_height=0.33, mount_face="back")
+        lo, hi = f.aim_bounds()
+        assert (lo[2], hi[2]) == pytest.approx((0.0, 0.29))
+        assert sorted([hi[0] - lo[0], hi[1] - lo[1]]) == pytest.approx([0.33, 1.19])
+
+    def test_corner_order(self):
         f = Fixture(housing_width=0.2, housing_length=0.4, housing_height=0.1)
-        c = f.aim_corners()
         hl, hw = 0.2, 0.1
         expected = [[-hl, -hw, 0], [hl, -hw, 0], [hl, hw, 0], [-hl, hw, 0],
                     [-hl, -hw, 0.1], [hl, -hw, 0.1], [hl, hw, 0.1], [-hl, hw, 0.1]]
-        np.testing.assert_allclose(c, expected, atol=1e-12)
+        np.testing.assert_allclose(f.aim_corners(), expected, atol=1e-12)
 
     def test_surface_height_unions_along_aim(self):
         f = Fixture(housing_width=0.2, housing_length=0.2, housing_height=0.1)
         lo, hi = f.aim_bounds(surface_height=0.3)
-        assert lo[2] == pytest.approx(-0.15)
-        assert hi[2] == pytest.approx(0.15)
-
-    def test_front_face_box(self):
-        # 0.4 L x 0.2 W x 0.1 H box, beam out of +x face, emitter flush:
-        # the whole box lies behind the emitter along aim +z, 0.4 deep
-        f = Fixture(housing_width=0.2, housing_length=0.4, housing_height=0.1, beam_face="front")
-        lo, hi = f.aim_bounds()
-        assert lo[2] == pytest.approx(0.0)
-        assert hi[2] == pytest.approx(0.4)
-        assert sorted([hi[0] - lo[0], hi[1] - lo[1]]) == pytest.approx([0.1, 0.2])
-
-    def test_offset_moves_box_opposite(self):
-        base = Fixture(housing_width=0.2, housing_length=0.4, housing_height=0.1)
-        moved = Fixture(housing_width=0.2, housing_length=0.4, housing_height=0.1,
-                        emitter_offset=(0.15, 0.0, 0.0))
-        lo0, _ = base.aim_bounds()
-        lo1, _ = moved.aim_bounds()
-        assert lo1[0] == pytest.approx(lo0[0] - 0.15)
+        assert (lo[2], hi[2]) == pytest.approx((-0.15, 0.15))
 
     def test_protruding_emitter(self):
-        # emitter 5 cm in front of the bottom face: box starts 5 cm behind it
-        f = Fixture(housing_width=0.2, housing_length=0.2, housing_height=0.1, emitter_offset=(0, 0, -0.05))
+        # emitter 2 cm in front of the front face of a 10 cm housing
+        f = Fixture(housing_width=0.2, housing_length=0.2, housing_height=0.1, emitter_offset=(0, 0, -0.12))
         lo, hi = f.aim_bounds()
-        assert f.photometric_depth == pytest.approx(-0.05)
-        assert lo[2] == pytest.approx(0.05)
-        assert hi[2] == pytest.approx(0.15)
+        assert f.photometric_depth == pytest.approx(-0.02)
+        assert (lo[2], hi[2]) == pytest.approx((0.02, 0.12))
 
     def test_with_photometric_depth_keeps_in_plane_offset(self):
-        f = Fixture(housing_height=0.1, beam_face="front", emitter_offset=(0.0, 0.02, 0.03))
+        f = Fixture(housing_height=0.1, emitter_offset=(0.02, 0.0, -0.05))
         g = f.with_photometric_depth(0.01)
-        # front face inward normal is -x
-        assert g.emitter_offset == pytest.approx((-0.01, 0.02, 0.03))
+        assert g.emitter_offset == pytest.approx((0.02, 0.0, -0.09))
 
     @pytest.mark.parametrize("face", FACES)
     @pytest.mark.parametrize("roll", [0, 90, 180, 270])
     def test_aim_to_housing_extents_round_trip(self, face, roll):
-        f = Fixture(beam_face=face, roll=roll)
+        f = Fixture(mount_face=face, roll=roll)
         L, W, H = f.aim_to_housing_extents(0.4, 0.2, 0.1)
-        back = Fixture(housing_length=L, housing_width=W, housing_height=H, beam_face=face, roll=roll)
-        lo, hi = back.aim_bounds()
+        g = Fixture(housing_length=L, housing_width=W, housing_height=H, mount_face=face, roll=roll)
+        lo, hi = g.aim_bounds()
         assert (hi - lo) == pytest.approx([0.4, 0.2, 0.1])
 
     def test_dict_round_trip(self):
         f = Fixture(housing_width=0.2, housing_length=0.4, housing_height=0.1,
-                    beam_face="left", roll=270, emitter_offset=(0.01, -0.02, 0.03))
+                    mount_face="left", roll=270, emitter_offset=(0.01, -0.02, 0.03))
         d = f.to_dict()
-        assert d["beam_face"] == "left" and d["roll"] == 270
+        assert d["mount_face"] == "left" and d["roll"] == 270
         assert d["emitter_offset"] == [0.01, -0.02, 0.03]
+        assert Fixture.from_dict(d) == f
+
+    def test_dict_round_trip_default_offset(self):
+        f = Fixture(housing_height=0.1)
+        d = f.to_dict()
+        assert d["emitter_offset"] is None
         assert Fixture.from_dict(d) == f
 
     def test_from_dict_legacy(self):
         f = Fixture.from_dict({"housing_width": 0.2, "housing_length": 0.2, "housing_height": 0.1,
                                "photometric_depth": 0.05, "shape": "rectangular"})
-        assert f.emitter_offset == pytest.approx((0.0, 0.0, 0.05))
+        assert f.emitter_offset == pytest.approx((0.0, 0.0, -0.05))
+        assert f.photometric_depth == pytest.approx(0.05)

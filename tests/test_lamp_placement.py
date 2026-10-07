@@ -1154,7 +1154,7 @@ class TestPlacementWithLayout:
         from guv_calcs import Lamp
         from guv_calcs.lamp.lamp_placement import LampPlacer, FIXTURE_MARGIN_M
         lamp = Lamp(lamp_id="t", housing_width=0.2, housing_length=0.2, housing_height=0.1,
-                    emitter_offset=(0, 0, 0.04))  # recessed 4 cm: 6 cm of box behind it
+                    emitter_offset=(0, 0, -0.06))  # 6 cm below the mount: 6 cm of box behind it
         assert LampPlacer.ceiling_offset(lamp) == pytest.approx(0.06 + FIXTURE_MARGIN_M)
 
     def test_ceiling_offset_default_unchanged(self):
@@ -1174,5 +1174,5 @@ class TestPlacementWithLayout:
         from guv_calcs.lamp.lamp_placement import LampPlacer
         centered = Lamp(lamp_id="a", housing_width=0.2, housing_length=0.2, housing_height=0.1)
         off = Lamp(lamp_id="b", housing_width=0.2, housing_length=0.2, housing_height=0.1,
-                   emitter_offset=(0.08, 0, 0))
+                   emitter_offset=(0.08, 0, -0.1))
         assert LampPlacer.wall_clearance(off) > LampPlacer.wall_clearance(centered)

@@ -69,13 +69,14 @@ class Lamp:
     photometric_depth: float, default=0.0
         Distance from the fixture's emitting face back to the photometric center
         (legacy; sets the inward component of `emitter_offset`).
-    beam_face: str or HousingFace, default="bottom"
-        Face of the housing the beam leaves through (housing W/L/H are in the
-        housing's own frame).
+    mount_face: str or HousingFace, default="top"
+        Face of the housing against the wall or ceiling; the beam points away
+        from it (housing W/L/H are in the housing's own frame).
     housing_roll: int, default=0
-        Emitter rotation about the beam relative to the housing (0/90/180/270).
+        Housing rotation about the beam (0/90/180/270).
     emitter_offset: (x, y, z), default=None
-        Emitter position in housing axes from the center of the beam face.
+        Emitter position in housing axes from the mounting point (the center of
+        the mount face). None puts the emitter on the opposite (front) face.
         Accepts: "meters", "feet", "inches", "centimeters", "yards" (or aliases).
         Defaults to same as `units`.
     source_density: int, default=1
@@ -114,7 +115,7 @@ class Lamp:
         housing_units=None,
         photometric_axis=None,
         photometric_depth: float = 0.0,
-        beam_face=None,
+        mount_face=None,
         housing_roll=None,
         emitter_offset=None,
         source_density: int = 1,
@@ -165,7 +166,7 @@ class Lamp:
                 emitter_offset = convert_length(h_units, target_units, *emitter_offset)
 
         # Create initial fixture with placeholder dimensions (will be finalized after IES load)
-        layout = dict(beam_face=beam_face, roll=housing_roll or 0,
+        layout = dict(mount_face=mount_face, roll=housing_roll or 0,
                       emitter_offset=emitter_offset, photometric_depth=photometric_depth or 0.0)
         fixture = Fixture(
             housing_width=housing_width if housing_width is not None else (width or 0.0),
@@ -354,7 +355,7 @@ class Lamp:
             data["housing_length"] = fixture_data.get("housing_length", 0.0)
             data["housing_height"] = fixture_data.get("housing_height", 0.0)
             data["photometric_depth"] = fixture_data.get("photometric_depth", 0.0)
-            data["beam_face"] = fixture_data.get("beam_face")
+            data["mount_face"] = fixture_data.get("mount_face")
             data["housing_roll"] = fixture_data.get("roll")
             data["emitter_offset"] = fixture_data.get("emitter_offset")
 
@@ -420,7 +421,7 @@ class Lamp:
         # Apply fixture defaults from config (user kwargs override)
         fixture_cfg = config.get("fixture", {})
         for k in ("housing_width", "housing_length", "housing_height", "photometric_depth",
-                  "beam_face", "emitter_offset"):
+                  "mount_face", "emitter_offset"):
             if fixture_cfg.get(k) is not None:
                 kwargs.setdefault(k, fixture_cfg[k])
         if fixture_cfg.get("roll") is not None:
@@ -1030,12 +1031,14 @@ class Lamp:
         # Convert fixture dimensions if units changed
         if old_units != new_units:
             f = self.fixture
-            hw, hl, hh, ox, oy, oz = convert_length(
-                old_units, new_units,
-                f.housing_width, f.housing_length, f.housing_height, *f.emitter_offset,
+            hw, hl, hh = convert_length(
+                old_units, new_units, f.housing_width, f.housing_length, f.housing_height,
             )
+            offset = f.emitter_offset
+            if offset is not None:
+                offset = convert_length(old_units, new_units, *offset)
             self.geometry._fixture = replace(
-                f, housing_width=hw, housing_length=hl, housing_height=hh, emitter_offset=(ox, oy, oz)
+                f, housing_width=hw, housing_length=hl, housing_height=hh, emitter_offset=offset
             )
         return self
 

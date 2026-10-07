@@ -394,30 +394,30 @@ class TestFixtureLayoutOnLamp:
                     housing_height=0.1, **kw)
 
     def test_bbox_uses_layout(self):
-        lamp = self._lamp(beam_face="front")
+        lamp = self._lamp(mount_face="back")
         corners = lamp.geometry.get_bounding_box_corners()
         # aimed down: aim +z is world +z, so the 0.4 deep box sits above the emitter
         assert corners[:, 2].min() == pytest.approx(2.0)
         assert corners[:, 2].max() == pytest.approx(2.4)
 
     def test_constructor_kwargs(self):
-        lamp = self._lamp(beam_face="left", housing_roll=90, emitter_offset=(0.01, 0.0, 0.02))
+        lamp = self._lamp(mount_face="left", housing_roll=90, emitter_offset=(0.01, 0.0, 0.02))
         f = lamp.fixture
-        assert (f.beam_face.value, f.roll, f.emitter_offset) == ("left", 90, (0.01, 0.0, 0.02))
+        assert (f.mount_face.value, f.roll, f.emitter_offset) == ("left", 90, (0.01, 0.0, 0.02))
 
     def test_update_fixture_partial(self):
         lamp = self._lamp()
-        lamp.update_fixture(beam_face="top", housing_length=None)
-        assert lamp.fixture.beam_face.value == "top"
+        lamp.update_fixture(mount_face="bottom", housing_length=None)
+        assert lamp.fixture.mount_face.value == "bottom"
         assert lamp.fixture.housing_length == pytest.approx(0.4)
 
     def test_update_fixture_depth_alias(self):
-        lamp = self._lamp(emitter_offset=(0.05, 0.0, 0.0))
+        lamp = self._lamp(emitter_offset=(0.05, 0.0, -0.1))
         lamp.update_fixture(photometric_depth=-0.01)
-        assert lamp.fixture.emitter_offset == pytest.approx((0.05, 0.0, -0.01))
+        assert lamp.fixture.emitter_offset == pytest.approx((0.05, 0.0, -0.11))
 
     def test_to_dict_round_trip(self):
-        lamp = self._lamp(beam_face="back", housing_roll=180, emitter_offset=(0.0, 0.01, -0.02))
+        lamp = self._lamp(mount_face="front", housing_roll=180, emitter_offset=(0.0, 0.01, -0.02))
         again = Lamp.from_dict(lamp.to_dict())
         assert again.fixture == lamp.fixture
 
@@ -426,16 +426,21 @@ class TestFixtureLayoutOnLamp:
         d["fixture"] = {"housing_width": 0.2, "housing_length": 0.4, "housing_height": 0.1,
                         "photometric_depth": 0.03, "shape": "rectangular"}
         lamp = Lamp.from_dict(d)
-        assert lamp.fixture.emitter_offset == pytest.approx((0.0, 0.0, 0.03))
+        assert lamp.fixture.emitter_offset == pytest.approx((0.0, 0.0, -0.07))
 
     def test_set_units_converts_offset(self):
         lamp = self._lamp(emitter_offset=(0.3048, 0.0, 0.0))
         lamp.set_units("feet")
         assert lamp.fixture.emitter_offset[0] == pytest.approx(1.0)
-        assert lamp.fixture.beam_face.value == "bottom"
+        assert lamp.fixture.mount_face.value == "top"
+
+    def test_set_units_keeps_default_offset(self):
+        lamp = self._lamp()
+        lamp.set_units("feet")
+        assert lamp.fixture.emitter_offset is None
 
     def test_default_housing_mapped_into_housing_frame(self):
         # no housing dims: housing defaults to the surface footprint in the aim frame
-        lamp = Lamp(lamp_id="t", width=0.2, length=0.4, beam_face="front")
+        lamp = Lamp(lamp_id="t", width=0.2, length=0.4, mount_face="back")
         lo, hi = lamp.fixture.aim_bounds()
         assert (hi - lo)[:2] == pytest.approx([0.4, 0.2])
