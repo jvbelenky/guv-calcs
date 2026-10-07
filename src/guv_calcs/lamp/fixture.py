@@ -114,8 +114,10 @@ class Fixture:
     it. `roll` turns the housing about that direction in 90 degree steps.
     `emitter_offset` is the emitter's position in housing axes measured from
     the mounting point (the center of the mount face); None puts the emitter
-    on the opposite (front) face, which is the classic layout and stays
-    correct when the housing is resized. `photometric_depth` (legacy) is the
+    so the luminous opening sits flush with the opposite (front) face (the
+    classic layout); this stays correct when the housing is resized. The
+    luminous opening (LM-63 width/length/height, aim frame) is not the
+    housing, but the housing box always contains it. `photometric_depth` (legacy) is the
     distance from the front face back to the emitter.
     """
 
@@ -171,10 +173,15 @@ class Fixture:
         """rotation taking housing-frame vectors into the aim frame"""
         return _clean(_rot_z(self.roll) @ self.mount_face.rotation)
 
-    def emitter_position(self):
-        """emitter position in the housing frame, relative to the box center"""
+    def emitter_position(self, luminous_height=0.0):
+        """emitter position in the housing frame, relative to the box center.
+
+        By default the luminous opening (of depth luminous_height along the
+        mount normal) sits flush with the front face.
+        """
         if self.emitter_offset is None:
-            return -self._mount_center()  # center of the front face
+            n = self.mount_face.normal
+            return -self._mount_center() + n * (abs(luminous_height) / 2)
         return self._mount_center() + np.array(self.emitter_offset)
 
     # ---- legacy depth ----
@@ -199,21 +206,25 @@ class Fixture:
 
     # ---- box ----
 
-    def aim_bounds(self, surface_height=0.0):
-        """(lo, hi) of the housing box in the aim frame, emitter at the origin"""
+    def aim_bounds(self, luminous=(0.0, 0.0, 0.0)):
+        """(lo, hi) of the housing box in the aim frame, emitter at the origin.
+
+        `luminous` is the luminous opening's (length, width, height) in the aim
+        frame, centered on the emitter; the box is grown to contain it.
+        """
+        lum = np.abs(np.asarray(luminous, dtype=float)) / 2
         half = self._half()
         signs = np.array(list(itertools.product((-1, 1), repeat=3)), dtype=float)
-        corners = signs * half - self.emitter_position()
+        corners = signs * half - self.emitter_position(luminous_height=2 * lum[2])
         aim = corners @ self.housing_matrix.T
         lo, hi = aim.min(axis=0), aim.max(axis=0)
-        if surface_height and surface_height > 0:
-            lo[2] = min(lo[2], -surface_height / 2)
-            hi[2] = max(hi[2], surface_height / 2)
+        if lum.any():
+            lo, hi = np.minimum(lo, -lum), np.maximum(hi, lum)
         return lo + 0.0, hi + 0.0
 
-    def aim_corners(self, surface_height=0.0):
+    def aim_corners(self, luminous=(0.0, 0.0, 0.0)):
         """8 box corners in the aim frame: 0-3 at z-min, 4-7 at z-max"""
-        (x0, y0, z0), (x1, y1, z1) = self.aim_bounds(surface_height)
+        (x0, y0, z0), (x1, y1, z1) = self.aim_bounds(luminous)
         return np.array([
             [x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0],
             [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1],

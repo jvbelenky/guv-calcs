@@ -184,10 +184,11 @@ class Lamp:
         self._scaling_factor = scaling_factor  # used in load_ies
         self.load_ies(filedata)
 
-        # Finalize fixture with surface dimensions if user didn't specify housing;
-        # the surface footprint is in the aim frame, the housing in its own
+        # Finalize fixture with surface dimensions if user didn't specify housing:
+        # the luminous opening (aim frame) is a first approximation of the
+        # housing (its own frame), which must be at least that large
         if housing_width is None and housing_length is None:
-            L, W, H = fixture.aim_to_housing_extents(self.surface.length, self.surface.width, 0.0)
+            L, W, H = fixture.aim_to_housing_extents(self.surface.length, self.surface.width, self.surface.height)
             self.geometry._fixture = Fixture(
                 housing_width=W,
                 housing_length=L,

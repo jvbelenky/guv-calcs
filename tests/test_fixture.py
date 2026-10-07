@@ -229,10 +229,27 @@ class TestMountLayout:
                     [-hl, -hw, 0.1], [hl, -hw, 0.1], [hl, hw, 0.1], [-hl, hw, 0.1]]
         np.testing.assert_allclose(f.aim_corners(), expected, atol=1e-12)
 
-    def test_surface_height_unions_along_aim(self):
+    def test_box_contains_the_luminous_opening(self):
+        # LM-63: the housing is at least as large as the luminous opening
         f = Fixture(housing_width=0.2, housing_length=0.2, housing_height=0.1)
-        lo, hi = f.aim_bounds(surface_height=0.3)
-        assert (lo[2], hi[2]) == pytest.approx((-0.15, 0.15))
+        lo, hi = f.aim_bounds(luminous=(0.6, 0.3, 0.0))
+        np.testing.assert_allclose(lo, [-0.3, -0.15, 0.0], atol=1e-12)
+        np.testing.assert_allclose(hi, [0.3, 0.15, 0.1], atol=1e-12)
+
+    def test_luminous_volume_without_a_housing_is_centered_on_the_point(self):
+        lo, hi = Fixture().aim_bounds(luminous=(0.0, 0.0, 0.12))
+        assert (lo[2], hi[2]) == pytest.approx((-0.06, 0.06))
+
+    def test_default_emitter_puts_a_3d_opening_flush_with_the_front_face(self):
+        # UV-FLOW style: 12 cm luminous sides in a 12 cm housing -> photometric center at its middle
+        f = Fixture(housing_width=0.58, housing_length=0.58, housing_height=0.12)
+        np.testing.assert_allclose(f.emitter_position(luminous_height=0.12), [0, 0, 0], atol=1e-12)
+        lo, hi = f.aim_bounds(luminous=(0.58, 0.58, 0.12))
+        assert (lo[2], hi[2]) == pytest.approx((-0.06, 0.06))
+
+    def test_explicit_offset_ignores_the_opening_depth(self):
+        f = Fixture(housing_height=0.12, emitter_offset=(0, 0, -0.03))
+        np.testing.assert_allclose(f.emitter_position(luminous_height=0.12), [0, 0, 0.03], atol=1e-12)
 
     def test_protruding_emitter(self):
         # emitter 2 cm in front of the front face of a 10 cm housing

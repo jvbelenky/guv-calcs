@@ -444,3 +444,14 @@ class TestFixtureLayoutOnLamp:
         lamp = Lamp(lamp_id="t", width=0.2, length=0.4, mount_face="back")
         lo, hi = lamp.fixture.aim_bounds()
         assert (hi - lo)[:2] == pytest.approx([0.4, 0.2])
+
+    def test_default_housing_includes_the_luminous_height(self):
+        lamp = Lamp(lamp_id="t", z=2.5, width=0.58, length=0.58, height=0.12)
+        assert lamp.fixture.housing_height == pytest.approx(0.12)
+        z = lamp.geometry.get_bounding_box_corners()[:, 2]
+        assert (z.min(), z.max()) == pytest.approx((2.44, 2.56))
+
+    def test_bounding_box_contains_a_footprint_larger_than_the_housing(self):
+        lamp = Lamp(lamp_id="t", width=0.4, length=0.4, housing_width=0.1, housing_length=0.1, housing_height=0.05)
+        x = lamp.geometry.get_bounding_box_corners()[:, 0]
+        assert x.max() - x.min() == pytest.approx(0.4)

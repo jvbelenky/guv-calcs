@@ -1176,3 +1176,10 @@ class TestPlacementWithLayout:
         off = Lamp(lamp_id="b", housing_width=0.2, housing_length=0.2, housing_height=0.1,
                    emitter_offset=(0.08, 0, -0.1))
         assert LampPlacer.wall_clearance(off) > LampPlacer.wall_clearance(centered)
+
+    def test_ceiling_offset_counts_a_3d_luminous_opening(self):
+        from guv_calcs import Lamp
+        from guv_calcs.lamp.lamp_placement import LampPlacer, FIXTURE_MARGIN_M
+        # 12 cm luminous sides, centered in a 12 cm housing: 6 cm above the photometric center
+        lamp = Lamp(lamp_id="t", width=0.58, length=0.58, height=0.12)
+        assert LampPlacer.ceiling_offset(lamp) == pytest.approx(0.06 + FIXTURE_MARGIN_M)

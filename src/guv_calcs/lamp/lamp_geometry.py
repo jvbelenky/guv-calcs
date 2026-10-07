@@ -93,18 +93,28 @@ class LampGeometry:
         """Position of luminous surface center (same as lamp position)."""
         return self._pose.position
 
+    @property
+    def luminous_extents(self):
+        """luminous opening (length, width, height) in the aim frame"""
+        s = self._surface
+        return (s.length, s.width, s.height)
+
+    def aim_bounds(self):
+        """housing box (lo, hi) in the aim frame, containing the luminous opening"""
+        return self._fixture.aim_bounds(self.luminous_extents)
+
     def get_bounding_box_corners(self) -> np.ndarray:
         """
         Calculate 8 corners of fixture housing in world coordinates.
 
         The housing box comes from Fixture.aim_corners (housing frame rotated
-        into the aim frame, emitter at the origin), unioned with the luminous
-        opening's z-extent (LampSurface.height) in both directions.
+        into the aim frame, emitter at the origin), grown to contain the
+        luminous opening (LampSurface length x width x height).
 
         Returns:
             (8, 3) array of corner coordinates
         """
-        local_corners = self._fixture.aim_corners(self._surface.height)
+        local_corners = self._fixture.aim_corners(self.luminous_extents)
         world_corners = self._pose.transform_to_world(local_corners)
         return world_corners.T  # Return as (8, 3)
 

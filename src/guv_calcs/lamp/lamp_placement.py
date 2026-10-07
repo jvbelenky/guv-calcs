@@ -38,6 +38,14 @@ def _lamp_per_meter(lamp) -> float:
     return _per_meter(surface.units) if surface is not None else 1.0
 
 
+def _housing_bounds(lamp):
+    """housing box in the aim frame, including the luminous opening when known"""
+    geometry = getattr(lamp, "geometry", None)
+    if geometry is not None:
+        return geometry.aim_bounds()
+    return lamp.fixture.aim_bounds()
+
+
 def _corner_tolerance(wall_offset: float, scale: float) -> float:
     # the lamp sits wall_offset along the diagonal, so allow ~1.5x plus a margin
     return max(OCCUPIED_TOLERANCE_M * scale, wall_offset * 1.5 + OCCUPIED_MARGIN_M * scale)
@@ -330,7 +338,7 @@ class LampPlacer:
         m = _lamp_per_meter(lamp)
         fixture = getattr(lamp, "fixture", None)
         if fixture is not None and fixture.has_dimensions:
-            _, hi = fixture.aim_bounds()
+            _, hi = _housing_bounds(lamp)
             if hi[2] > 0:
                 return max(hi[2] + FIXTURE_MARGIN_M * m, WALL_OFFSET_M * m)
         return CEILING_OFFSET_M * m
@@ -345,7 +353,7 @@ class LampPlacer:
         fixture = getattr(lamp, "fixture", None)
         if fixture is None or not fixture.has_dimensions:
             return WALL_OFFSET_M * m
-        lo, hi = fixture.aim_bounds()
+        lo, hi = _housing_bounds(lamp)
         reach = hypot(max(-lo[0], hi[0]), max(-lo[1], hi[1]))
         return max(reach + max(hi[2], 0.0) / 2, WALL_OFFSET_M * m)
 

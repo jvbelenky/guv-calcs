@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - Fixture.mount_face (HousingFace: top/bottom/front/back/left/right, default top: the face against the wall or ceiling; the beam points away from it), Fixture.roll (0/90/180/270) and Fixture.emitter_offset (x, y, z from the mounting point, in housing axes, any sign; None = emitter on the front face): the housing box is described in its own frame and can sit anywhere relative to the emitter; Lamp(mount_face=, housing_roll=, emitter_offset=), Lamp.update_fixture(**changes), Fixture.aim_bounds()/aim_corners()/aim_to_housing_extents()
 
 ### Changed
+- The housing box always contains the luminous opening (LM-63 width x length x height around the photometric center), and a lamp's default housing is the full luminous opening including its height; by default a 3D opening sits flush with the housing's front face, so its photometric center is half the opening's height inside. Fixture.aim_bounds/aim_corners take `luminous=(length, width, height)`; LampGeometry.aim_bounds() and LampPlacer clearances include the opening
 - Fixture.photometric_depth is derived from emitter_offset: the distance from the front face back to the emitter (still accepted by Fixture(), Lamp() and from_dict, may be negative)
 - LampPlacer.ceiling_offset and wall_clearance use the housing box's real extent around the emitter
 
