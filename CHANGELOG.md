@@ -11,6 +11,9 @@ All notable changes to this project will be documented in this file.
 - Fixture.photometric_depth is derived from emitter_offset (still accepted by Fixture(), Lamp() and from_dict, may be negative)
 - LampPlacer.ceiling_offset and wall_clearance use the housing box's real extent around the emitter
 
+### Fixed
+- Total power (Lamp.get_total_power, and scaling to a total power) overcounted IES files with unevenly spaced angles, such as upper-room fixtures sampled densely around 90°: a Lumalier 150 file read 4535 mW instead of 273 mW. Requires photompy 0.3.1
+
 ## [0.8.1] - 2026-10-05
 
 ### Fixed
