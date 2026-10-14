@@ -352,3 +352,73 @@ class TestRoomGenerateReport:
         values = lines[i + 1].split(",")
         assert header[2:] == ["Floor", "Ceiling", "Wall 0", "Wall 1", "Wall 2", "Wall 3", "Wall 4", "Enabled"]
         assert values[header.index("Wall 3")] == "0.3"
+
+
+class TestPolygonZoneExport:
+    """Zones in a non-rectangular room export and plot on their full grid,
+    with cells outside the outline left blank (CSV) or NaN (plot)."""
+
+    @pytest.fixture(scope="class")
+    def room(self):
+        import numpy as np
+        from guv_calcs import Lamp, Polygon2D
+        room = Room(polygon=Polygon2D([(0, 0), (4, 0), (4, 2), (2, 2), (2, 4), (0, 4)]),
+                    z=2.7, enable_reflectance=False)
+        room.add_standard_zones()
+        room.add_lamp(Lamp.from_keyword(
+            "ushio_b1", x=1, y=1, z=2.6, aimx=1, aimy=1, aimz=0))
+        room.calculate()
+        return room
+
+    @staticmethod
+    def _rows(csv_bytes):
+        import csv, io
+        return list(csv.reader(io.StringIO(csv_bytes.decode("cp1252"))))
+
+    def test_plane_values_to_full_grid(self, room):
+        import numpy as np
+        geom = room.calc_zones["EyeLimits"].geometry
+        values = np.arange(geom.num_points[0], dtype=float)
+        full = geom.values_to_full_grid(values, fill=np.nan)
+        assert len(full) == len(geom.coords_full) == geom.num_x * geom.num_y
+        assert np.isnan(full).sum() == geom.num_x * geom.num_y - len(values)
+        np.testing.assert_array_equal(full[~np.isnan(full)], values)
+
+    def test_plane_export(self, room):
+        zone = room.calc_zones["EyeLimits"]
+        geom = zone.geometry
+        rows = self._rows(zone.export())
+        assert len(rows[0]) == geom.num_x + 1
+        grid = rows[1:1 + geom.num_y]
+        cells = [c for row in grid for c in row[1:]]
+        filled = [c for c in cells if c != ""]
+        assert len(cells) == geom.num_x * geom.num_y
+        assert len(filled) == geom.num_points[0]
+        assert all(float(c) >= 0 for c in filled)
+
+    def test_volume_export(self, room):
+        zone = room.calc_zones["WholeRoomFluence"]
+        geom = zone.geometry
+        rows = self._rows(zone.export())
+        # first data row (after the notes) holds numX, numY, numZ
+        k = next(i for i, r in enumerate(rows) if len(r) == 3 and all(c.isdigit() for c in r))
+        assert [int(n) for n in rows[k]] == [geom.num_x, geom.num_y, geom.num_z]
+        cells = [c for row in rows[k + 4:] for c in row]
+        filled = [c for c in cells if c != ""]
+        assert len(filled) == geom.num_points[0]
+
+    def test_plot_plane(self, room):
+        import numpy as np
+        import matplotlib.pyplot as plt
+        zone = room.calc_zones["EyeLimits"]
+        fig, ax = zone.plot_plane()
+        image = ax.get_images()[0].get_array()
+        assert image.shape == (zone.geometry.num_y, zone.geometry.num_x)
+        assert np.isnan(np.ma.filled(image, np.nan)).any()
+        plt.close(fig)
+
+    def test_export_zip(self, room):
+        import zipfile, io
+        data = room.export_zip(include_plots=True)
+        names = zipfile.ZipFile(io.BytesIO(data)).namelist()
+        assert any("EyeLimits" in n or "Eye" in n for n in names)

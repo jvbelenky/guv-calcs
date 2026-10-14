@@ -4,29 +4,35 @@ from ..io import rows_to_bytes
 
 def export_plane(zone, fname=None):
 
-    num_x, num_y = zone.geometry.num_x, zone.geometry.num_y  # tmp
+    geom = zone.geometry
+    num_x, num_y = geom.num_x, geom.num_y
+    # polygon planes are written on their full bounding grid, with the cells
+    # outside the outline left blank
+    coords = geom.coords_full
 
     values = zone.get_values()
     if values is None:
         vals = [[-1] * num_y for _ in range(num_x)]
+    elif not geom.is_rectangular and np.size(values) == geom.total_points:
+        vals = geom.values_to_full_grid(values, fill=np.nan).reshape(num_x, num_y)
     elif values.shape != (num_x, num_y):
         vals = [[-1] * num_y for _ in range(num_x)]
     else:
         vals = values
-    zvals = zone.geometry.coords.T[2].reshape(num_x, num_y).T[::-1]
+    zvals = coords.T[2].reshape(num_x, num_y).T[::-1]
 
-    xpoints = zone.geometry.coords.T[0].reshape(num_x, num_y).T[0].tolist()
-    ypoints = zone.geometry.coords.T[1].reshape(num_x, num_y)[0].tolist()
+    xpoints = coords.T[0].reshape(num_x, num_y).T[0].tolist()
+    ypoints = coords.T[1].reshape(num_x, num_y)[0].tolist()
 
     if len(np.unique(xpoints)) == 1 and len(np.unique(ypoints)) == 1:
-        xpoints = zone.geometry.coords.T[0].reshape(num_x, num_y)[0].tolist()
-        ypoints = zone.geometry.coords.T[1].reshape(num_x, num_y).T[0].tolist()
+        xpoints = coords.T[0].reshape(num_x, num_y)[0].tolist()
+        ypoints = coords.T[1].reshape(num_x, num_y).T[0].tolist()
         vals = np.array(vals).T.tolist()
         zvals = zvals.T.tolist()
 
     rows = [[""] + xpoints]
 
-    rows += np.concatenate(([np.flip(ypoints)], vals)).T.tolist()
+    rows += _blank_nans(np.concatenate(([np.flip(ypoints)], vals)).T.tolist())
     rows += [""]
     # zvals
 
@@ -50,25 +56,28 @@ def export_volume(zone, fname=None):
     fluence rate values are given in uW/cm2
     """
 
+    geom = zone.geometry
+    shape = (geom.num_x, geom.num_y, geom.num_z)
     lines = header.split("\n")
     rows = [[line] for line in lines]
-    rows += [zone.geometry.num_points]
-    rows += [np.unique(zone.geometry.coords.T[0])]
-    rows += [np.unique(zone.geometry.coords.T[1])]
-    rows += [np.unique(zone.geometry.coords.T[2])]
+    rows += [shape]
+    # polygon volumes are written on their full bounding grid, with the
+    # points outside the outline left blank
+    rows += [np.unique(geom.coords_full.T[0])]
+    rows += [np.unique(geom.coords_full.T[1])]
+    rows += [np.unique(geom.coords_full.T[2])]
     values = zone.get_values()
-    for i in range(zone.geometry.num_z):
+    if (values is not None and not geom.is_rectangular
+            and np.size(values) == geom.total_points):
+        values = geom.values_to_full_grid(values, fill=np.nan).reshape(shape)
+    for i in range(geom.num_z):
         rows += [""]
         if values is None:
-            rows += [[""] * zone.geometry.num_x for _ in range(zone.geometry.num_y)]
-        elif values.shape != (
-            zone.geometry.num_x,
-            zone.geometry.num_y,
-            zone.geometry.num_z,
-        ):
-            rows += [[""] * zone.geometry.num_x for _ in range(zone.geometry.num_y)]
+            rows += [[""] * geom.num_x for _ in range(geom.num_y)]
+        elif values.shape != shape:
+            rows += [[""] * geom.num_x for _ in range(geom.num_y)]
         else:
-            rows += values.T[i].tolist()
+            rows += _blank_nans(values.T[i].tolist())
 
     return to_csv(rows=rows, fname=fname)
 
@@ -89,6 +98,11 @@ def export_point(zone, fname=None):
         ["Units", zone.value_units],
     ]
     return to_csv(rows=rows, fname=fname)
+
+
+def _blank_nans(rows):
+    """Write NaN cells (outside a polygon's outline) as empty strings."""
+    return [["" if isinstance(v, float) and v != v else v for v in row] for row in rows]
 
 
 def to_csv(rows, fname=None):

@@ -4,12 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- SurfaceGrid.coords_full and values_to_full_grid, matching VolumeGrid; values_to_full_grid takes a `fill` value (default -inf)
+
 ### Changed
 - A CalcPoint created without `calc_mode` or `horiz` defaults to cosine weighting (planar_normal), like a cosine-corrected radiometer facing its aim point, instead of planar_max; saved points keep their stored flags
 
 ### Fixed
 - A CalcPoint's field of view is centered on its aim direction. It was applied as a band around the plane perpendicular to the aim (the horizon band of an upward-facing eye plane), so a point aimed at a lamp could miss it and see one well off to the side instead, and the horizontal FOV searched for the brightest direction rather than the aimed one. Points with a full 180/360 field of view are unaffected
 - Reflected light ignored view mode: a zone with view_direction or view_target (eye_directional, eye_target, and now every CalcPoint) filtered light bounced off surfaces by the band around its own plane rather than by its view-centered FOV. Zones without view mode are unaffected
+- Polygon rooms: exporting a calculation plane (zone.export(), Room.export_zip()) raised ValueError and plot_plane raised TypeError, and polygon volumes exported blank grids under a wrong size header; planes and volumes now export and plot on their full bounding grid, blank (CSV) or NaN (plot) outside the outline
 - Changing one reflective surface's resolution (set_reflectance_num_points / set_reflectance_spacing on a single wall) crashed the next calculate() with a shape mismatch, and moving an object left stale occlusion in reflected light until a hard recalculation: the surface cache compared against zone and scene state that compute() had already updated
 - Changing a zone's FOV or weighting flags (fov_vert, fov_horiz, vert, horiz, use_normal, view_direction, view_target) didn't recompute its reflected values until a hard recalculation
 

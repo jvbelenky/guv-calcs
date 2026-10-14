@@ -172,6 +172,13 @@ class _GridBase:
         """Total number of grid points (always a single int)."""
         return len(self.coords)
 
+    def values_to_full_grid(self, values: np.ndarray, fill=-np.inf) -> np.ndarray:
+        """Map values at ``coords`` onto the flat ``coords_full`` grid, with
+        ``fill`` at points outside the polygon."""
+        full_values = np.full(len(self.coords_full), fill, dtype=float)
+        full_values[self._mask_full] = np.ravel(values)
+        return full_values
+
     @property
     def update_state(self) -> tuple:
         """Extension point for subclasses. Always empty for grids."""
@@ -294,6 +301,25 @@ class SurfaceGrid(_GridBase):
         if self.is_rectangular:
             return (self.num_x, self.num_y)
         return (len(self.coords),)
+
+    @property
+    def coords_full(self) -> np.ndarray:
+        """Full bounding box coordinates (including points outside polygon)."""
+        if self._cache.get("coords_full") is not None:
+            return self._cache["coords_full"]
+        mesh = np.meshgrid(self.axes[0].points, self.axes[1].points, indexing="ij")
+        s_vals, t_vals = [grid.reshape(-1) for grid in mesh]
+        origin = np.asarray(self.origin, float)
+        coords_full = origin + s_vals[:, None] * self.u_hat + t_vals[:, None] * self.v_hat
+        self._cache["coords_full"] = coords_full
+        return coords_full
+
+    @property
+    def _mask_full(self) -> np.ndarray:
+        """Boolean mask for the full 2D grid (True = inside polygon)."""
+        if self.is_rectangular:
+            return np.ones(self.num_x * self.num_y, dtype=bool)
+        return self._xy_mask
 
     # ---- legacy dimensional properties for axis-aligned planes ----
 
@@ -741,16 +767,13 @@ class VolumeGrid(_GridBase):
         """Boolean mask for full 3D grid (True = inside polygon)."""
         if self._cache.get("_mask_full") is not None:
             return self._cache["_mask_full"]
-        mask_2d = self._xy_mask
+        if self.is_rectangular:
+            mask_2d = np.ones(self.num_x * self.num_y, dtype=bool)
+        else:
+            mask_2d = self._xy_mask
         mask_full = np.repeat(mask_2d, len(self.axes[2].points))
         self._cache["_mask_full"] = mask_full
         return mask_full
-
-    def values_to_full_grid(self, values: np.ndarray) -> np.ndarray:
-        """Map filtered values back to full grid, with -inf outside polygon."""
-        full_values = np.full(len(self.coords_full), -np.inf)
-        full_values[self._mask_full] = values.flatten()
-        return full_values
 
     # ---- factory methods ----
 

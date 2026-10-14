@@ -83,10 +83,13 @@ def plot_plane(zone, fig=None, ax=None, vmin=None, vmax=None, title=None, colorm
     values = zone.get_values()
 
     if values is not None:
-        vmin = values.min() if vmin is None else vmin
-        vmax = values.max() if vmax is None else vmax
-
         geom = zone.geometry
+        if not geom.is_rectangular:
+            # polygon planes: plot the full bounding grid, NaN (blank) outside
+            values = geom.values_to_full_grid(values, fill=np.nan).reshape(
+                geom.num_x, geom.num_y)
+        vmin = np.nanmin(values) if vmin is None else vmin
+        vmax = np.nanmax(values) if vmax is None else vmax
 
         # Get basis vectors if available
         u_hat = getattr(geom, 'u_hat', None)
