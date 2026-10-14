@@ -21,7 +21,9 @@ class SurfaceCacheEntry:
     values: np.ndarray | None
     surface_calc_state: tuple | None
     surface_update_state: tuple | None
+    zone_calc_state: tuple | None
     zone_update_state: tuple | None
+    scene_geometry_state: tuple | None
 
 
 @dataclass(frozen=True)
@@ -52,14 +54,18 @@ class ZoneCache:
 
     def needs_surface_recalc(self, surface_id, surface_calc_state, zone_calc_state,
                              scene_geometry_state):
-        """Check if form factors need recomputing for a surface→zone pair."""
-        if zone_calc_state != self.calc_state:
-            return True
-        if scene_geometry_state != self.scene_geometry_state:
-            return True  # some surface moved → occlusion changed
+        """Check if form factors need recomputing for a surface→zone pair.
+
+        Compares against the state stored with the entry: compute() has
+        already moved the cache-wide calc_state/scene_geometry_state forward
+        by the time reflectance runs."""
         entry = self.surface_cache.get(surface_id)
         if entry is None:
             return True
+        if entry.zone_calc_state != zone_calc_state:
+            return True
+        if entry.scene_geometry_state != scene_geometry_state:
+            return True  # some surface moved → occlusion changed
         if entry.surface_calc_state != surface_calc_state:
             return True
         return False
@@ -216,7 +222,9 @@ class LightingCalculator:
                 values=values,
                 surface_calc_state=surface.calc_state,
                 surface_update_state=surface.update_state,
+                zone_calc_state=zv.calc_state,
                 zone_update_state=zv.update_state,
+                scene_geometry_state=scene_geo,
             )
 
             total += (values * surface.R).reshape(*zv.num_points).astype("float32")

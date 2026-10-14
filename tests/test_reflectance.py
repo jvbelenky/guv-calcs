@@ -188,3 +188,49 @@ class TestReflectedViewFOV:
         fresh_room.calculate()
         assert narrow < full
         assert narrow == pytest.approx(fresh_pt.result.reflected_values.ravel()[0])
+
+
+class TestReflectanceCacheInvalidation:
+    """A soft recalculation after a scene change matches a hard one."""
+
+    @staticmethod
+    def _room():
+        from guv_calcs import Room, Lamp
+        room = Room(x=4, y=6, z=2.7)
+        room.set_reflectance(0.5)
+        room.add_calc_zone(CalcPlane(zone_id="plane", geometry=SurfaceGrid.from_legacy(
+            mins=(0, 0), maxs=(4, 6), height=1.0, num_points_init=(10, 10))))
+        room.add_lamp(Lamp.from_keyword(
+            "ushio_b1", x=2, y=3, z=2.6, aimx=2, aimy=3, aimz=0))
+        return room
+
+    @staticmethod
+    def _values(room):
+        return {k: np.array(z.values, dtype=float) for k, z in room.calc_zones.items()}
+
+    def _assert_matches_hard(self, room):
+        room.calculate()
+        soft = self._values(room)
+        room.calculate(hard=True)
+        for k, v in self._values(room).items():
+            np.testing.assert_allclose(soft[k], v, rtol=1e-5, err_msg=k)
+
+    @pytest.mark.parametrize("change", [
+        lambda r: r.set_reflectance_num_points(num_x=25, wall_id="south"),
+        lambda r: r.set_reflectance_spacing(0.13, 0.13, wall_id="south"),
+        lambda r: r.set_reflectance_spacing(0.2, 0.2),
+    ], ids=["one-wall-num-points", "one-wall-spacing", "all-walls-spacing"])
+    def test_surface_resolution_change(self, change):
+        room = self._room()
+        room.calculate()
+        change(room)
+        self._assert_matches_hard(room)
+
+    def test_obstacle_move(self):
+        from guv_calcs import Object
+        room = self._room()
+        slab = Object.box(1.0, 1.0, 0.3, object_id="slab", position=(1.5, 2.5, 1.2))
+        room.add_object(slab)
+        room.calculate()
+        slab.move(x=2.5, y=3.5)
+        self._assert_matches_hard(room)
