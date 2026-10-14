@@ -433,3 +433,49 @@ class TestLampEnabledRoundTrip:
         loaded = Room.load(path)
         assert loaded.lamps["off"].enabled is False
         assert loaded.lamps["on"].enabled is True
+
+
+class TestPresetRecoveryOnLoad:
+    """A saved preset lamp with no embedded photometry reloads it from its
+    preset_id instead of silently dropping out of calculations."""
+
+    @staticmethod
+    def _stripped(key="ushio_b1", **kwargs):
+        from guv_calcs import Lamp
+        data = Lamp.from_keyword(key, **kwargs).to_dict()
+        data["filedata"] = None
+        data["spectrum"] = None
+        return data
+
+    def test_from_dict_recovers_ies_and_spectrum(self):
+        from guv_calcs import Lamp
+        reference = Lamp.from_keyword("ushio_b1")
+        lamp = Lamp.from_dict(self._stripped())
+        assert lamp.preset_id == "ushio_b1"
+        assert lamp.ies is not None
+        assert lamp.spectrum is not None
+        assert lamp.get_total_power() == pytest.approx(reference.get_total_power())
+
+    def test_saved_geometry_is_kept(self):
+        from guv_calcs import Lamp
+        lamp = Lamp.from_dict(self._stripped(x=1.5, y=2.5, z=2.4, scaling_factor=0.5))
+        assert lamp.position == pytest.approx((1.5, 2.5, 2.4))
+        assert lamp.scaling_factor == 0.5
+
+    def test_unknown_preset_stays_without_photometry(self):
+        from guv_calcs import Lamp
+        data = self._stripped()
+        data["preset_id"] = "not_a_real_lamp"
+        lamp = Lamp.from_dict(data)
+        assert lamp.ies is None
+
+    def test_calculate_warns_about_each_excluded_lamp(self):
+        from guv_calcs import Room, Lamp
+        data = self._stripped()
+        data["preset_id"] = None
+        data["lamp_id"] = "blank"
+        room = Room(x=4, y=6, z=2.7, enable_reflectance=False)
+        room.add_lamp(Lamp.from_keyword("ushio_b1", lamp_id="ok"))
+        room.add_lamp(Lamp.from_dict(data))
+        with pytest.warns(UserWarning, match="'blank'"):
+            room.calculate()

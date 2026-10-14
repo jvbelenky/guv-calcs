@@ -795,6 +795,13 @@ class Room:
             if len(self.lamps) == 0:
                 msg = "No lamps are present in the room."
             warnings.warn(msg, stacklevel=3)
+        else:
+            # the room-level warning above covers the case where none are valid
+            for lamp_id, lamp in self.lamps.items():
+                if lamp.enabled and lamp_id not in valid_lamps:
+                    warnings.warn(
+                        f"Lamp {lamp_id!r} has no photometric data and will not "
+                        "contribute to calculations.", stacklevel=3)
 
         return self
 

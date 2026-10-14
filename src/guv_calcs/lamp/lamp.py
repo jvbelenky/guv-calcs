@@ -377,11 +377,54 @@ class Lamp:
         if lamp.preset_id is None and lamp.ies is not None:
             lamp.preset_id = identify_preset(lamp)
 
+        # Saves that name a preset but carry no photometry (hand-edited or
+        # written by another tool) reload it from the bundled preset
+        if lamp.preset_id is not None and lamp.ies is None:
+            try:
+                _, config = resolve_keyword(lamp.preset_id)
+            except KeyError:
+                config = None
+            if config is not None:
+                ies_source, spectrum_source = cls._preset_sources(
+                    config, wavelength=data.get("wavelength"), guv_type=data.get("guv_type"))
+                lamp.load_ies(ies_source)
+                if spectrum_source is not None and lamp.spectrum is None:
+                    lamp.load_spectrum(spectrum_source)
+
         return lamp
 
     @property
     def keywords(self):
         return get_valid_keys()
+
+    @staticmethod
+    def _preset_sources(config, wavelength=None, guv_type=None):
+        """Bundled (ies_source, spectrum_source) for a preset config.
+
+        spectrum_source is None when the preset has no spectrum file, or when
+        the given wavelength/guv_type conflicts with the preset's peak.
+        """
+        path = resources.files("guv_calcs.data.lamp_data")
+        ies_source = path.joinpath(config["ies_file"])
+
+        config_peak = config.get("peak_wavelength")
+        should_load_spectrum = config.get("spectrum_file") is not None
+
+        if config_peak is not None and should_load_spectrum:
+            user_wv = wavelength
+
+            # Convert guv_type to wavelength for comparison
+            if guv_type is not None and user_wv is None:
+                user_type_obj = GUVType.from_any(guv_type)
+                user_wv = user_type_obj.default_wavelength if user_type_obj else None
+
+            # If an explicit wavelength doesn't match config, skip spectrum
+            if user_wv is not None and round(user_wv) != round(config_peak):
+                should_load_spectrum = False
+
+        spectrum_source = (
+            path.joinpath(config["spectrum_file"]) if should_load_spectrum else None)
+        return ies_source, spectrum_source
 
     @classmethod
     def _prepare_from_key(cls, key: str, kwargs: dict) -> dict:
@@ -391,28 +434,11 @@ class Lamp:
 
         canonical, config = resolve_keyword(key)
 
-        path = resources.files("guv_calcs.data.lamp_data")
-        kwargs.setdefault("filedata", path.joinpath(config["ies_file"]))
-
-        # Check if user-provided wavelength/guv_type conflicts with config's spectrum
-        config_peak = config.get("peak_wavelength")
-        should_load_spectrum = config.get("spectrum_file") is not None
-
-        if config_peak is not None and should_load_spectrum:
-            user_wv = kwargs.get("wavelength")
-            user_type = kwargs.get("guv_type")
-
-            # Convert guv_type to wavelength for comparison
-            if user_type is not None and user_wv is None:
-                user_type_obj = GUVType.from_any(user_type)
-                user_wv = user_type_obj.default_wavelength if user_type_obj else None
-
-            # If user's explicit wavelength doesn't match config, skip spectrum
-            if user_wv is not None and round(user_wv) != round(config_peak):
-                should_load_spectrum = False
-
-        if should_load_spectrum:
-            kwargs.setdefault("spectrum_source", path.joinpath(config["spectrum_file"]))
+        ies_source, spectrum_source = cls._preset_sources(
+            config, wavelength=kwargs.get("wavelength"), guv_type=kwargs.get("guv_type"))
+        kwargs.setdefault("filedata", ies_source)
+        if spectrum_source is not None:
+            kwargs.setdefault("spectrum_source", spectrum_source)
 
         # Apply guv_type default from config only if no spectrum file
         # (spectrum will determine guv_type when present)
