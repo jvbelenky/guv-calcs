@@ -465,6 +465,74 @@ class TestCalcPoint:
         assert np.isfinite(plane.values).all()
 
 
+class TestCalcPointDefaults:
+    """A bare CalcPoint behaves like a cosine-corrected radiometer."""
+
+    def test_default_is_cosine_weighted(self):
+        pt = CalcPoint.at((0, 0, 0), aim_point=(0, 1, 0))
+        assert pt.horiz is True
+        assert pt.use_normal is True
+        assert pt.calc_mode == "planar_normal"
+
+    def test_explicit_flags_and_calc_mode_win(self):
+        assert CalcPoint.at((0, 0, 0), horiz=False).horiz is False
+        assert CalcPoint.at((0, 0, 0), calc_mode="fluence_rate").horiz is False
+
+    def test_saved_flags_survive_round_trip(self):
+        pt = CalcPoint.at((0, 0, 0), horiz=False)
+        assert CalcPoint.from_dict(pt.to_dict()).horiz is False
+
+
+class TestCalcPointAimedFOV:
+    """A point's FOV is centered on its aim direction.
+
+    Two lamps up and to either side of a point at eye height; the point is
+    aimed between them, at one, or at the other, with the eye FOV (80 vert,
+    120 horiz). Each lamp sits ~34 deg off the aim when aimed at it, ~77 deg
+    off when aimed at the other, and ~49 deg off when aimed between.
+    """
+
+    POS = (2.0, 2.5, 1.8)
+    LEFT = (1.25, 3.5, 2.65)
+    RIGHT = (2.75, 3.5, 2.65)
+
+    def _value(self, aim_x, lamps):
+        from guv_calcs import Room, Lamp
+        room = Room(x=4, y=6, z=2.7, enable_reflectance=False)
+        for i, (x, y, z) in enumerate(lamps):
+            room.add_lamp(Lamp.from_keyword(
+                "ushio_b1", lamp_id=f"L{i}", x=x, y=y, z=z,
+                aimx=2.0, aimy=2.5, aimz=1.8))
+        pt = CalcPoint.at(
+            self.POS, aim_point=(aim_x, 3.5, 1.8), zone_id="P",
+            horiz=False, vert=False, use_normal=True,
+            fov_vert=80, fov_horiz=120)
+        room.add_calc_zone(pt)
+        room.calculate()
+        return float(pt.values[0])
+
+    def test_aimed_between_sees_both(self):
+        both = self._value(2.0, [self.LEFT, self.RIGHT])
+        left = self._value(2.0, [self.LEFT])
+        right = self._value(2.0, [self.RIGHT])
+        assert left > 0 and right > 0
+        assert both == pytest.approx(left + right, rel=1e-5)
+
+    def test_aimed_at_one_lamp_sees_only_that_lamp(self):
+        aimed_left = self._value(1.25, [self.LEFT, self.RIGHT])
+        assert aimed_left > 0
+        assert aimed_left == pytest.approx(self._value(1.25, [self.LEFT]), rel=1e-5)
+        aimed_right = self._value(2.75, [self.LEFT, self.RIGHT])
+        assert aimed_right > 0
+        assert aimed_right == pytest.approx(self._value(2.75, [self.RIGHT]), rel=1e-5)
+
+    def test_aim_does_not_become_a_saved_view_direction(self):
+        pt = CalcPoint.at((0, 0, 0), aim_point=(0, 1, 0), fov_vert=80, fov_horiz=120)
+        assert pt.view_direction is None
+        assert pt.to_dict()["view_direction"] is None
+        assert pt.to_view().view_direction == pytest.approx((0, 1, 0))
+
+
 class TestCalcPointMoveAim:
     """Tests for CalcPoint move/aim API."""
 

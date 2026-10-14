@@ -829,6 +829,9 @@ class CalcPoint(CalcZone):
     def __init__(self, zone_id=None, geometry=None, **kwargs):
         if geometry is None:
             geometry = GridPoint()
+        # default to a cosine-corrected radiometer facing the aim point
+        if kwargs.get("calc_mode") is None and kwargs.get("horiz") is None:
+            kwargs["horiz"] = True
         super().__init__(zone_id=zone_id or "CalcPoint", **kwargs)
         self.geometry = geometry
 
@@ -850,6 +853,15 @@ class CalcPoint(CalcZone):
 
     def __repr__(self):
         return f"CalcPoint({self._repr_base()}, position={self.position}, aim_point={self.geometry.aim_point})"
+
+    def to_view(self) -> ZoneView:
+        """A point's aim is its view direction, so its FOV is centered on the
+        aim rather than on the plane perpendicular to it (the horizon band
+        that suits an upward-facing eye-limit plane)."""
+        view = super().to_view()
+        if view.has_view_mode():
+            return view
+        return replace(view, view_direction=self.geometry.normal_direction)
 
     def move(self, x=None, y=None, z=None, preserve_aim=False):
         """Move to a new position.

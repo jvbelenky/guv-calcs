@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- A CalcPoint created without `calc_mode` or `horiz` defaults to cosine weighting (planar_normal), like a cosine-corrected radiometer facing its aim point, instead of planar_max; saved points keep their stored flags
+
+### Fixed
+- A CalcPoint's field of view is centered on its aim direction. It was applied as a band around the plane perpendicular to the aim (the horizon band of an upward-facing eye plane), so a point aimed at a lamp could miss it and see one well off to the side instead, and the horizontal FOV searched for the brightest direction rather than the aimed one. Points with a full 180/360 field of view are unaffected
+
 ## [0.9.0] - 2026-10-14
 
 ### Added
