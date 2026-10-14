@@ -135,3 +135,56 @@ class TestNonRectangularReflectors:
         assert top.values is not None and np.isfinite(top.values).any()
         # The room floor received bounced light from the object's faces too
         assert room.surfaces["floor"].plane.reflected_values is not None
+
+
+class TestReflectedViewFOV:
+    """Reflected light obeys a zone's view-centered FOV.
+
+    Only the floor reflects; it is lit by a downlight and gridded finely. A
+    point 0.5 m above it looks straight down.
+    """
+
+    R = 0.5
+
+    def _room(self, fov_vert, fov_horiz):
+        from guv_calcs import Room, Lamp, CalcPoint
+        room = Room(x=4, y=6, z=2.7, enable_reflectance=True)
+        room.set_reflectance(0.0)
+        room.set_reflectance(self.R, wall_id="floor")
+        room.set_reflectance_spacing(0.05, 0.05, wall_id="floor")
+        room.add_lamp(Lamp.from_keyword(
+            "ushio_b1", x=2, y=3, z=2.6, aimx=2, aimy=3, aimz=0))
+        pt = CalcPoint.at(
+            (2, 3, 0.5), aim_point=(2, 3, 0), zone_id="P",
+            horiz=False, use_normal=True,
+            fov_vert=fov_vert, fov_horiz=fov_horiz)
+        room.add_calc_zone(pt)
+        return room, pt
+
+    def test_narrow_view_reads_floor_radiance(self):
+        """A narrow view straight down reads L * solid angle, where
+        L = R * E / pi is the floor's radiance under the point. The FOV edge
+        falls on floor cell edges (+-0.1 m at 0.5 m), since cells count whole."""
+        half = np.arctan(0.1 / 0.5)
+        fov = 2 * np.degrees(half)
+        room, pt = self._room(fov, fov)
+        room.calculate()
+        floor = room.surfaces["floor"].plane
+        x, y = floor.coords[:, 0], floor.coords[:, 1]
+        near = (np.abs(x - 2) < 0.1) & (np.abs(y - 3) < 0.1)
+        E = floor.values.ravel()[near].mean()
+        solid_angle = 4 * np.arcsin(np.sin(half) * np.sin(half))
+        expected = self.R * E / np.pi * solid_angle
+        assert pt.result.reflected_values.ravel()[0] == pytest.approx(expected, rel=0.05)
+
+    def test_changing_fov_updates_reflected_values(self):
+        room, pt = self._room(180, 360)
+        room.calculate()
+        full = pt.result.reflected_values.ravel()[0]
+        pt.fov_vert, pt.fov_horiz = 20, 20
+        room.calculate()
+        narrow = pt.result.reflected_values.ravel()[0]
+        fresh_room, fresh_pt = self._room(20, 20)
+        fresh_room.calculate()
+        assert narrow < full
+        assert narrow == pytest.approx(fresh_pt.result.reflected_values.ravel()[0])

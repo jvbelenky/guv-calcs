@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - A CalcPoint's field of view is centered on its aim direction. It was applied as a band around the plane perpendicular to the aim (the horizon band of an upward-facing eye plane), so a point aimed at a lamp could miss it and see one well off to the side instead, and the horizontal FOV searched for the brightest direction rather than the aimed one. Points with a full 180/360 field of view are unaffected
+- Reflected light ignored view mode: a zone with view_direction or view_target (eye_directional, eye_target, and now every CalcPoint) filtered light bounced off surfaces by the band around its own plane rather than by its view-centered FOV. Zones without view mode are unaffected
+- Changing a zone's FOV or weighting flags (fov_vert, fov_horiz, vert, horiz, use_normal, view_direction, view_target) didn't recompute its reflected values until a hard recalculation
 
 ## [0.9.0] - 2026-10-14
 

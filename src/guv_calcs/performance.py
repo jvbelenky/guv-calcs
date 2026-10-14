@@ -50,7 +50,8 @@ BYTES_PER_ZONE_POINT = 90
 REFLECTANCE_OVERHEAD = 50_000_000
 
 # Form factor cache: each (surface_point, zone_point) pair stores
-# form_factors + theta_zone arrays.  Empirically fitted to 14 bytes/entry
+# a form_factors entry, plus transient angle arrays while reflected values
+# are filtered.  Empirically fitted to 14 bytes/entry
 # (NNLS fit to tracemalloc peak data across 13 reflectance configurations).
 BYTES_PER_FORM_FACTOR_ENTRY = 14
 

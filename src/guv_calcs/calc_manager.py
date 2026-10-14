@@ -18,10 +18,10 @@ class LampCacheEntry:
 @dataclass(frozen=True)
 class SurfaceCacheEntry:
     form_factors: np.ndarray | None
-    theta_zone: np.ndarray | None
     values: np.ndarray | None
     surface_calc_state: tuple | None
     surface_update_state: tuple | None
+    zone_update_state: tuple | None
 
 
 @dataclass(frozen=True)
@@ -64,12 +64,15 @@ class ZoneCache:
             return True
         return False
 
-    def needs_surface_update(self, surface_id, surface_update_state):
-        """Check if reflected values need recomputing (surface incidence changed)."""
+    def needs_surface_update(self, surface_id, surface_update_state, zone_update_state):
+        """Check if reflected values need recomputing (surface incidence or
+        the zone's view filters changed)."""
         entry = self.surface_cache.get(surface_id)
         if entry is None:
             return True
         if entry.surface_update_state != surface_update_state:
+            return True
+        if entry.zone_update_state != zone_update_state:
             return True
         return False
 
@@ -189,11 +192,11 @@ class LightingCalculator:
                 surface_id, surface.calc_state, zv.calc_state, scene_geo
             ) or hard
             UPDATE = self.cache.needs_surface_update(
-                surface_id, surface.update_state
+                surface_id, surface.update_state, zv.update_state
             ) or RECALC
 
             if RECALC:
-                form_factors, theta_zone = surface._calculate_coordinates(zv)
+                form_factors = surface._calculate_coordinates(zv)
                 if enable_occlusion:
                     transmission = compute_transmission(
                         surface.plane.coords, zv.coords, surfaces, exclude=surface_id
@@ -202,19 +205,18 @@ class LightingCalculator:
             else:
                 entry = self.cache.surface_cache[surface_id]
                 form_factors = entry.form_factors
-                theta_zone = entry.theta_zone
 
             if UPDATE:
-                values = surface._calculate_values(form_factors, theta_zone, zv)
+                values = surface._calculate_values(form_factors, zv)
             else:
                 values = self.cache.surface_cache[surface_id].values
 
             surface_cache[surface_id] = SurfaceCacheEntry(
                 form_factors=form_factors,
-                theta_zone=theta_zone,
                 values=values,
                 surface_calc_state=surface.calc_state,
                 surface_update_state=surface.update_state,
+                zone_update_state=zv.update_state,
             )
 
             total += (values * surface.R).reshape(*zv.num_points).astype("float32")
@@ -451,49 +453,51 @@ def apply_plane_filters(values, theta, zv, elevation=None, azimuth=None):
 
 
 def _compute_view_angles(lamp, zv):
-    """Compute theta, elevation, and azimuth for view mode.
+    """Compute theta, elevation, and azimuth of a lamp for view mode.
 
     Returns (theta, elevation, azimuth) arrays, all shape (N,).
-    theta: angle between incoming light and view direction
+    """
+    lamp_pos = np.asarray(lamp.surface.position, dtype="float64")
+    return view_angles(lamp_pos - zv.coords, zv.compute_view_normals())
+
+
+# reused in reflectance.py
+def view_angles(to_source, forward):
+    """Angles of incoming light relative to a view direction.
+
+    to_source: (..., 3) vectors from each point toward the light source
+    forward: (..., 3) unit view directions, broadcastable against to_source
+
+    Returns (theta, elevation, azimuth):
+    theta: angle between the incoming light and the view direction
     elevation: angle above/below the view plane
     azimuth: angle left/right of the view direction
     """
-    view_normals = zv.compute_view_normals()  # (N, 3)
-    lamp_pos = np.asarray(lamp.surface.position, dtype="float64")
-
-    # incoming = direction light arrives from (lamp → point), normalized
-    incoming = zv.coords - lamp_pos
-    dist = np.linalg.norm(incoming, axis=1, keepdims=True)
+    dist = np.linalg.norm(to_source, axis=-1, keepdims=True)
     dist = np.where(dist < 1e-12, 1.0, dist)
-    incoming = incoming / dist
+    to_source = to_source / dist
 
-    # theta = angle between incoming light and view direction
-    # light arriving FROM the lamp means we negate incoming to get "light direction toward eye"
-    cos_theta = np.sum(-incoming * view_normals, axis=1)
-    cos_theta = np.clip(cos_theta, -1.0, 1.0)
+    cos_theta = np.clip(np.sum(to_source * forward, axis=-1), -1.0, 1.0)
     theta = np.arccos(cos_theta)
 
-    # Build per-point view frame: forward, right, up
-    forward = view_normals  # (N, 3)
+    # Build the view frame: forward, right, up
     world_up = np.array([0.0, 0.0, 1.0])
-
     right = np.cross(forward, world_up)
-    right_norm = np.linalg.norm(right, axis=1, keepdims=True)
+    right_norm = np.linalg.norm(right, axis=-1, keepdims=True)
     # Fallback for forward parallel to world_up
-    parallel = (right_norm.ravel() < 1e-6)
+    parallel = right_norm[..., 0] < 1e-6
     if np.any(parallel):
         fallback_up = np.array([0.0, 1.0, 0.0])
-        right[parallel] = np.cross(forward[parallel], fallback_up)
-        right_norm[parallel] = np.linalg.norm(right[parallel], axis=1, keepdims=True)
+        right = np.where(parallel[..., None], np.cross(forward, fallback_up), right)
+        right_norm = np.linalg.norm(right, axis=-1, keepdims=True)
     right = right / right_norm
 
     up = np.cross(right, forward)  # already normalized (cross of two unit vectors at 90°)
 
-    # Project -incoming into view frame
-    neg_incoming = -incoming
-    fwd_component = np.sum(neg_incoming * forward, axis=1)
-    right_component = np.sum(neg_incoming * right, axis=1)
-    up_component = np.sum(neg_incoming * up, axis=1)
+    # Project into the view frame
+    fwd_component = np.sum(to_source * forward, axis=-1)
+    right_component = np.sum(to_source * right, axis=-1)
+    up_component = np.sum(to_source * up, axis=-1)
 
     # Elevation: angle above/below the forward-right plane
     horiz_dist = np.sqrt(fwd_component ** 2 + right_component ** 2)

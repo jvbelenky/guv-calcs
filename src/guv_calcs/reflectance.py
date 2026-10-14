@@ -3,7 +3,7 @@ import copy
 import hashlib
 from dataclasses import dataclass
 from .calc_zone import CalcPlane
-from .calc_manager import apply_plane_filters
+from .calc_manager import apply_plane_filters, view_angles
 from .geometry import RoomDimensions
 from ._serialization import init_from_dict
 
@@ -256,7 +256,7 @@ class Surface:
             return shape
         return (int(np.prod(shape)), 1)
 
-    def _calculate_values(self, form_factors, theta_zone, zv):
+    def _calculate_values(self, form_factors, zv):
 
         I_r = self.plane.values.reshape(*self._grid_shape())[
             :, :, np.newaxis, np.newaxis, np.newaxis
@@ -268,26 +268,52 @@ class Surface:
         if (~np.isfinite(values)).any():
             values = np.ma.masked_invalid(values)
 
-        if theta_zone is not None:
-            values = apply_plane_filters(values, theta_zone, zv)
+        if not zv.is_volume():
+            theta, elevation, azimuth = self._zone_angles(zv)
+            values = apply_plane_filters(values, theta, zv, elevation, azimuth)
 
         # Sum over all self.plane points to get total values at each volume point
         values = np.sum(values, axis=(0, 1))  # Collapse the dimensions
         return values.reshape(*zv.num_points)
 
+    def _zone_differences(self, zv):
+        """(surface point - zone point) vectors, broadcast to
+        (*surface grid, 1, 1, 1, 3) - (*zone grid, 3)."""
+        surface_points = self.plane.coords.reshape(*self._grid_shape(), 3)
+        zone_points = zv.coords.reshape(*zv.num_points, 3)
+        return (
+            surface_points[:, :, np.newaxis, np.newaxis, np.newaxis, :] - zone_points
+        )
+
+    def _zone_angles(self, zv):
+        """Angles of light arriving at each zone point from each surface point:
+        (theta, elevation, azimuth) relative to the zone's view direction in
+        view mode, else (theta, None, None) relative to the zone's normal."""
+        differences = self._zone_differences(zv)
+        if zv.has_view_mode():
+            forward = zv.compute_view_normals().reshape(*zv.num_points, 3)
+            theta, elevation, azimuth = view_angles(differences, forward)
+            return (theta.astype("float32"), elevation.astype("float32"),
+                    azimuth.astype("float32"))
+
+        distances = np.linalg.norm(differences, axis=-1)
+        zero_mask = distances == 0
+        safe_distances = np.where(zero_mask, 1.0, distances)
+
+        rel_zone = differences @ zv.basis
+        cos_theta_zone = rel_zone[..., 2] / safe_distances
+        cos_theta_zone[zero_mask] = 0
+        theta = np.arccos(np.clip(cos_theta_zone, -1, 1)).astype("float32")
+        return theta, None, None
+
     def _calculate_coordinates(self, zv):
-        """Compute analytical patch-to-point form factors and angles.
+        """Compute analytical patch-to-point form factors.
 
         Uses the closed-form integral of cos(theta)/(pi*d^2) over each
         rectangular surface element, eliminating grid-resolution artifacts
         that appear when zone points are close to coarse surface elements.
         """
-        surface_points = self.plane.coords.reshape(*self._grid_shape(), 3)
-        zone_points = zv.coords.reshape(*zv.num_points, 3)
-
-        differences = (
-            surface_points[:, :, np.newaxis, np.newaxis, np.newaxis, :] - zone_points
-        )
+        differences = self._zone_differences(zv)
 
         # project into surface local frame: [u, v, normal]
         rel_surface = differences @ self.plane.basis
@@ -314,24 +340,7 @@ class Surface:
 
         form_factors /= np.pi
         form_factors[h <= 0] = 0
-        form_factors = form_factors.astype("float32")
-
-        # angles relative to calculation zone (only relevant for planes)
-        if not zv.is_volume():
-            x, y, z = differences.reshape(-1, 3).T
-            distances = np.sqrt(x ** 2 + y ** 2 + z ** 2)
-            distances = distances.reshape(differences.shape[0:-1])
-            zero_mask = distances == 0
-            safe_distances = np.where(zero_mask, 1.0, distances)
-
-            rel_zone = differences @ zv.basis
-            cos_theta_zone = rel_zone[..., 2] / safe_distances
-            cos_theta_zone[zero_mask] = 0
-            theta_zone = np.arccos(np.clip(cos_theta_zone, -1, 1)).astype("float32")
-        else:
-            theta_zone = None
-
-        return form_factors, theta_zone
+        return form_factors.astype("float32")
 
 
 def init_room_surfaces(
