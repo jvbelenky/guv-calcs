@@ -71,20 +71,18 @@ room.calculate()
 ### Custom Calculation Planes
 
 ```python
-from guv_calcs import Room, Lamp, CalcPlane
+from guv_calcs import Room, Lamp, CalcPlane, Polygon2D
 
 room = Room(x=6, y=4, z=2.7)
 lamp = Lamp(filedata="my_lamp.ies").move(3, 2, 2.7).aim(3, 2, 0)
 room.add_lamp(lamp)
 
 # Add a plane at desk height (0.75m)
-workplane = CalcPlane(
-    zone_id="WorkPlane",
-    x1=0, x2=6,
-    y1=0, y2=4,
+workplane = CalcPlane.from_polygon(
+    Polygon2D.rectangle(6, 4),
     height=0.75,
-    x_spacing=0.25,
-    y_spacing=0.25,
+    spacing=(0.25, 0.25),
+    zone_id="WorkPlane",
 )
 room.add_calc_zone(workplane)
 room.calculate()
@@ -99,7 +97,7 @@ from guv_calcs import Room, Polygon2D
 floor = Polygon2D(vertices=[
     (0, 0), (4, 0), (4, 2), (2, 2), (2, 4), (0, 4)
 ])
-room = Room(floor_polygon=floor, z=2.7)
+room = Room(polygon=floor, z=2.7)
 ```
 
 ### Safety Compliance Check
@@ -113,7 +111,7 @@ room = (
 )
 
 result = room.check_lamps()
-print(f"Compliant: {result.compliant}")
+print(f"Status: {result.status}")  # e.g. compliant, compliant_with_dimming
 ```
 
 ### Save and Load
