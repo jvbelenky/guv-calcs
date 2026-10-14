@@ -313,7 +313,7 @@ class Lamp:
         else:
             data["intensity_map"] = self.surface.intensity_map_orig.tolist()
 
-        data["enabled"] = True
+        data["enabled"] = self.enabled
         data["preset_id"] = self.preset_id
 
         # Include surface dict for new format

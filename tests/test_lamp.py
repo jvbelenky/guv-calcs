@@ -411,3 +411,25 @@ class TestLampCopy:
         copied = lamp.copy(lamp_id="new_id")
         copied.move(x=5, y=5, z=5)
         assert lamp.x != 5
+
+
+class TestLampEnabledRoundTrip:
+    """A disabled lamp stays disabled through save and load."""
+
+    def test_to_dict_from_dict(self):
+        from guv_calcs import Lamp
+        lamp = Lamp.from_keyword("ushio_b1", enabled=False)
+        assert lamp.to_dict()["enabled"] is False
+        assert Lamp.from_dict(lamp.to_dict()).enabled is False
+        assert Lamp.from_dict(Lamp.from_keyword("ushio_b1").to_dict()).enabled is True
+
+    def test_room_save_load(self, tmp_path):
+        from guv_calcs import Room, Lamp
+        room = Room(x=4, y=6, z=2.7)
+        room.add_lamp(Lamp.from_keyword("ushio_b1", lamp_id="off", enabled=False))
+        room.add_lamp(Lamp.from_keyword("ushio_b1", lamp_id="on"))
+        path = tmp_path / "room.guv"
+        room.save(path)
+        loaded = Room.load(path)
+        assert loaded.lamps["off"].enabled is False
+        assert loaded.lamps["on"].enabled is True
