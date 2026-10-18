@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-18
+
 ### Added
 - SurfaceGrid.coords_full and values_to_full_grid, matching VolumeGrid; values_to_full_grid takes a `fill` value (default -inf)
 
