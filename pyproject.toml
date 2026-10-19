@@ -39,9 +39,6 @@ path = "src/guv_calcs/_version.py"
 [tool.hatch.build.targets.wheel]
 packages = ["src/guv_calcs"]
 
-[tool.uv.sources]
-photompy = { path = "../photompy", editable = true }
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
