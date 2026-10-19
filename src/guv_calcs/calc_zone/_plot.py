@@ -84,7 +84,7 @@ def plot_plane(zone, fig=None, ax=None, vmin=None, vmax=None, title=None, colorm
 
     if values is not None:
         geom = zone.geometry
-        if not geom.is_rectangular and np.size(values) == geom.total_points:
+        if not geom.is_rectangular:
             # polygon planes: plot the full bounding grid, NaN (blank) outside
             values = geom.values_to_full_grid(values, fill=np.nan).reshape(
                 geom.num_x, geom.num_y)

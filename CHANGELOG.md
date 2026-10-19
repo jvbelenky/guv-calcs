@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- plot_plane takes a polygon plane's values as computed (the points inside the outline) again; values already expanded onto the full grid, accepted in 0.10.0, are no longer
+
 ## [0.10.0] - 2026-10-18
 
 ### Added

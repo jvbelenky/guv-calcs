@@ -417,22 +417,6 @@ class TestPolygonZoneExport:
         assert np.isnan(np.ma.filled(image, np.nan)).any()
         plt.close(fig)
 
-    def test_plot_plane_accepts_values_already_on_the_full_grid(self, room, monkeypatch):
-        import numpy as np
-        import matplotlib.pyplot as plt
-        zone = room.calc_zones["EyeLimits"]
-        geom = zone.geometry
-        fig, ax = zone.plot_plane()
-        expected = np.ma.filled(ax.get_images()[0].get_array(), np.nan)
-        plt.close(fig)
-        full = geom.values_to_full_grid(zone.get_values(), fill=np.nan).reshape(
-            geom.num_x, geom.num_y)
-        monkeypatch.setattr(zone, "get_values", lambda: full)
-        fig, ax = zone.plot_plane()
-        image = np.ma.filled(ax.get_images()[0].get_array(), np.nan)
-        plt.close(fig)
-        np.testing.assert_array_equal(image, expected)
-
     def test_export_zip(self, room):
         import zipfile, io
         data = room.export_zip(include_plots=True)
