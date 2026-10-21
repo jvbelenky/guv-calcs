@@ -324,8 +324,12 @@ class Room:
         include_lamp_files=False,
         include_lamp_plots=False,
         include_report=False,
+        plot_kwargs=None,
     ):
-        """Write the project file and all results files to a zip file."""
+        """Write the project file and all results files to a zip file.
+
+        `plot_kwargs` maps a plane's zone id to extra `plot_plane` arguments.
+        """
         return export_room_zip(
             self,
             fname=fname,
@@ -333,6 +337,7 @@ class Room:
             include_lamp_files=include_lamp_files,
             include_lamp_plots=include_lamp_plots,
             include_report=include_report,
+            plot_kwargs=plot_kwargs,
         )
 
     def generate_report(self, fname=None):

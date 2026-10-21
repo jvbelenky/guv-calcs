@@ -30,10 +30,13 @@ def export_room_zip(
     include_lamp_files=False,
     include_lamp_plots=False,
     include_report=False,
+    plot_kwargs=None,
 ):
     """Write the room project file and all results files to a zip file.
 
     Optionally include extra files like lamp ies files, spectra files, and plots.
+    `plot_kwargs` maps a plane's zone id to extra `plot_plane` arguments (such
+    as contour `levels`, `colors`, `labels`, or a `title`).
     """
     # save base project
     data_dict = {"room.guv": room.save()}
@@ -49,7 +52,8 @@ def export_room_zip(
             if zone.calctype == "Plane":
                 # Save the figure to a BytesIO object
                 title += f" ({zone.height} m)"
-                fig, ax = zone.plot_plane(title=title)
+                kwargs = {"title": title, **((plot_kwargs or {}).get(zone_id) or {})}
+                fig, ax = zone.plot_plane(**kwargs)
                 img_bytes = fig_to_bytes(fig)
                 if img_bytes is not None:
                     data_dict[zone.name + ".png"] = img_bytes

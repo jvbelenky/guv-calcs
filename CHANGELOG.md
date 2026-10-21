@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- plot_plane draws contours: pass `levels` (with optional `colors`, `labels` naming each level, `filled`, `contour_labels`) for filled bands at those levels and a banded colorbar. Holes (outside a polygon room, inside an obstacle) are filled from their nearest cell before tracing, so a level's line runs up to the hole instead of stopping half a cell short
+- plot_plane `show_values` prints each cell's value where it fits, with `decimals`
+- export_zip `plot_kwargs`: per-zone plot_plane arguments for the zip's plane plots
+
 ### Changed
 - plot_plane takes a polygon plane's values as computed (the points inside the outline) again; values already expanded onto the full grid, accepted in 0.10.0, are no longer
 
