@@ -34,7 +34,9 @@ def evaluate(room, inputs: Ashrae241Inputs) -> Ashrae241Result:
     volume_m3 = room.dim.cubic_meters
 
     # occupants
-    if inputs.occupants is not None:
+    if inputs.occupants is not None and inputs.occupants <= 0:
+        occupants, occupants_origin = None, "user"
+    elif inputs.occupants is not None:
         occupants, occupants_origin = float(inputs.occupants), "user"
     elif space.density_per_1000ft2:
         occupants = space.density_per_1000ft2 * floor_area_ft2 / 1000
@@ -90,6 +92,7 @@ def evaluate(room, inputs: Ashrae241Inputs) -> Ashrae241Result:
         assumptions += [Assumption("no_kdata", {"wavelength": float(wv)}) for wv in missing]
     elif missing:
         airflow_status, incomplete_reason = "incomplete", "missing_kdata"
+        assumptions += [Assumption("no_kdata", {"wavelength": float(wv)}) for wv in missing]
     else:
         airflow_status = "non_compliant"
 

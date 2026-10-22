@@ -96,6 +96,13 @@ def test_density_zero_requires_occupants(classroom_room):
     assert r.occupants is None and r.margin is None and r.required_each_uv is None
 
 
+@pytest.mark.parametrize("occupants", [0, -3])
+def test_nonpositive_occupants_are_incomplete(calculated_222_room, occupants):
+    r = evaluate(calculated_222_room, Ashrae241Inputs("Office", occupants=occupants))
+    assert (r.airflow_status, r.incomplete_reason) == ("incomplete", "occupants_required")
+    assert r.occupants is None and r.v_ecai is None
+
+
 def test_occupants_required_with_default_outdoor_air(classroom_room):
     r = evaluate(classroom_room, Ashrae241Inputs.default("Warehouses"))
     assert (r.airflow_status, r.incomplete_reason) == ("incomplete", "occupants_required")
@@ -140,6 +147,8 @@ def test_gap_and_meets_is_compliant(calculated_room_with_unknown_wavelength):
 def test_gap_and_fails_is_incomplete(calculated_room_with_unknown_wavelength):
     r = evaluate(calculated_room_with_unknown_wavelength, Ashrae241Inputs("Office", occupants=10_000))
     assert (r.airflow_status, r.incomplete_reason) == ("incomplete", "missing_kdata")
+    gaps = [a for a in r.assumptions if a.code == "no_kdata"]
+    assert [a.params for a in gaps] == [{"wavelength": 405.0}]
 
 
 def test_fails_without_gap(calculated_222_room):
@@ -220,7 +229,13 @@ def test_check_lamps_standard_override():
 
 def test_uv_safety_pass_and_planes(calculated_222_room):
     r = evaluate(calculated_222_room, Ashrae241Inputs("Office", occupants=1))
-    assert r.uv_safety_status in ("pass", "fail")
+    expected = (
+        "pass"
+        if calculated_222_room.check_lamps(standard=PhotStandard.ACGIH).status
+        == ComplianceStatus.COMPLIANT
+        else "fail"
+    )
+    assert r.uv_safety_status == expected
     planes = [a for a in r.assumptions if a.code == "safety_planes"]
     assert planes[0].params == {"height_m": pytest.approx(1.8), "standard": "ACGIH"}
 
