@@ -12,7 +12,12 @@ All notable changes to this project will be documented in this file.
 - export_zip `plot_kwargs`: per-zone plot_plane arguments for the zip's plane plots; with contour levels a plane gets a contour plot ("<name> (contours).png") beside its heatmap
 
 ### Changed
+- Standard zone heights are defined in meters only: every unit gets the exact conversion (1.8 m is 5.906 ft, not 5.9 ft; 1.9 m is 6.234 ft, not 6.25 ft). `StandardZoneConfig.height_ft` is gone
+- A room keeps its standard zones (WholeRoomFluence, EyeLimits, SkinLimits) fitted to its floor plan, height and safety standard through one path: setting `room.dim` or `room.standard`, or adding a zone under one of those ids. Their extents, plane height and calc mode can't be set directly (`set_dimensions`, `set_height`, `set_ref_surface` and `set_direction` raise ValueError); resolution, offset and dose settings stay the user's, and changing the safety standard keeps them
 - plot_plane takes a polygon plane's values as computed (the points inside the outline) again; values already expanded onto the full grid, accepted in 0.10.0, are no longer
+
+### Fixed
+- Loading a file whose standard zones didn't match its room (a polygon room's zones spanning the bounding box, say) kept those zones, so the points outside the room diluted the averages until the next room edit refitted them. Loading now refits them
 
 ## [0.10.0] - 2026-10-18
 

@@ -96,7 +96,6 @@ class TestPhotStandardProperties:
         """ACGIH zone config should have correct defaults."""
         cfg = get_zone_config(PhotStandard.ACGIH)
         assert cfg.height_m == 1.8
-        assert cfg.height_ft == 5.9
         assert cfg.eye_calc_mode == "eye_worst_case"
         assert cfg.skin_calc_mode == "planar_normal"
 
@@ -104,7 +103,6 @@ class TestPhotStandardProperties:
         """UL8802 zone config should differ from ACGIH."""
         cfg = get_zone_config(PhotStandard.UL8802)
         assert cfg.height_m == 1.9
-        assert cfg.height_ft == 6.25
         assert cfg.eye_calc_mode == "fluence_rate"
         assert cfg.eye_fov_horiz == 180
         assert cfg.skin_calc_mode == "planar_max"
@@ -113,7 +111,6 @@ class TestPhotStandardProperties:
         """ICNIRP should use default config (same as ACGIH)."""
         cfg = get_zone_config(PhotStandard.ICNIRP)
         assert cfg.height_m == 1.8
-        assert cfg.height_ft == 5.9
         assert cfg.eye_calc_mode == "eye_worst_case"
 
 

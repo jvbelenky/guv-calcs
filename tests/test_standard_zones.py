@@ -40,9 +40,19 @@ class TestCreateStandardZones:
         assert zone_map["SkinLimits"].height == pytest.approx(1.8)
 
     def test_default_height_feet(self, dims_ft):
+        # heights are defined in meters; other units get the exact conversion
         zones = create_standard_zones(PhotStandard.ACGIH, dims_ft)
         zone_map = {z.zone_id: z for z in zones}
-        assert zone_map["EyeLimits"].height == pytest.approx(5.9)
+        assert zone_map["EyeLimits"].height == pytest.approx(1.8 / 0.3048)
+
+    @pytest.mark.parametrize("units, height", [
+        ("inches", 1.8 / 0.0254), ("centimeters", 180.0), ("millimeters", 1800.0),
+    ])
+    def test_default_height_other_units(self, units, height):
+        dims = RoomDimensions(polygon=Polygon2D.rectangle(600, 400), z=270, units=units)
+        zones = create_standard_zones(PhotStandard.ACGIH, dims)
+        zone_map = {z.zone_id: z for z in zones}
+        assert zone_map["EyeLimits"].height == pytest.approx(height)
 
     def test_ul8802_height(self, dims_m):
         zones = create_standard_zones(PhotStandard.UL8802, dims_m)

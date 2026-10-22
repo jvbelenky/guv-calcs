@@ -9,12 +9,11 @@ from .calc_zone import CalcPlane, CalcPoint, CalcVol, CalcZone
 from .room_plotter import RoomPlotter
 from .geometry import RoomDimensions
 from .geometry import Polygon2D
-from .geometry.grid import SurfaceGrid, VolumeGrid
 from .reflectance import ReflectanceManager, Surface, init_room_surfaces
 from .io import parse_guv_file, save_room_data, export_room_zip, generate_report, get_version
 from pathlib import Path
 from .safety import PhotStandard, check_lamps, SafetyCheckResult
-from .standard_zones import create_standard_zones, get_zone_config, WHOLE_ROOM_FLUENCE, STANDARD_ZONE_IDS
+from .standard_zones import create_standard_zones, WHOLE_ROOM_FLUENCE, STANDARD_ZONE_IDS
 from .units import LengthUnits, convert_length
 from .efficacy import InactivationData
 from .scene_registry import LampRegistry, ZoneRegistry, SurfaceRegistry, ObjectRegistry
@@ -118,7 +117,9 @@ class Room:
 
         dims_getter = lambda: self.dim
         self.lamps = LampRegistry(dims=dims_getter, on_collision=on_collision)
-        self.calc_zones = ZoneRegistry(dims=dims_getter, on_collision=on_collision)
+        self.calc_zones = ZoneRegistry(
+            dims=dims_getter, on_collision=on_collision, fit=self._fit_standard_zone,
+        )
         self.surfaces = SurfaceRegistry(dims=dims_getter, on_collision=on_collision)
         self.objects = ObjectRegistry(dims=dims_getter, on_collision=on_collision)
 
@@ -156,6 +157,7 @@ class Room:
         # Rebind registry lambdas to point to the new instance's dim
         result.lamps.dims = lambda: result.dim
         result.calc_zones.dims = lambda: result.dim
+        result.calc_zones.fit = result._fit_standard_zone
         result.surfaces.dims = lambda: result.dim
         result.objects.dims = lambda: result.dim
 
@@ -434,13 +436,11 @@ class Room:
     @standard.setter
     def standard(self, value):
         self._standard = PhotStandard.from_any(value)
+        self._sync_standard_zones()
 
     def set_standard(self, standard):
         """Update the photobiological safety standard the Room is subject to."""
-        prev = self.standard
         self.standard = standard
-        if get_zone_config(prev) != get_zone_config(self.standard):
-            self._rebuild_standard_zones(standard=self.standard)
         return self
 
     # --------------------- Reflectance ----------------------
@@ -496,8 +496,11 @@ class Room:
         if old_units == new_units:
             return self 
 
-        # Room dimensions (polygon vertices + z)
-        self.dim = self.dim.with_(units=new_units)
+        # Room dimensions (polygon vertices + z). Bypasses the dim setter:
+        # converting a fitted standard zone (below) already gives the fitted
+        # zone, since their heights are defined in meters, and a refit would
+        # discard results that are still valid
+        self._dim = self.dim.with_(units=new_units)
 
         # Lamp positions and surface/fixture dimensions
         for lamp in self.lamps.values():
@@ -532,12 +535,20 @@ class Room:
         if polygon is not None and (x is not None or y is not None):
             raise ValueError("Specify either polygon or x/y, not both")
         self._update_dimensions(x=x, y=y, z=z, polygon=polygon)
-        self._resize_standard_zones()
         return self
 
     def set_polygon(self, vertices, z=None):
         """Set the floor plan to a polygon given as ``(x, y)`` vertices."""
         return self.set_dimensions(polygon=vertices, z=z)
+
+    @property
+    def dim(self) -> RoomDimensions:
+        return self._dim
+
+    @dim.setter
+    def dim(self, value: RoomDimensions):
+        self._dim = value
+        self._sync_standard_zones()
 
     @property
     def is_polygon(self) -> bool:
@@ -937,42 +948,43 @@ class Room:
             self.dim = self.dim.with_(z=z)
         self._update_standard_surfaces()
 
-    def _resize_standard_zones(self):
-        """Resize standard zones to match current room dimensions.
+    def _fit_standard_zone(self, zone_id, zone, templates=None):
+        """Fit a standard zone to the floor plan, height and safety standard.
 
-        Rebuilds each standard zone's grid from the room's floor polygon and
-        height while preserving the zone's resolution mode (spacing_init or
-        num_points_init) and its plane height. Use _rebuild_standard_zones
-        when the safety standard itself changes.
+        Only the zone's resolution, offset and settings like dose time are
+        its own; everything else comes from the room.
         """
-        polygon = self.dim.polygon
-        for zone_id in STANDARD_ZONE_IDS:
-            if zone_id not in self.calc_zones:
-                continue
-            zone = self.calc_zones[zone_id]
-            geometry = zone.geometry
-            if geometry is None:
-                continue
-            common = dict(
-                spacing_init=geometry.spacing_init,
-                num_points_init=geometry.num_points_init,
-                offset=geometry.offset,
+        if templates is None:
+            templates = {z.zone_id: z for z in create_standard_zones(self._standard, self.dim)}
+        template = templates[zone_id]
+        if type(zone) is not type(template):
+            raise TypeError(
+                f"{zone_id} is reserved for a standard {type(template).__name__}"
             )
-            if isinstance(zone, CalcVol):
-                zone.geometry = VolumeGrid.from_polygon(
-                    polygon, z_height=self.dim.z, **common,
-                )
-            elif isinstance(zone, CalcPlane):
-                zone.geometry = SurfaceGrid.from_polygon(
-                    polygon, height=float(geometry.origin[2]),
-                    direction=1, **common,
-                )
+        geometry = zone.geometry
+        zone.geometry = template.geometry.update(
+            spacing_init=geometry.spacing_init,
+            num_points_init=geometry.num_points_init,
+            offset=geometry.offset,
+        )
+        if isinstance(zone, CalcPlane):
+            zone.horiz, zone.vert = template.horiz, template.vert
+            zone.use_normal = template.use_normal
+            zone.fov_vert, zone.fov_horiz = template.fov_vert, template.fov_horiz
+            zone.view_direction = template.view_direction
+            zone.view_target = template.view_target
 
-    def _rebuild_standard_zones(self, standard: "PhotStandard"):
-        """Rebuild standard zones from scratch (e.g. when safety standard changes)."""
-        for zone in create_standard_zones(standard, self.dim):
-            if zone.zone_id in self.calc_zones:
-                self.calc_zones[zone.zone_id] = zone
+    def _sync_standard_zones(self):
+        """Fit every standard zone in the room."""
+        # dim and standard are set during __init__ before the zones exist
+        if "calc_zones" not in self.__dict__ or "_standard" not in self.__dict__:
+            return
+        present = [zid for zid in STANDARD_ZONE_IDS if zid in self.calc_zones]
+        if not present:
+            return
+        templates = {z.zone_id: z for z in create_standard_zones(self._standard, self.dim)}
+        for zone_id in present:
+            self._fit_standard_zone(zone_id, self.calc_zones[zone_id], templates)
 
     def _init_standard_surfaces(self, reflectances=None, transmittances=None,
                                  x_spacings=None, y_spacings=None,

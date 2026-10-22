@@ -318,21 +318,14 @@ class TestStandardZonesPerUnit:
         return RoomDimensions(polygon=Polygon2D.rectangle(6 * k, 4 * k), z=2.7 * k,
                               units=LengthUnits.from_any(units))
 
-    @pytest.mark.parametrize("units,height", [
-        ("inches", 70.9), ("centimeters", 180.0), ("millimeters", 1800.0),
-        ("feet", 5.9), ("meters", 1.8), ("yards", 1.97),
-    ])
-    def test_default_height_rounded(self, units, height):
-        zones = {z.zone_id: z for z in create_standard_zones(PhotStandard.ACGIH, self._dims(units))}
-        assert zones["EyeLimits"].height == height
-        assert zones["SkinLimits"].height == height
-
-    @pytest.mark.parametrize("units,height", [
-        ("inches", 74.8), ("centimeters", 190.0), ("millimeters", 1900.0), ("feet", 6.25),
-    ])
-    def test_ul8802_height_rounded(self, units, height):
-        zones = {z.zone_id: z for z in create_standard_zones(PhotStandard.UL8802, self._dims(units))}
-        assert zones["EyeLimits"].height == height
+    # heights are defined in meters; every unit gets the exact conversion
+    @pytest.mark.parametrize("units", ["inches", "centimeters", "millimeters", "feet", "meters", "yards"])
+    @pytest.mark.parametrize("standard,height_m", [(PhotStandard.ACGIH, 1.8), (PhotStandard.UL8802, 1.9)])
+    def test_height_is_exact_conversion(self, units, standard, height_m):
+        zones = {z.zone_id: z for z in create_standard_zones(standard, self._dims(units))}
+        expected = height_m * _k("meters", units)
+        assert zones["EyeLimits"].height == pytest.approx(expected)
+        assert zones["SkinLimits"].height == pytest.approx(expected)
 
     @pytest.mark.parametrize("units", APP_UNITS)
     def test_room_add_standard_zones(self, units):

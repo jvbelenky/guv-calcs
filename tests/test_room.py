@@ -4,6 +4,8 @@ import pytest
 import numpy as np
 from guv_calcs import Room, Lamp, CalcPlane, CalcVol, Polygon2D
 from guv_calcs.lamp.lamp_type import LampUnitType
+from guv_calcs.standard_zones import STANDARD_ZONE_IDS
+from guv_calcs.units import convert_length
 
 
 class TestRoomInitialization:
@@ -751,6 +753,104 @@ class TestPolygonRoomMutation:
         loaded = Room.from_dict(room.to_dict())
         assert loaded.is_polygon is True
         assert loaded.polygon.vertices == room.polygon.vertices
+
+
+class TestStandardZonesFollowRoom:
+    """Standard zones always span the floor plan, at the standard's height."""
+
+    L_SHAPE = [(0, 0), (6, 0), (6, 2), (3, 2), (3, 4), (0, 4)]
+
+    def assert_fitted(self, room, height_m=1.8):
+        eye = room.calc_zones["EyeLimits"]
+        wrf = room.calc_zones["WholeRoomFluence"]
+        n = room.dim.polygon.n_vertices
+        assert eye.geometry.polygon.n_vertices == n
+        assert wrf.geometry.polygon.n_vertices == n
+        assert room.dim.polygon.contains_points(eye.coords[:, :2]).all()
+        assert room.dim.polygon.contains_points(wrf.coords[:, :2]).all()
+        assert eye.height == pytest.approx(convert_length("meters", room.units, height_m))
+        assert wrf.geometry.depth == pytest.approx(room.z)
+
+    @pytest.mark.parametrize("units", ["meters", "feet"])
+    def test_load_refits_stale_zones(self, units):
+        # a file whose standard zones span the bounding box rather than the
+        # outline, at a hand-rounded height
+        room = Room(polygon=self.L_SHAPE, z=2.7).add_standard_zones()
+        stale = Room(x=6, y=4, z=2.7).add_standard_zones()
+        room.set_units(units)
+        stale.set_units(units)
+        stale.calc_zones["EyeLimits"].geometry = (
+            stale.calc_zones["EyeLimits"].geometry.update_legacy(height=1.75)
+        )
+        stale.calc_zones["EyeLimits"].set_num_points(20, 30)
+        data = room.to_dict()
+        for zone_id in STANDARD_ZONE_IDS:
+            data["calc_zones"][zone_id] = stale.calc_zones[zone_id].to_dict()
+
+        loaded = Room.from_dict(data)
+        self.assert_fitted(loaded)
+        # the file's resolution is kept
+        assert tuple(loaded.calc_zones["EyeLimits"].geometry.num_points_init) == (20, 30)
+
+    def test_registry_add_refits(self):
+        room = Room(polygon=self.L_SHAPE, z=2.7)
+        stale = Room(x=6, y=4, z=2.7).add_standard_zones()
+        for zone in stale.calc_zones.values():
+            room.calc_zones.add(zone.copy())
+        assert set(room.calc_zones) == set(STANDARD_ZONE_IDS)
+        self.assert_fitted(room)
+
+    def test_units_round_trip(self):
+        room = Room(polygon=self.L_SHAPE, z=2.7).add_standard_zones()
+        for units in ("feet", "inches", "centimeters", "meters"):
+            room.set_units(units)
+            self.assert_fitted(room)
+        assert room.calc_zones["EyeLimits"].height == pytest.approx(1.8)
+
+    def test_units_change_keeps_results(self):
+        room = Room(x=6, y=4, z=2.7).add_standard_zones()
+        room.place_lamp("ushio_b1")
+        room.calculate()
+        before = room.calc_zones["WholeRoomFluence"].get_values().copy()
+        room.set_units("feet")
+        # the zones still match the room, so their results stand
+        np.testing.assert_array_equal(room.calc_zones["WholeRoomFluence"].get_values(), before)
+
+    def test_standard_change_keeps_resolution(self):
+        room = Room(polygon=self.L_SHAPE, z=2.7).add_standard_zones()
+        room.calc_zones["EyeLimits"].set_num_points(20, 30)
+        room.calc_zones["EyeLimits"].set_dose_time(hours=4)
+        room.set_standard("ul8802")
+        eye = room.calc_zones["EyeLimits"]
+        assert tuple(eye.geometry.num_points_init) == (20, 30)
+        assert eye.hours == pytest.approx(4)
+        self.assert_fitted(room, height_m=1.9)
+
+    def test_dimension_change_refits(self):
+        room = Room(x=6, y=4, z=2.7).add_standard_zones()
+        room.set_dimensions(polygon=self.L_SHAPE, z=3.0)
+        self.assert_fitted(room)
+
+    def test_extents_and_height_are_fixed(self):
+        room = Room(x=6, y=4, z=2.7).add_standard_zones()
+        with pytest.raises(ValueError):
+            room.calc_zones["EyeLimits"].set_dimensions(x1=1, x2=2)
+        with pytest.raises(ValueError):
+            room.calc_zones["EyeLimits"].set_height(1.0)
+        with pytest.raises(ValueError):
+            room.calc_zones["WholeRoomFluence"].set_dimensions(z2=1.0)
+        # resolution is still the user's
+        room.calc_zones["EyeLimits"].set_num_points(10, 10)
+        assert tuple(room.calc_zones["EyeLimits"].num_points) == (10, 10)
+
+    def test_copy_is_a_custom_zone(self):
+        room = Room(x=6, y=4, z=2.7).add_standard_zones()
+        key = room.calc_zones.add(room.calc_zones["EyeLimits"].copy())
+        assert key != "EyeLimits"
+        room.calc_zones[key].set_height(1.0)
+        room.set_dimensions(x=8)
+        assert room.calc_zones[key].height == pytest.approx(1.0)
+        assert room.calc_zones[key].geometry.x2 == pytest.approx(6)
 
 
 class TestFloorPlanValidation:

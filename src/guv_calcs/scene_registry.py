@@ -8,6 +8,7 @@ import numpy as np
 from .geometry import RoomDimensions
 from .lamp import Lamp
 from .calc_zone import CalcZone
+from .calc_zone._standard_ids import STANDARD_ZONE_IDS
 from .reflectance import Surface
 from .object import Object
 
@@ -31,7 +32,7 @@ class Registry(Generic[T], MutableMapping[str, T]):
 
     def __setitem__(self, key: str, value: T) -> None:
         """Place value at exactly `key`. Unlike add(), ignores on_collision."""
-        value = self._validate(value)
+        value = self._validate(self._prepare(key, value))
         value._assign_id(key)
         self._items[key] = value
 
@@ -121,6 +122,10 @@ class Registry(Generic[T], MutableMapping[str, T]):
                     moved[obj_id] = obj
         return moved
 
+    def _prepare(self, key: str, obj: T) -> T:
+        """Adjust an item about to be placed at `key`, before validation."""
+        return obj
+
     def _validate(self, obj: T) -> T:
         """Type check + position check. Override for additional validation."""
         if self.expected_type and not isinstance(obj, self.expected_type):
@@ -134,7 +139,6 @@ class Registry(Generic[T], MutableMapping[str, T]):
 
     def add(self, obj, on_collision=None):
         policy = on_collision or self.on_collision
-        obj = self._validate(obj)
         key = getattr(obj, "id", None) or self.base_id
         if key in self._items:
             if policy == "error":
@@ -142,6 +146,7 @@ class Registry(Generic[T], MutableMapping[str, T]):
             if policy == "increment":
                 key = self._unique_id(key)
             # OVERWRITE keeps key as-is
+        obj = self._validate(self._prepare(key, obj))
         obj._assign_id(key)
         self._items[key] = obj
         # self.on_added(key, obj)  # hook
@@ -189,6 +194,13 @@ class LampRegistry(Registry["Lamp"]):
 class ZoneRegistry(Registry["CalcZone"]):
     base_id = "CalcZone"
     expected_type: type | None = CalcZone
+    # Fits a standard zone to its room: fit(zone_id, zone)
+    fit: Optional[Callable[[str, "CalcZone"], None]] = None
+
+    def _prepare(self, key, zone):
+        if self.fit is not None and key in STANDARD_ZONE_IDS and isinstance(zone, CalcZone):
+            self.fit(key, zone)
+        return zone
 
     def _get_coords(self, zone):
         return zone.coords

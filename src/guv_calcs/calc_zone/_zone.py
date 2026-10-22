@@ -10,6 +10,7 @@ from ..geometry import RoomDimensions
 from ..geometry import Polygon2D
 from .._serialization import init_from_dict, deserialize_geometry, migrate_zone_dict, migrate_legacy_zone_geometry
 from ..plane_calc_mode import PlaneCalcMode
+from ._standard_ids import STANDARD_ZONE_IDS
 
 
 @dataclass(frozen=True)
@@ -179,6 +180,18 @@ class CalcZone(ABC):
     def _assign_id(self, value: str) -> None:
         """should only be used by Scene"""
         self._zone_id = value
+
+    @property
+    def is_standard(self) -> bool:
+        """Standard zones follow their room; only their resolution is editable."""
+        return self._zone_id in STANDARD_ZONE_IDS
+
+    def _require_custom(self):
+        if self.is_standard:
+            raise ValueError(
+                f"{self.name} follows the room's floor plan and safety standard; "
+                "its extents and height can't be set directly"
+            )
 
     @property
     @abstractmethod
@@ -406,6 +419,7 @@ class CalcZone(ABC):
                 )
 
     def set_dimensions(self, x1=None, x2=None, y1=None, y2=None, z1=None, z2=None):
+        self._require_custom()
         if self.geometry is not None:
             mins = self._strip_tpl(
                 self._coalesce(x1, self.geometry.x1),
@@ -602,7 +616,7 @@ class CalcVol(CalcZone):
 
     def nudge_into_bounds(self, room_dims) -> bool:
         """Shift volume zone into room bounds. Returns True if changed."""
-        if self.geometry is None:
+        if self.geometry is None or self.is_standard:
             return False
         room_poly = room_dims.polygon
         rz = room_dims.z
@@ -768,7 +782,7 @@ class CalcPlane(CalcZone):
 
     def nudge_into_bounds(self, room_dims) -> bool:
         """Shift plane zone into room bounds. Returns True if changed."""
-        if self.geometry is None:
+        if self.geometry is None or self.is_standard:
             return False
         room_poly = room_dims.polygon
         rz = room_dims.z
@@ -796,14 +810,17 @@ class CalcPlane(CalcZone):
         return True
 
     def set_height(self, height):
+        self._require_custom()
         self.geometry = self.geometry.update_legacy(height=height)
         return self
 
     def set_ref_surface(self, ref_surface):
+        self._require_custom()
         self.geometry = self.geometry.update_legacy(ref_surface=ref_surface)
         return self
 
     def set_direction(self, direction):
+        self._require_custom()
         self.geometry = self.geometry.update_legacy(direction=direction)
         return self
 
