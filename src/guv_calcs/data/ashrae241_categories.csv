@@ -1,0 +1,26 @@
+group,category,ecai_cfm_per_person
+Correctional Facilities,Cell,30
+Correctional Facilities,Dayroom,40
+Commercial/Retail,Food and beverage facilities,60
+Commercial/Retail,Gym,80
+Commercial/Retail,Office,30
+Commercial/Retail,Retail,40
+Commercial/Retail,Transportation waiting,60
+Educational Facilities,Classroom,40
+Educational Facilities,Lecture hall,50
+Industrial,Manufacturing,50
+Industrial,"Sorting, packing, light assembly",20
+Industrial,Warehouse,20
+Health Care,Exam room,40
+Health Care,Group treatment area,70
+Health Care,Patient room,70
+Health Care,Resident room,50
+Health Care,Waiting room,90
+Public Assembly/Sports and Entertainment,Auditorium,50
+Public Assembly/Sports and Entertainment,Place of religious worship,50
+Public Assembly/Sports and Entertainment,Museum,60
+Public Assembly/Sports and Entertainment,Convention,60
+Public Assembly/Sports and Entertainment,Spectator area,50
+Public Assembly/Sports and Entertainment,Lobbies,50
+Residential,Common space,50
+Residential,Dwelling unit,30

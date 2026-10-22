@@ -1,0 +1,109 @@
+group,space_type,rp_cfm_per_person,ra_cfm_per_ft2,density_per_1000ft2,category,vocalization
+Animal Facilities,Animal exam room (veterinary office),10,0.12,20,Office,false
+Animal Facilities,Animal imaging (MRI/CT/PET),10,0.18,20,Exam room,false
+Animal Facilities,Animal operating rooms,10,0.18,20,Exam room,false
+Animal Facilities,Animal postoperative recovery room,10,0.18,20,Exam room,false
+Animal Facilities,Animal preparation rooms,10,0.18,20,Exam room,false
+Animal Facilities,Animal procedure room,10,0.18,20,Exam room,false
+Animal Facilities,Animal surgery scrub,10,0.18,20,Exam room,false
+Animal Facilities,Large-animal holding room,10,0.18,20,Exam room,false
+Animal Facilities,Necropsy,10,0.18,20,Exam room,false
+Animal Facilities,Small-animal-cage room (static cages),10,0.18,20,Exam room,false
+Animal Facilities,Small-animal-cage room (ventilated cages),10,0.18,20,Exam room,false
+Correctional Facilities,Booking/waiting,7.5,0.06,50,Dayroom,false
+Correctional Facilities,Cell,5,0.12,25,Cell,false
+Correctional Facilities,Dayroom,5,0.06,30,Dayroom,false
+Correctional Facilities,Guard stations,5,0.06,15,Office,false
+Educational Facilities,Art classroom,10,0.18,20,Classroom,false
+Educational Facilities,Classrooms (ages 5–8),10,0.12,25,Classroom,false
+Educational Facilities,Classrooms (age 9 plus),10,0.12,35,Classroom,false
+Educational Facilities,Computer lab,10,0.12,25,Classroom,false
+Educational Facilities,"Corridors (ages 5+) [Addendum a to 62.1-2022, passed Oct 2023]",0,0.12,,Classroom,false
+Educational Facilities,Daycare sickroom,10,0.18,25,Exam room,false
+Educational Facilities,Daycare (through age 4),10,0.18,25,Classroom,false
+Educational Facilities,Lecture classroom,7.5,0.06,65,Lecture hall,false
+Educational Facilities,Lecture hall (fixed seats),7.5,0.06,150,Lecture hall,false
+Educational Facilities,Libraries,5,0.12,10,Classroom,false
+Educational Facilities,Media center,10,0.12,25,Classroom,false
+Educational Facilities,Multiuse assembly,7.5,0.06,100,Auditorium,false
+Educational Facilities,Music/theater/dance,10,0.06,35,Auditorium,true
+Educational Facilities,Science laboratories,10,0.18,25,Classroom,false
+Educational Facilities,University/college laboratories,10,0.18,25,Classroom,false
+Educational Facilities,Wood/metal shop,10,0.18,20,Classroom,false
+Educational Facilities,Corridors (ages 5 plus),10,0.12,25,Classroom,false
+Food and Beverage Service,"Bars, cocktail lounges",7.5,0.18,100,Food and beverage facilities,false
+Food and Beverage Service,Cafeteria/fast-food dining,7.5,0.18,100,Food and beverage facilities,false
+Food and Beverage Service,Kitchen (cooking),7.5,0.12,20,Food and beverage facilities,false
+Food and Beverage Service,Restaurant dining rooms,7.5,0.18,70,Food and beverage facilities,false
+General,Break rooms (General),5,0.06,25,Office,false
+General,Coffee stations,5,0.06,20,Office,false
+General,Conference/meeting,5,0.06,50,Office,false
+General,Occupiable storage rooms for liquids or gels,5,0.12,2,Office,false
+"Hotels, Motels, Resorts, Dormitories",Barracks sleeping areas,5,0.06,20,Dwelling unit,false
+"Hotels, Motels, Resorts, Dormitories",Bedroom/living room,5,0.06,10,Dwelling unit,false
+"Hotels, Motels, Resorts, Dormitories","Laundry rooms, central",5,0.12,10,Common space,false
+"Hotels, Motels, Resorts, Dormitories",Laundry rooms within dwelling units,5,0.12,10,Common space,false
+"Hotels, Motels, Resorts, Dormitories",Lobbies/prefunction,7.5,0.06,30,Common space,false
+"Hotels, Motels, Resorts, Dormitories",Multipurpose assembly,5,0.06,120,Common space,false
+Miscellaneous Spaces,Banks or bank lobbies,7.5,0.06,15,Retail,false
+Miscellaneous Spaces,Bank vaults/safe deposit,5,0.06,5,Office,false
+Miscellaneous Spaces,Computer (not printing),5,0.06,4,Office,false
+Miscellaneous Spaces,Freezer and refrigerated spaces (<50°F [10°C]),10,0,,"Sorting, packing, light assembly",false
+Miscellaneous Spaces,Manufacturing where hazardous materials are not used,10,0.18,7,Manufacturing,false
+Miscellaneous Spaces,Manufacturing where hazardous materials are used (excludes heavy industrial and chemical processes),10,0.18,7,Manufacturing,false
+Miscellaneous Spaces,Pharmacy (prep. area),5,0.18,10,Retail,false
+Miscellaneous Spaces,Photo studios,5,0.12,10,Retail,false
+Miscellaneous Spaces,Shipping/receiving,10,0.12,2,"Sorting, packing, light assembly",false
+Miscellaneous Spaces,"Sorting, packing, light assembly",7.5,0.12,7,"Sorting, packing, light assembly",false
+Miscellaneous Spaces,Transportation waiting,7.5,0.06,100,Transportation waiting,false
+Miscellaneous Spaces,Warehouses,10,0.06,,Warehouse,false
+Office Buildings,Main entry lobbies,5,0.06,10,Lobbies,false
+Office Buildings,Occupiable storage rooms for dry materials,5,0.06,2,Office,false
+Office Buildings,Office,5,0.06,5,Office,false
+Office Buildings,Reception areas,5,0.06,30,Office,false
+Office Buildings,Telephone/data entry,5,0.06,60,Office,false
+Public Assembly Spaces,Auditorium seating area,5,0.06,150,Auditorium,false
+Public Assembly Spaces,Courtrooms,5,0.06,70,Auditorium,false
+Public Assembly Spaces,Legislative chambers,5,0.06,50,Convention,false
+Public Assembly Spaces,Lobbies,5,0.06,150,Lobbies,false
+Public Assembly Spaces,Museums (children’s),7.5,0.12,40,Museum,false
+Public Assembly Spaces,Museums/galleries,7.5,0.06,40,Museum,false
+Public Assembly Spaces,Places of religious worship,5,0.06,120,Place of religious worship,false
+Residential,Common corridors,0,0.06,,Common space,false
+Retail,Sales (except as below),7.5,0.12,15,Retail,false
+Retail,Barbershop,7.5,0.06,25,Retail,false
+Retail,Beauty and nail salons,20,0.12,25,Retail,false
+Retail,Coin-operated laundries,7.5,0.12,20,Retail,false
+Retail,Mall common areas,7.5,0.06,40,Retail,false
+Retail,Pet shops (animal areas),7.5,0.18,10,Retail,false
+Retail,Supermarket,7.5,0.06,8,Retail,false
+Retail,Bowling alley (seating),10,0.12,40,Retail,false
+Sports and Entertainment,Disco/dance floors,20,0.06,100,Food and beverage facilities,false
+Sports and Entertainment,Gambling casinos,7.5,0.18,120,Food and beverage facilities,false
+Sports and Entertainment,Game arcades,7.5,0.18,20,Food and beverage facilities,false
+Sports and Entertainment,"Gym, sports arena (play area)",20,0.18,7,Gym,false
+Sports and Entertainment,Health club/aerobics room,20,0.06,40,Gym,false
+Sports and Entertainment,Health club/weight rooms,20,0.06,10,Gym,false
+Sports and Entertainment,Spectator areas,7.5,0.06,150,Spectator area,false
+Sports and Entertainment,"Stages, studios",10,0.06,70,Gym,true
+Sports and Entertainment,Swimming (pool & deck),0,0.48,,Gym,false
+Outpatient Healthcare Facilities,Birthing room,10,0.18,15,Patient room,false
+Outpatient Healthcare Facilities,Class 1 imaging rooms,7.5,0.12,5,Exam room,false
+Outpatient Healthcare Facilities,Dental operatory,10,0.18,20,Exam room,false
+Outpatient Healthcare Facilities,General examination room,7.5,0.12,20,Exam room,false
+Outpatient Healthcare Facilities,Other dental treatment areas,5,0.06,5,Group treatment area,false
+Outpatient Healthcare Facilities,Physical therapy exercise room,20,0.18,7,Group treatment area,false
+Outpatient Healthcare Facilities,Physical therapy individual room,10,0.12,20,Exam room,false
+Outpatient Healthcare Facilities,Physical therapeutic pool area,0,0.48,,Group treatment area,false
+Outpatient Healthcare Facilities,Prosthetics and orthodics room,10,0.18,20,Exam room,false
+Outpatient Healthcare Facilities,Psychiatric consultation room,5,0.06,20,Exam room,false
+Outpatient Healthcare Facilities,Psychiatric examination room,5,0.06,20,Exam room,false
+Outpatient Healthcare Facilities,Psychiatric group room,5,0.06,50,Group treatment area,false
+Outpatient Healthcare Facilities,Psychiatric seclusion room,10,0.12,5,Patient room,false
+Outpatient Healthcare Facilities,Speech therapy room,5,0.06,20,Exam room,false
+Outpatient Healthcare Facilities,Urgent care examination room,7.5,0.12,20,Exam room,false
+Outpatient Healthcare Facilities,Urgent care observation room,5,0.06,20,Exam room,false
+Outpatient Healthcare Facilities,Urgent care treatment room,7.5,0.12,20,Exam room,false
+Outpatient Healthcare Facilities,Urgent care triage room,10,0.18,20,Exam room,false
+Health Care (Std 170),Waiting room,,,,Waiting room,false
+Health Care (Std 170),Resident room,,,,Resident room,false
