@@ -23,6 +23,10 @@ def _format_exposure(td) -> str:
     return f"{secs:g} Second"
 
 
+# plot_plane arguments that make a contour plot rather than a heatmap
+_CONTOUR_KWARGS = ("levels", "colors", "labels", "filled", "contour_labels")
+
+
 def export_room_zip(
     room,
     fname=None,
@@ -35,8 +39,9 @@ def export_room_zip(
     """Write the room project file and all results files to a zip file.
 
     Optionally include extra files like lamp ies files, spectra files, and plots.
-    `plot_kwargs` maps a plane's zone id to extra `plot_plane` arguments (such
-    as contour `levels`, `colors`, `labels`, or a `title`).
+    `plot_kwargs` maps a plane's zone id to extra `plot_plane` arguments (a
+    `title`, `show_values`...). Given contour `levels` (with `colors`,
+    `labels`), the plane gets a contour plot as well as its heatmap.
     """
     # save base project
     data_dict = {"room.guv": room.save()}
@@ -53,10 +58,17 @@ def export_room_zip(
                 # Save the figure to a BytesIO object
                 title += f" ({zone.height} m)"
                 kwargs = {"title": title, **((plot_kwargs or {}).get(zone_id) or {})}
-                fig, ax = zone.plot_plane(**kwargs)
+                # The heatmap always; given levels, the contour plot beside it
+                heatmap = {k: v for k, v in kwargs.items() if k not in _CONTOUR_KWARGS}
+                fig, ax = zone.plot_plane(**heatmap)
                 img_bytes = fig_to_bytes(fig)
                 if img_bytes is not None:
                     data_dict[zone.name + ".png"] = img_bytes
+                if kwargs.get("levels"):
+                    fig, ax = zone.plot_plane(**kwargs)
+                    img_bytes = fig_to_bytes(fig)
+                    if img_bytes is not None:
+                        data_dict[zone.name + " (contours).png"] = img_bytes
             elif zone.calctype == "Volume":
                 fig = zone.plot_volume()
                 img_bytes = fig_to_bytes(fig)

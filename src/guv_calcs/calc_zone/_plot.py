@@ -243,7 +243,18 @@ def _draw_contours(fig, ax, values, extent, levels, colors, labels, filled,
                   cmap=mcolors.ListedColormap(["white"]), aspect="equal", interpolation="nearest")
     if contour_labels:
         fmt = {lvl: _level_text(lvl, lab, decimals) for lvl, lab in zip(levels, labels)}
-        ax.clabel(lines, levels=[lvl for lvl in lines.levels if lvl in fmt], fmt=fmt, fontsize=7, inline=True, colors="black")
+        texts = ax.clabel(lines, levels=[lvl for lvl in lines.levels if lvl in fmt], fmt=fmt,
+                          fontsize=8, inline=True, inline_spacing=8, colors="black")
+        # Level and on a light backing, like the app's; none clipped at the plot's edge
+        margin_x = (extent[1] - extent[0]) * 0.06
+        margin_y = (extent[3] - extent[2]) * 0.04
+        for text in texts:
+            tx, ty = text.get_position()
+            if not (extent[0] + margin_x < tx < extent[1] - margin_x and extent[2] + margin_y < ty < extent[3] - margin_y):
+                text.remove()
+                continue
+            text.set_rotation(0)
+            text.set_bbox(dict(boxstyle="round,pad=0.2", facecolor="white", edgecolor="none", alpha=0.85))
     ax.set_xlim(extent[0], extent[1])
     ax.set_ylim(extent[2], extent[3])
 

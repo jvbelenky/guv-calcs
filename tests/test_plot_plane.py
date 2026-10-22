@@ -71,4 +71,18 @@ def test_export_zip_uses_plot_kwargs(lit_room):
     top = float(np.nanmax(zone.get_values()))
     data = lit_room.export_zip(include_plots=True, plot_kwargs={"plane": {"levels": [top / 2], "title": "Custom"}})
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        assert f"{zone.name}.png" in zf.namelist()
+        names = zf.namelist()
+    assert f"{zone.name}.png" in names and f"{zone.name} (contours).png" in names
+
+
+def test_contour_labels_sit_level_on_a_backing_inside_the_plot(lit_room):
+    zone = lit_room.calc_zones["plane"]
+    top = float(np.nanmax(zone.get_values()))
+    fig, ax = zone.plot(levels=[top * 0.3, top * 0.6])
+    labels = [t for t in ax.texts if t.get_bbox_patch() is not None]
+    assert labels
+    for t in labels:
+        assert t.get_rotation() == 0
+        x, y = t.get_position()
+        assert 0 < x < 4 and 0 < y < 3
+    plt.close(fig)
