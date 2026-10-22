@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from guv_calcs import Room, Lamp, CalcPlane, SurfaceGrid
-from guv_calcs.calc_zone._plot import _holes_filled
+from guv_calcs import Room, Lamp, CalcPlane, SurfaceGrid, Object
+from guv_calcs.calc_zone._plot import _holes_filled, _traced_values
 
 
 @pytest.fixture(scope="module")
@@ -64,6 +64,33 @@ def test_holes_take_their_nearest_value():
     assert filled[0, 1] in (1.0, 2.0, 4.0)
     all_holes = np.full((2, 2), np.nan)
     assert np.isnan(_holes_filled(all_holes)).all()
+
+
+def test_unlit_cells_are_traced_as_holes():
+    # A lit cell beside an obstacle's zeros: the zeros take the lit value, so no band crowds in between
+    values = np.array([[8.0, 0.0], [9.0, 0.0]])
+    traced, unlit = _traced_values(values)
+    assert traced.tolist() == [[8.0, 8.0], [9.0, 9.0]]
+    assert unlit.tolist() == [[False, True], [False, True]]
+    # An unlit plane is plotted as it is
+    traced, unlit = _traced_values(np.zeros((2, 2)))
+    assert not unlit.any() and (traced == 0).all()
+
+
+def test_an_obstacle_is_painted_over_the_bands():
+    room = Room(x=4, y=3, z=2.7, units="meters", enable_reflectance=False)
+    room.add_lamp(Lamp.from_keyword("aerolamp").move(1.3, 1.2, 2.6).aim(1.3, 1.2, 0))
+    room.add_object(Object.box(1.0, 0.8, 2.0, object_id="box", position=(0.8, 0.6, 0)))
+    grid = SurfaceGrid.from_legacy(mins=(0, 0), maxs=(4, 3), height=1.8, spacing_init=(0.25, 0.25))
+    room.add_calc_zone(CalcPlane(zone_id="plane", geometry=grid))
+    room.calculate()
+    zone = room.calc_zones["plane"]
+    assert (zone.get_values() == 0).any()
+    fig, ax = zone.plot(levels=[1, 5])
+    # The floor, then the obstacle's cells above every band and line
+    over = [im for im in ax.images if im.get_zorder() > max(c.get_zorder() for c in ax.collections)]
+    assert len(over) == 1
+    plt.close(fig)
 
 
 def test_export_zip_uses_plot_kwargs(lit_room):

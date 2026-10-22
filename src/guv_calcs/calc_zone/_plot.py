@@ -201,6 +201,20 @@ def _holes_filled(values):
     return values[tuple(idx)]
 
 
+def _traced_values(values):
+    """The grid to contour, and the unlit cells to paint back over it.
+
+    Unlit cells (exactly zero: inside an obstacle, or in its shadow) sit a
+    cliff away from their lit neighbours; interpolating across it would crowd
+    every band into that one cell, so they're traced as holes, like NaN ones.
+    """
+    unlit = values == 0
+    traced = _holes_filled(np.where(unlit, np.nan, values))
+    if np.isnan(traced).all():
+        return _holes_filled(values), np.zeros_like(unlit)
+    return traced, unlit
+
+
 def _level_colors(levels, colors, colormap):
     """One color per level: those given, else evenly spaced along the colormap."""
     n = len(levels)
@@ -224,7 +238,7 @@ def _draw_contours(fig, ax, values, extent, levels, colors, labels, filled,
     labels = [None if labels is None or i >= len(labels) else labels[i] for i in order]
 
     holes = np.isnan(values)
-    traced = _holes_filled(values)
+    traced, unlit = _traced_values(values)
     x, y = _cell_centers(extent, values.shape)
 
     # Below the lowest level, inside the room
@@ -238,9 +252,11 @@ def _draw_contours(fig, ax, values, extent, levels, colors, labels, filled,
         colors=[_darker(c) for c in colors] if filled else colors,
         linewidths=0.8 if filled else 1.5,
     )
-    if holes.any():
-        ax.imshow(np.ma.masked_array(np.zeros_like(values), ~holes), extent=extent, origin="lower",
-                  cmap=mcolors.ListedColormap(["white"]), aspect="equal", interpolation="nearest")
+    # Paint the holes back over the bands and lines (an image otherwise draws beneath them)
+    for cells, color in ((unlit, floor_color), (holes, "white")):
+        if cells.any():
+            ax.imshow(np.ma.masked_array(np.zeros_like(values), ~cells), extent=extent, origin="lower",
+                      cmap=mcolors.ListedColormap([color]), aspect="equal", interpolation="nearest", zorder=2.5)
     if contour_labels:
         fmt = {lvl: _level_text(lvl, lab, decimals) for lvl, lab in zip(levels, labels)}
         texts = ax.clabel(lines, levels=[lvl for lvl in lines.levels if lvl in fmt], fmt=fmt,
