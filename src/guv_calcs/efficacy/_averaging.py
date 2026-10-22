@@ -2,10 +2,20 @@
 
 from collections.abc import Callable
 
+import numpy as np
 import pandas as pd
 
-from .constants import COL_K1, COL_K2, COL_RESISTANT, COL_WAVELENGTH
+from ..io import get_full_disinfection_table
+from .constants import (
+    COL_K1,
+    COL_K2,
+    COL_MEDIUM,
+    COL_RESISTANT,
+    COL_SPECIES,
+    COL_WAVELENGTH,
+)
 from ._kinetics import parse_resistant
+from .math import eACH_UV
 
 
 def collect_parametric_inputs(function, species, strain, medium, condition, category=None) -> list:
@@ -153,3 +163,28 @@ def compute_average_multiwavelength(
         return func(cubic_feet, irrad_list, k1_list, k2_list, f_list)
     else:
         return func(irrad_list, k1_list, k2_list, f_list)
+
+
+def each_uv_range(
+    fluence: dict[float, float], species: str, medium: str = "Aerosol"
+) -> tuple[dict[float, tuple[float, float, float]], list[float]]:
+    """Per-row (low, median, high) eACH-UV (1/h) for each fluence wavelength.
+
+    Rows match on species, medium, and wavelength rounded to the nearest nm.
+    Returns (ranges, missing); missing lists wavelengths with no matching rows.
+    """
+    df = get_full_disinfection_table()
+    df = df[(df[COL_SPECIES] == species) & (df[COL_MEDIUM] == medium)]
+    rounded = df[COL_WAVELENGTH].round()
+    ranges, missing = {}, []
+    for wv, irrad in fluence.items():
+        rows = df[rounded == round(wv)]
+        if rows.empty:
+            missing.append(wv)
+            continue
+        vals = [
+            eACH_UV(irrad, k1, 0 if pd.isna(k2) else k2, parse_resistant(res))
+            for k1, k2, res in zip(rows[COL_K1], rows[COL_K2], rows[COL_RESISTANT])
+        ]
+        ranges[wv] = (min(vals), float(np.median(vals)), max(vals))
+    return ranges, missing

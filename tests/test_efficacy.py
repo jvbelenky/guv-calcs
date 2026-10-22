@@ -669,3 +669,63 @@ class TestTableFiltering:
         table_df = data.table()
         display_df = data.display_df
         pd.testing.assert_frame_equal(table_df, display_df)
+
+
+# --- each_uv_range ---
+
+from guv_calcs.efficacy import each_uv_range, eACH_UV
+from guv_calcs.efficacy.constants import (
+    COL_K1, COL_K2, COL_MEDIUM, COL_RESISTANT, COL_SPECIES, COL_WAVELENGTH,
+)
+
+
+def _hand_each_uv(df, species, wv, irrad):
+    rows = df[
+        (df[COL_SPECIES] == species)
+        & (df[COL_MEDIUM] == "Aerosol")
+        & (df[COL_WAVELENGTH].round() == wv)
+    ]
+    vals = [
+        eACH_UV(
+            irrad,
+            r[COL_K1],
+            0 if pd.isna(r[COL_K2]) else r[COL_K2],
+            parse_resistant(r[COL_RESISTANT]),
+        )
+        for _, r in rows.iterrows()
+    ]
+    return rows, vals
+
+
+def test_each_uv_range_ms2_222():
+    ranges, missing = each_uv_range({222: 1.0}, "Phage MS2")
+    low, med, high = ranges[222]
+    assert low <= med <= high and low > 0 and missing == []
+
+
+def test_each_uv_range_matches_rows_by_hand():
+    df = InactivationData.get_full()
+    rows, vals = _hand_each_uv(df, "Human coronavirus", 222, 2.0)
+    ranges, _ = each_uv_range({222: 2.0}, "Human coronavirus")
+    assert ranges[222] == pytest.approx((min(vals), float(np.median(vals)), max(vals)))
+
+
+def test_each_uv_range_two_phase_rows():
+    df = InactivationData.get_full()
+    aer = df[(df[COL_MEDIUM] == "Aerosol") & df[COL_RESISTANT].notna()]
+    assert len(aer) > 0
+    species, wv = aer.iloc[0][COL_SPECIES], int(round(aer.iloc[0][COL_WAVELENGTH]))
+    _, vals = _hand_each_uv(df, species, wv, 1.5)
+    ranges, _ = each_uv_range({wv: 1.5}, species)
+    assert ranges[wv] == pytest.approx((min(vals), float(np.median(vals)), max(vals)))
+
+
+def test_each_uv_range_reports_missing_wavelength():
+    ranges, missing = each_uv_range({222: 1.0, 405: 1.0}, "Phage MS2")
+    assert 405 in missing and 405 not in ranges
+
+
+def test_each_uv_range_scales_linearly_with_fluence():
+    a, _ = each_uv_range({222: 1.0}, "Phage MS2")
+    b, _ = each_uv_range({222: 3.0}, "Phage MS2")
+    assert b[222] == pytest.approx(tuple(3 * v for v in a[222]))

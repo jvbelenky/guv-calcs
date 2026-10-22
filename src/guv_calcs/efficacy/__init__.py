@@ -1,3 +1,4 @@
+from ._averaging import each_uv_range
 from .data import InactivationData
 from .math import (
     eACH_UV,
@@ -16,6 +17,7 @@ from .math import (
 __all__ = [
     "InactivationData",
     "eACH_UV",
+    "each_uv_range",
     "log1",
     "log2",
     "log3",
