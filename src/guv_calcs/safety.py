@@ -156,6 +156,43 @@ def _tlv(ref, weights: dict) -> float:
     )
 
 
+def effective_tlvs(room, zone, standard=PhotStandard.ACGIH, target: str = "eye"):
+    """
+    The TLV (mJ/cm2 per 8 hours) at each point of `zone` for the mix of lamps
+    lighting it, shaped like `zone.get_values()`.
+
+    Each lamp's direct irradiance is weighed by that lamp's own TLV, so the
+    limit at a point is sum(E_i) / sum(E_i / TLV_i): a lamp's own TLV where
+    only it reaches, and between the lamps' TLVs where they mix. A point's
+    dose divided by its TLV is then its fraction of the limit. Reflected
+    light is not tracked per lamp; taking it to have the mix of the direct
+    light at the same point gives the same TLV.
+
+    Points that no lamp with a TLV lights directly are NaN. Returns None when
+    no lamp with a TLV lights the zone.
+    """
+    weights = get_weights(target, PhotStandard.from_any(standard))
+    total = None
+    weighted = None
+    for lamp_id, lamp in room.lamps.items():
+        entry = zone.lamp_cache.get(lamp_id)
+        if entry is None or entry.values is None:
+            continue
+        ref = lamp.spectrum if lamp.spectrum is not None else lamp.wavelength
+        if ref is None:
+            continue
+        tlv = _tlv(ref, weights)
+        values = np.asarray(entry.values, dtype=float)
+        total = values.copy() if total is None else total + values
+        weighted = values / tlv if weighted is None else weighted + values / tlv
+    if total is None:
+        return None
+    with np.errstate(divide="ignore", invalid="ignore"):
+        tlvs = total / weighted
+    tlvs[~(weighted > 0)] = np.nan
+    return tlvs
+
+
 # --- Safety compliance checking ---
 
 

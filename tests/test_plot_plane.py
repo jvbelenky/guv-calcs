@@ -103,6 +103,23 @@ def test_bands_reach_the_edges_of_the_plot(lit_room):
     plt.close(fig)
 
 
+def test_a_level_is_traced_on_its_own_field(lit_room):
+    zone = lit_room.calc_zones["plane"]
+    values = zone.get_values()
+    top = float(np.nanmax(values))
+
+    def band_width(**kwargs):
+        fig, ax = zone.plot(levels=[top * 0.5], **kwargs)
+        (x0, _), (x1, _) = ax.collections[0].get_paths()[0].get_extents().get_points()
+        plt.close(fig)
+        return x1 - x0
+
+    plain = band_width()
+    # Doubled, the field reaches the level twice as far down the falloff
+    assert band_width(level_fields=[values * 2]) > plain
+    assert band_width(level_fields=[None]) == pytest.approx(plain)
+
+
 def test_export_zip_uses_plot_kwargs(lit_room):
     zone = lit_room.calc_zones["plane"]
     top = float(np.nanmax(zone.get_values()))

@@ -24,7 +24,7 @@ def _format_exposure(td) -> str:
 
 
 # plot_plane arguments that make a contour plot rather than a heatmap
-_CONTOUR_KWARGS = ("levels", "colors", "labels", "filled", "contour_labels")
+_CONTOUR_KWARGS = ("levels", "colors", "labels", "filled", "contour_labels", "level_fields")
 
 
 def export_room_zip(

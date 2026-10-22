@@ -78,6 +78,7 @@ def plot_plane(
     show_values=False,
     decimals=2,
     floor_color="#eeeeee",
+    level_fields=None,
 ):
     """
     Plot the image of the radiation pattern.
@@ -96,6 +97,10 @@ def plot_plane(
         show_values: print each cell's value where it fits
         decimals: decimals for values, and for levels without a name
         floor_color: color below the lowest level
+        level_fields: one array per level, shaped like the zone's values, to
+            trace that level on in place of the values (None keeps the
+            values): a limit's line drawn where each point's own fraction of
+            the limit reaches it, in a room whose lamps have different limits
     """
     if colormap is None:
         colormap = "plasma"
@@ -113,25 +118,27 @@ def plot_plane(
 
     if values is not None:
         geom = zone.geometry
-        if not geom.is_rectangular:
-            # polygon planes: plot the full bounding grid, NaN (blank) outside
-            values = geom.values_to_full_grid(values, fill=np.nan).reshape(
-                geom.num_x, geom.num_y)
-        values = np.asarray(values, dtype=float)
-
         u_label, v_label, extent, v_positive = _plane_axes(geom)
 
-        # Transpose so rows=v, cols=u
-        plot_values = values.T
+        def as_image(arr):
+            if not geom.is_rectangular:
+                # polygon planes: plot the full bounding grid, NaN (blank) outside
+                arr = geom.values_to_full_grid(arr, fill=np.nan)
+            # rows=v, cols=u, positive v at the top
+            arr = np.asarray(arr, dtype=float).reshape(geom.num_x, geom.num_y).T
+            return arr if v_positive else arr[::-1]
 
-        # Flip if v points in negative direction (so positive is at top)
-        if not v_positive:
-            plot_values = plot_values[::-1]
+        values = np.asarray(values, dtype=float)
+        plot_values = as_image(values)
 
         if levels is not None and len(levels) > 0:
+            fields = list(level_fields) if level_fields is not None else []
+            fields = [as_image(fields[i]) if i < len(fields) and fields[i] is not None else None
+                      for i in range(len(levels))]
             _draw_contours(
                 fig, ax, plot_values, extent, levels, colors, labels, filled,
                 contour_labels, decimals, floor_color, colormap, zone.value_units,
+                fields,
             )
         else:
             vmin = np.nanmin(values) if vmin is None else vmin
@@ -232,33 +239,44 @@ def _level_text(level, label, decimals):
 
 
 def _draw_contours(fig, ax, values, extent, levels, colors, labels, filled,
-                   contour_labels, decimals, floor_color, colormap, units):
-    """Filled bands (or lines) at `levels`, holes blank, with a banded colorbar."""
+                   contour_labels, decimals, floor_color, colormap, units, fields=None):
+    """Filled bands (or lines) at `levels`, holes blank, with a banded colorbar.
+
+    Each level is traced on its field (`fields`, in the levels' order) where it
+    has one, else on the values, and drawn over the levels below it.
+    """
     order = np.argsort(levels)
     levels = [float(levels[i]) for i in order]
     colors = _level_colors(levels, None if colors is None else [list(colors)[i] if i < len(colors) else None for i in order], colormap)
     labels = [None if labels is None or i >= len(labels) else labels[i] for i in order]
+    fields = [None if not fields or i >= len(fields) else fields[i] for i in order]
 
     holes = np.isnan(values)
-    traced, unlit = _traced_values(values)
+    unlit = _traced_values(values)[1]
     # Contour out to the plot's edges, not just its outer cell centres: the
     # edge cells' values carry on to the edge
     x, y = _cell_centers(extent, values.shape)
     x = np.concatenate(([extent[0]], x, [extent[1]]))
     y = np.concatenate(([extent[2]], y, [extent[3]]))
-    traced = np.pad(traced, 1, mode="edge")
+
+    def traced(field):
+        return np.pad(_traced_values(values if field is None else field)[0], 1, mode="edge")
 
     # Below the lowest level, inside the room
     ax.imshow(np.ma.masked_array(np.zeros_like(values), holes), extent=extent, origin="lower",
               cmap=mcolors.ListedColormap([floor_color]), aspect="equal", interpolation="nearest")
-    top = max(np.nanmax(traced), levels[-1]) * 1.001 + 1e-12
-    if filled:
-        ax.contourf(x, y, traced, levels=levels + [top], colors=colors, extend="neither")
-    lines = ax.contour(
-        x, y, traced, levels=levels,
-        colors=[_darker(c) for c in colors] if filled else colors,
-        linewidths=0.8 if filled else 1.5,
-    )
+    paths = []
+    with warnings.catch_warnings():
+        # A level the plane never reaches has no line
+        warnings.filterwarnings("ignore", message="No contour levels were found")
+        for level, color, field in zip(levels, colors, fields):
+            grid = traced(field)
+            if filled:
+                top = max(np.nanmax(grid), level) * 1.001 + 1e-12
+                ax.contourf(x, y, grid, levels=[level, top], colors=[color], extend="neither")
+            line = ax.contour(x, y, grid, levels=[level], colors=[_darker(color) if filled else color],
+                              linewidths=0.8 if filled else 1.5)
+            paths.append(line.get_paths()[0] if line.get_paths() else None)
     # Paint the holes back over the bands and lines (an image otherwise draws beneath them)
     for cells, color in ((unlit, floor_color), (holes, "white")):
         if cells.any():
@@ -276,13 +294,13 @@ def _draw_contours(fig, ax, values, extent, levels, colors, labels, filled,
     cbar.set_label(units, loc="center")
     # Last, once the colorbar has taken its room, so labels are placed where they'll show
     if contour_labels:
-        _draw_contour_labels(fig, ax, lines, [_level_text(lvl, lab, decimals) for lvl, lab in zip(levels, labels)])
+        _draw_contour_labels(fig, ax, paths, [_level_text(lvl, lab, decimals) for lvl, lab in zip(levels, labels)])
 
 
 _LABEL_INK = "#16205c"
 
 
-def _draw_contour_labels(fig, ax, lines, texts):
+def _draw_contour_labels(fig, ax, paths, texts):
     """Each level's name on its line, bold in a thin white outline, like the app's.
 
     Tries a few points along each ring and keeps the first where the label
@@ -292,7 +310,9 @@ def _draw_contour_labels(fig, ax, lines, texts):
     renderer = fig.canvas.get_renderer()
     bounds = ax.get_window_extent(renderer)
     placed = []
-    for li, (path, text) in enumerate(zip(lines.get_paths(), texts)):
+    for li, (path, text) in enumerate(zip(paths, texts)):
+        if path is None:
+            continue
         for ring in path.to_polygons(closed_only=False):
             if len(ring) < 12:
                 continue
