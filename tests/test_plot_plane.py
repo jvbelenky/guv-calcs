@@ -93,6 +93,16 @@ def test_an_obstacle_is_painted_over_the_bands():
     plt.close(fig)
 
 
+def test_bands_reach_the_edges_of_the_plot(lit_room):
+    zone = lit_room.calc_zones["plane"]
+    low = float(np.nanmin(zone.get_values()))
+    fig, ax = zone.plot(levels=[low])
+    # One band at the plane's minimum covers the whole plane, edge to edge
+    (x0, y0), (x1, y1) = ax.collections[0].get_paths()[0].get_extents().get_points()
+    assert (x0, y0, x1, y1) == pytest.approx((0, 0, 4, 3))
+    plt.close(fig)
+
+
 def test_export_zip_uses_plot_kwargs(lit_room):
     zone = lit_room.calc_zones["plane"]
     top = float(np.nanmax(zone.get_values()))

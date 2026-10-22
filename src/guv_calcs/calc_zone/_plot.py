@@ -204,9 +204,10 @@ def _holes_filled(values):
 def _traced_values(values):
     """The grid to contour, and the unlit cells to paint back over it.
 
-    Unlit cells (exactly zero: inside an obstacle, or in its shadow) sit a
-    cliff away from their lit neighbours; interpolating across it would crowd
-    every band into that one cell, so they're traced as holes, like NaN ones.
+    Unlit cells (exactly zero: where the lamps are outside an eye's field of
+    view, inside an obstacle, or in its shadow) sit a cliff away from their
+    lit neighbours; interpolating across it would crowd every band into that
+    one cell, so they're traced as holes, like NaN ones.
     """
     unlit = values == 0
     traced = _holes_filled(np.where(unlit, np.nan, values))
@@ -239,7 +240,12 @@ def _draw_contours(fig, ax, values, extent, levels, colors, labels, filled,
 
     holes = np.isnan(values)
     traced, unlit = _traced_values(values)
+    # Contour out to the plot's edges, not just its outer cell centres: the
+    # edge cells' values carry on to the edge
     x, y = _cell_centers(extent, values.shape)
+    x = np.concatenate(([extent[0]], x, [extent[1]]))
+    y = np.concatenate(([extent[2]], y, [extent[3]]))
+    traced = np.pad(traced, 1, mode="edge")
 
     # Below the lowest level, inside the room
     ax.imshow(np.ma.masked_array(np.zeros_like(values), holes), extent=extent, origin="lower",
