@@ -19,6 +19,10 @@ from guv_calcs.efficacy._filtering import (
     apply_row_filters,
     get_effective_wavelengths,
 )
+from guv_calcs.efficacy import each_uv_range, eACH_UV
+from guv_calcs.efficacy.constants import (
+    COL_K1, COL_K2, COL_MEDIUM, COL_RESISTANT, COL_SPECIES, COL_WAVELENGTH,
+)
 from guv_calcs.efficacy.math import survival_fraction
 
 
@@ -672,12 +676,6 @@ class TestTableFiltering:
 
 
 # --- each_uv_range ---
-
-from guv_calcs.efficacy import each_uv_range, eACH_UV
-from guv_calcs.efficacy.constants import (
-    COL_K1, COL_K2, COL_MEDIUM, COL_RESISTANT, COL_SPECIES, COL_WAVELENGTH,
-)
-
 
 def _hand_each_uv(df, species, wv, irrad):
     rows = df[
