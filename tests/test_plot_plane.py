@@ -112,14 +112,26 @@ def test_export_zip_uses_plot_kwargs(lit_room):
     assert f"{zone.name}.png" in names and f"{zone.name} (contours).png" in names
 
 
-def test_contour_labels_sit_level_on_a_backing_inside_the_plot(lit_room):
+def test_contour_labels_sit_level_in_an_outline_inside_the_plot(lit_room):
     zone = lit_room.calc_zones["plane"]
     top = float(np.nanmax(zone.get_values()))
     fig, ax = zone.plot(levels=[top * 0.3, top * 0.6])
-    labels = [t for t in ax.texts if t.get_bbox_patch() is not None]
+    labels = [t for t in ax.texts if t.get_path_effects()]
     assert labels
     for t in labels:
         assert t.get_rotation() == 0
+        assert t.get_fontweight() == "bold"
         x, y = t.get_position()
         assert 0 < x < 4 and 0 < y < 3
+    plt.close(fig)
+
+
+def test_nested_contour_labels_do_not_cover_each_other(lit_room):
+    zone = lit_room.calc_zones["plane"]
+    top = float(np.nanmax(zone.get_values()))
+    fig, ax = zone.plot(levels=[top * f for f in (0.1, 0.3, 0.5, 0.7, 0.9)], labels=["ICNIRP", "20% ACGIH", "40% ACGIH", "60% ACGIH", ""])
+    renderer = fig.canvas.get_renderer()
+    boxes = [t.get_window_extent(renderer) for t in ax.texts]
+    assert len(boxes) >= 3
+    assert not any(a.overlaps(b) for i, a in enumerate(boxes) for b in boxes[i + 1:])
     plt.close(fig)

@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from matplotlib import patheffects
 import plotly.graph_objs as go
 import numpy as np
 from scipy.ndimage import distance_transform_edt
@@ -263,20 +264,6 @@ def _draw_contours(fig, ax, values, extent, levels, colors, labels, filled,
         if cells.any():
             ax.imshow(np.ma.masked_array(np.zeros_like(values), ~cells), extent=extent, origin="lower",
                       cmap=mcolors.ListedColormap([color]), aspect="equal", interpolation="nearest", zorder=2.5)
-    if contour_labels:
-        fmt = {lvl: _level_text(lvl, lab, decimals) for lvl, lab in zip(levels, labels)}
-        texts = ax.clabel(lines, levels=[lvl for lvl in lines.levels if lvl in fmt], fmt=fmt,
-                          fontsize=8, inline=True, inline_spacing=8, colors="black")
-        # Level and on a light backing, like the app's; none clipped at the plot's edge
-        margin_x = (extent[1] - extent[0]) * 0.06
-        margin_y = (extent[3] - extent[2]) * 0.04
-        for text in texts:
-            tx, ty = text.get_position()
-            if not (extent[0] + margin_x < tx < extent[1] - margin_x and extent[2] + margin_y < ty < extent[3] - margin_y):
-                text.remove()
-                continue
-            text.set_rotation(0)
-            text.set_bbox(dict(boxstyle="round,pad=0.2", facecolor="white", edgecolor="none", alpha=0.85))
     ax.set_xlim(extent[0], extent[1])
     ax.set_ylim(extent[2], extent[3])
 
@@ -287,6 +274,41 @@ def _draw_contours(fig, ax, values, extent, levels, colors, labels, filled,
     cbar = fig.colorbar(mappable, ax=ax, pad=0.03, boundaries=bounds, ticks=bounds[1:-1])
     cbar.ax.set_yticklabels([_level_text(lvl, lab, decimals) for lvl, lab in zip(levels, labels)])
     cbar.set_label(units, loc="center")
+    # Last, once the colorbar has taken its room, so labels are placed where they'll show
+    if contour_labels:
+        _draw_contour_labels(fig, ax, lines, [_level_text(lvl, lab, decimals) for lvl, lab in zip(levels, labels)])
+
+
+_LABEL_INK = "#16205c"
+
+
+def _draw_contour_labels(fig, ax, lines, texts):
+    """Each level's name on its line, bold in a thin white outline, like the app's.
+
+    Tries a few points along each ring and keeps the first where the label
+    sits inside the plot without covering another, so nested rings don't
+    stack their labels.
+    """
+    renderer = fig.canvas.get_renderer()
+    bounds = ax.get_window_extent(renderer)
+    placed = []
+    for li, (path, text) in enumerate(zip(lines.get_paths(), texts)):
+        for ring in path.to_polygons(closed_only=False):
+            if len(ring) < 12:
+                continue
+            for attempt in range(4):
+                x, y = ring[int(len(ring) * ((0.2 + 0.13 * li + 0.25 * attempt) % 1))]
+                label = ax.text(x, y, text, fontsize=7, fontweight="bold", color=_LABEL_INK,
+                                ha="center", va="center", zorder=3,
+                                path_effects=[patheffects.withStroke(linewidth=2.2, foreground="white")])
+                # Its extent leaves out the outline; pad it, so outlines don't touch
+                box = label.get_window_extent(renderer).padded(3)
+                inside = (box.x0 > bounds.x0 and box.y0 > bounds.y0
+                          and box.x1 < bounds.x1 and box.y1 < bounds.y1)
+                if inside and not any(box.overlaps(other) for other in placed):
+                    placed.append(box)
+                    break
+                label.remove()
 
 
 def _darker(color):
