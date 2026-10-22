@@ -930,9 +930,9 @@ class Room:
             fig=fig, select_id=select_id, title=title,
         )
 
-    def check_lamps(self) -> "SafetyCheckResult":
-        """Check all lamps for safety compliance with skin and eye TLVs."""
-        return check_lamps(self)
+    def check_lamps(self, standard=None) -> "SafetyCheckResult":
+        """Check all lamps against skin and eye TLVs (the room's standard by default)."""
+        return check_lamps(self, standard=standard)
 
     # -------------------- Private helpers (absorbed from Scene) --------------------
 

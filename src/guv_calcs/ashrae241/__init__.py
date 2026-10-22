@@ -1,6 +1,8 @@
 """ASHRAE 241 compliance check."""
 
+from .evaluate import evaluate
 from .inputs import Ashrae241Inputs, Organism, Reference, Statistic
+from .result import Ashrae241Result, Assumption, SourceResult
 from .sources import (
     AirCleaner,
     CleanAirSource,
@@ -24,6 +26,8 @@ from .tables import (
 __all__ = [
     "AirCleaner",
     "Ashrae241Inputs",
+    "Ashrae241Result",
+    "Assumption",
     "CleanAirSource",
     "Filtration",
     "NaturalVentilation",
@@ -31,7 +35,9 @@ __all__ = [
     "OutdoorAir",
     "Reference",
     "SourceContext",
+    "SourceResult",
     "Statistic",
+    "evaluate",
     "source_from_dict",
     "CFM_TO_LPS",
     "Category",

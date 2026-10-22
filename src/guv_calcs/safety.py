@@ -260,7 +260,7 @@ class SafetyCheckResult:
     eye_dimming_for_compliance: float | None = None
 
 
-def check_lamps(room) -> SafetyCheckResult:
+def check_lamps(room, standard=None) -> SafetyCheckResult:
     """
     Check all lamps for safety compliance with skin and eye TLVs.
 
@@ -271,7 +271,7 @@ def check_lamps(room) -> SafetyCheckResult:
     4. Missing spectrum warnings - warns if non-LPHG lamps lack spectral data
 
     Returns a SafetyCheckResult containing compliance status, per-lamp results,
-    and any warnings.
+    and any warnings. TLVs come from `standard`, defaulting to the room's.
     """
     warnings_list: list[SafetyWarning] = []
 
@@ -327,7 +327,7 @@ def check_lamps(room) -> SafetyCheckResult:
     for lamp_id, lamp in room.lamps.items():
         if lamp_id in eye.lamp_cache.keys() and lamp_id in skin.lamp_cache.keys():
             # Fetch the TLVs for this specific lamp
-            tlvs = lamp.get_tlvs(room.standard)
+            tlvs = lamp.get_tlvs(standard or room.standard)
             if tlvs[0] is None or tlvs[1] is None:
                 warnings_list.append(
                     SafetyWarning(
