@@ -20,6 +20,7 @@ from .scene_registry import LampRegistry, ZoneRegistry, SurfaceRegistry, ObjectR
 from .object import Object
 from ._serialization import init_from_dict, migrate_room_dict
 from . import performance
+from .ashrae241 import Ashrae241Inputs, Ashrae241Result, evaluate as evaluate_ashrae241
 
 DEFAULT_DIMS = {}
 for member in list(LengthUnits):
@@ -64,6 +65,7 @@ class Room:
         precision: int = 1,
         colormap: str = "plasma",
         on_collision: str = "increment",  # error | increment | overwrite
+        ashrae241: "Ashrae241Inputs | dict | None" = None,
     ):
 
         ### Identity
@@ -131,6 +133,9 @@ class Room:
         self.air_changes = air_changes
         self.ozone_decay_constant = ozone_decay_constant
         self.precision = precision
+        if isinstance(ashrae241, dict):
+            ashrae241 = Ashrae241Inputs.from_dict(ashrae241)
+        self.ashrae241 = ashrae241
 
         ### Reflectance
         self.ref_manager = ReflectanceManager(
@@ -236,6 +241,7 @@ class Room:
         data["precision"] = self.precision
         data["on_collision"] = self.on_collision
         data["colormap"] = self.colormap
+        data["ashrae241"] = self.ashrae241.to_dict() if self.ashrae241 else None
 
         dct = self.__dict__.copy()
         data["surfaces"] = {
@@ -933,6 +939,12 @@ class Room:
     def check_lamps(self, standard=None) -> "SafetyCheckResult":
         """Check all lamps against skin and eye TLVs (the room's standard by default)."""
         return check_lamps(self, standard=standard)
+
+    def check_ashrae241(self) -> Ashrae241Result:
+        """Check the room against ASHRAE 241 using its `ashrae241` inputs."""
+        if self.ashrae241 is None:
+            raise ValueError("Room has no ASHRAE 241 inputs")
+        return evaluate_ashrae241(self, self.ashrae241)
 
     # -------------------- Private helpers (absorbed from Scene) --------------------
 

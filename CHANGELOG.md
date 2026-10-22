@@ -5,8 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- ashrae241.evaluate: an ASHRAE 241 check of a room, with an airflow verdict (equivalent clean airflow vs. the occupants' requirement, UV from the whole-room fluence) and a UV-safety verdict against ACGIH
-- check_lamps takes an optional `standard`, overriding the room's for the TLVs
+- ASHRAE 241 compliance check: `Room.ashrae241` inputs (saved with the room) and `room.check_ashrae241()`, with an airflow verdict (equivalent clean airflow vs. the occupants' requirement, UV from the whole-room fluence) and a UV-safety verdict against ACGIH; `check_lamps` takes an optional `standard`, overriding the room's for the TLVs
 - plot_plane draws contours: pass `levels` (with optional `colors`, `labels` naming each level, `filled`, `contour_labels`) for filled bands at those levels and a banded colorbar. Holes (outside a polygon room, inside an obstacle) are filled from their nearest cell before tracing, so a level's line runs up to the hole instead of stopping half a cell short
 - plot_plane `show_values` prints each cell's value where it fits, with `decimals`
 - plot_plane `level_fields`: an array per level to trace that level on in place of the values, such as a limit's fraction at each point

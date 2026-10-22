@@ -1,4 +1,5 @@
 from .room import Room, DEFAULT_DIMS
+from .ashrae241 import Ashrae241Inputs
 from .project import Project
 from .object import Object
 from .lamp import Lamp, LampType, GUVType, LampPlacer, Spectrum, sum_spectrum
