@@ -766,8 +766,9 @@ class TestStandardZonesFollowRoom:
         n = room.dim.polygon.n_vertices
         assert eye.geometry.polygon.n_vertices == n
         assert wrf.geometry.polygon.n_vertices == n
-        assert room.dim.polygon.contains_points(eye.coords[:, :2]).all()
-        assert room.dim.polygon.contains_points(wrf.coords[:, :2]).all()
+        poly = room.dim.polygon
+        assert poly.contains_points(eye.coords[:, :2], include_boundary=True).all()
+        assert poly.contains_points(wrf.coords[:, :2], include_boundary=True).all()
         assert eye.height == pytest.approx(convert_length("meters", room.units, height_m))
         assert wrf.geometry.depth == pytest.approx(room.z)
 

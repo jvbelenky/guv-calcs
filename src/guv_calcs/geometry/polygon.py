@@ -236,12 +236,14 @@ class Polygon2D:
         """Check if a point is inside or on the boundary of the polygon."""
         return self.contains_point(x, y) or self.point_on_boundary(x, y, tol)
 
-    def contains_points(self, points: np.ndarray) -> np.ndarray:
+    def contains_points(self, points: np.ndarray, include_boundary: bool = False) -> np.ndarray:
         """
         Check if multiple points are inside the polygon.
 
         Args:
             points: Array of shape (N, 2) with x, y coordinates
+            include_boundary: count points on an edge as inside (see
+                points_in_polygon); otherwise an on-edge point falls either way
 
         Returns:
             Boolean array of shape (N,)
@@ -249,31 +251,10 @@ class Polygon2D:
         points = np.asarray(points)
         if points.ndim == 1:
             points = points.reshape(1, -1)
-
-        n = len(self.vertices)
-        verts = np.array(self.vertices)
-
-        # Vectorized ray casting
-        x, y = points[:, 0], points[:, 1]
-        inside = np.zeros(len(points), dtype=bool)
-
-        j = n - 1
-        for i in range(n):
-            xi, yi = verts[i]
-            xj, yj = verts[j]
-
-            # Check if point is between y coordinates of edge
-            cond1 = (yi > y) != (yj > y)
-            # Check if point is to the left of edge
-            with np.errstate(divide="ignore", invalid="ignore"):
-                x_intersect = (xj - xi) * (y - yi) / (yj - yi) + xi
-            cond2 = x < x_intersect
-
-            # Toggle inside flag for points that cross this edge
-            inside ^= cond1 & cond2
-            j = i
-
-        return inside
+        return points_in_polygon(
+            points[:, 0], points[:, 1], np.array(self.vertices, dtype=float),
+            include_boundary=include_boundary,
+        )
 
     @property
     def is_convex(self) -> bool:
@@ -338,3 +319,47 @@ class Polygon2D:
         """Return a new polygon translated by (dx, dy)."""
         new_verts = tuple((x + dx, y + dy) for x, y in self.vertices)
         return Polygon2D(vertices=new_verts)
+
+
+# Edge tolerance relative to the polygon's size, so a point on an edge is
+# judged the same in every length unit
+_EDGE_TOL = 1e-9
+
+
+def points_in_polygon(px, py, verts, include_boundary=False):
+    """Ray-casting containment for arrays of points against (K, 2) vertices.
+
+    With include_boundary, points within a hair of an edge (relative to the
+    polygon's size) count as inside. Without it, whether a point exactly on
+    an edge counts depends on float noise, which differs between units.
+    """
+    px = np.asarray(px, dtype=float)
+    py = np.asarray(py, dtype=float)
+    K = len(verts)
+    inside = np.zeros(px.shape, dtype=bool)
+    j = K - 1
+    for i in range(K):
+        xi, yi = verts[i]
+        xj, yj = verts[j]
+        cond1 = (yi > py) != (yj > py)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            x_intersect = (xj - xi) * (py - yi) / (yj - yi) + xi
+        inside ^= cond1 & (px < x_intersect)
+        j = i
+
+    if include_boundary:
+        tol = _EDGE_TOL * float(np.ptp(verts, axis=0).max())
+        j = K - 1
+        for i in range(K):
+            x1, y1 = verts[j]
+            x2, y2 = verts[i]
+            dx, dy = x2 - x1, y2 - y1
+            length_sq = dx * dx + dy * dy
+            if length_sq == 0:
+                t = np.zeros(px.shape)
+            else:
+                t = np.clip(((px - x1) * dx + (py - y1) * dy) / length_sq, 0.0, 1.0)
+            dist_sq = (px - (x1 + t * dx)) ** 2 + (py - (y1 + t * dy)) ** 2
+            inside |= dist_sq <= tol * tol
+            j = i
+    return inside

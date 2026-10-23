@@ -163,7 +163,8 @@ class _GridBase:
             return self._cache["_xy_mask"]
         ss, tt = np.meshgrid(self.axes[0].points, self.axes[1].points, indexing="ij")
         points_2d = np.column_stack([ss.ravel(), tt.ravel()])
-        mask = self.polygon.contains_points(points_2d)
+        # a point on the outline is in the zone, in every unit
+        mask = self.polygon.contains_points(points_2d, include_boundary=True)
         self._cache["_xy_mask"] = mask
         return mask
 

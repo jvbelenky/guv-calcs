@@ -57,9 +57,11 @@ class Axis1D:
             return 0.0
         if self.spacing_init is not None and self.spacing_init != 0:
             return min(self.spacing_init, self.span)
-        # derive from num_points (or default num_points)
-        num_points = self.num_points_init or self.default_num_points
-        return self._set_spacing(num_points, self.default_spacing)
+        if self.num_points_init:
+            # divide the span exactly: a rounded spacing would depend on the
+            # number the span happens to be in the current unit
+            return self.span / self.num_points_init
+        return self._set_spacing(self.default_num_points, self.default_spacing)
 
     @property
     def num_points(self):

@@ -13,7 +13,10 @@ def to_polar(x, y, z, units="degrees"):
         theta = np.arccos(-z / r)
 
     theta = np.nan_to_num(theta, nan=0)
-    phi = np.arctan2(y, x)
+    # on the pole the azimuth is undefined; pin it to 0 so float noise (which
+    # differs between length units) can't pick one
+    on_pole = np.hypot(x, y) <= 1e-12 * r
+    phi = np.where(on_pole, 0.0, np.arctan2(y, x))
     phi = np.where(phi < 0, phi + 2 * np.pi, phi)
 
     if units == "degrees":

@@ -2,6 +2,8 @@
 
 import numpy as np
 
+from .polygon import points_in_polygon
+
 
 def compute_transmission(sources, targets, surfaces, exclude=None):
     """Compute transmission factors for rays from sources to targets through surfaces.
@@ -62,7 +64,7 @@ def _ray_polygon_intersect(sources, targets, verts):
     e2 = verts[2] - verts[0]
     normal = np.cross(e1, e2)
     norm_len = np.linalg.norm(normal)
-    if norm_len < 1e-12:
+    if norm_len < 1e-12 * np.linalg.norm(e1) * np.linalg.norm(e2):
         return np.zeros((len(sources), len(targets)), dtype=bool)
     normal = normal / norm_len
 
@@ -77,8 +79,10 @@ def _ray_polygon_intersect(sources, targets, verts):
     denom = target_dots[None, :] - source_dots[:, None]  # (M, N)
     numer = d - source_dots[:, None]  # (M, 1) broadcast to (M, N)
 
-    # Avoid division by zero (ray parallel to plane)
-    parallel = np.abs(denom) < 1e-12
+    # Avoid division by zero (ray parallel to plane); relative to the ray's
+    # length so the cutoff is the same in every unit
+    ray_len = np.linalg.norm(targets[None, :, :] - sources[:, None, :], axis=-1)
+    parallel = np.abs(denom) < 1e-12 * ray_len
     safe_denom = np.where(parallel, 1.0, denom)
     t = numer / safe_denom  # (M, N)
 
@@ -104,28 +108,8 @@ def _ray_polygon_intersect(sources, targets, verts):
     hits_u = np.einsum("ijk,k->ij", hits_rel, u_axis)  # (M, N)
     hits_v = np.einsum("ijk,k->ij", hits_rel, v_axis)  # (M, N)
 
-    # Point-in-polygon test (ray casting, vectorized)
-    inside = _points_in_polygon_2d(hits_u, hits_v, poly_2d)  # (M, N)
+    # A ray meeting the polygon exactly on an edge is blocked, so ties resolve
+    # the same in every unit and light can't slip through where faces meet
+    inside = points_in_polygon(hits_u, hits_v, poly_2d, include_boundary=True)  # (M, N)
 
     return valid_t & inside
-
-
-def _points_in_polygon_2d(px, py, poly):
-    """Vectorized ray-casting point-in-polygon for 2D points."""
-    K = len(poly)
-    inside = np.zeros(px.shape, dtype=bool)
-
-    j = K - 1
-    for i in range(K):
-        xi, yi = poly[i, 0], poly[i, 1]
-        xj, yj = poly[j, 0], poly[j, 1]
-
-        cond1 = (yi > py) != (yj > py)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            x_intersect = (xj - xi) * (py - yi) / (yj - yi) + xi
-        cond2 = px < x_intersect
-
-        inside ^= (cond1 & cond2)
-        j = i
-
-    return inside

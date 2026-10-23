@@ -319,7 +319,11 @@ class Surface:
         rel_surface = differences @ self.plane.basis
         # h = perpendicular distance from zone point to surface (positive = correct side)
         h = -rel_surface[..., 2]
-        safe_h = np.where(h > 0, h, 1.0)
+        # a point in the surface's own plane (an obstacle's base on the floor)
+        # sees none of it; the cutoff is relative to distance so that tie goes
+        # the same way in every unit instead of by float noise
+        facing = h > 1e-9 * np.linalg.norm(rel_surface, axis=-1)
+        safe_h = np.where(facing, h, 1.0)
 
         # analytical form factor: integrate cos(theta)/(pi*d^2) over each element
         # each element spans [-a/2, a/2] x [-b/2, b/2] centered at the element point
@@ -339,7 +343,7 @@ class Surface:
             form_factors += sign * np.arctan2(xi * eta, safe_h * r)
 
         form_factors /= np.pi
-        form_factors[h <= 0] = 0
+        form_factors[~facing] = 0
         return form_factors.astype("float32")
 
 
