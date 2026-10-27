@@ -22,8 +22,9 @@ def wall_frame_of(grid, dims, tol: float = 1e-6) -> WallFrame | None:
     """Find the wall a vertical plane sits on and its place on that wall.
 
     Returns None for a plane that is not vertical or is parallel to no
-    wall. Among parallel walls, the nearest by perpendicular distance from
-    the plane's centroid wins.
+    wall. Among parallel walls the plane's centroid stands in front of
+    (on the room side, within the wall's length), the nearest wins; with
+    none, the nearest by absolute perpendicular distance.
     """
     n = np.asarray(grid.normal, float)
     if abs(n[2]) > tol:
@@ -31,7 +32,7 @@ def wall_frame_of(grid, dims, tol: float = 1e-6) -> WallFrame | None:
     pts = np.asarray(grid.boundary_vertices, float)
     centroid = pts.mean(axis=0)
 
-    best = None
+    candidates = []
     for wall_id, face in dims.faces.items():
         if not isinstance(face, WallFace):
             continue
@@ -46,12 +47,20 @@ def wall_frame_of(grid, dims, tol: float = 1e-6) -> WallFrame | None:
         if abs(alignment) < 1 - tol:
             continue
         dist = float(np.dot(centroid - p1, n_room))
-        if best is None or abs(dist) < abs(best[1]):
-            best = (wall_id, dist, alignment < 0, p1, u_hat)
+        along_c = float(np.dot(centroid - p1, u_hat))
+        eps = tol * max(length, face.z_height)
+        in_front = dist >= -eps and -eps <= along_c <= length + eps
+        candidates.append((in_front, dist, wall_id, alignment < 0, p1, u_hat))
 
-    if best is None:
+    if not candidates:
         return None
-    wall_id, dist, flip, p1, u_hat = best
+    in_front = [c for c in candidates if c[0]]
+    if in_front:
+        # the wall the plane stands in front of, nearest first
+        best = min(in_front, key=lambda c: c[1])
+    else:
+        best = min(candidates, key=lambda c: abs(c[1]))
+    _, dist, wall_id, flip, p1, u_hat = best
     along = (pts - p1) @ u_hat
     verts = tuple((float(a), float(z)) for a, z in zip(along, pts[:, 2]))
     return WallFrame(wall_id, dist, bool(flip), Polygon2D(vertices=verts))

@@ -155,6 +155,21 @@ class TestWallFrameOf:
         assert np.isclose(frame.normal_offset, 0.2)
         assert frame.flip is False
 
+    def test_l_room_picks_wall_in_front(self):
+        dims = RoomDimensions(
+            polygon=Polygon2D(
+                vertices=((0, 0), (6, 0), (6, 3), (3, 3), (3, 6), (0, 6))
+            ),
+            z=3.0,
+        )
+        for y, wall, offset in ((2.0, "wall_0", 2.0), (4.4, "wall_4", 1.6)):
+            g = SurfaceGrid.from_legacy(
+                mins=(0, 0), maxs=(2, 3), height=y, ref_surface="xz", direction=1
+            )
+            frame = wall_frame_of(g, dims)
+            assert frame.wall_id == wall
+            assert np.isclose(frame.normal_offset, offset)
+
     def test_horizontal_plane_returns_none(self):
         g = SurfaceGrid.from_legacy(mins=(0, 0), maxs=(4, 6), height=1.0)
         assert wall_frame_of(g, RECT) is None
