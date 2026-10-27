@@ -525,6 +525,60 @@ class SurfaceGrid(_GridBase):
         )
 
     @classmethod
+    def from_wall_region(cls, p1, p2, z_height, polygon=None,
+                         normal_offset=0.0, flip=False, **kwargs):
+        """Create a plane on part of a vertical wall.
+
+        ``polygon`` is in wall coordinates: (distance along from p1, height
+        above the floor); None means the whole wall. The normal points to
+        the left of p1->p2 (into the room for a CCW outline); ``flip``
+        reverses it. ``normal_offset`` moves the plane along the
+        room-facing normal whatever the flip.
+        """
+        p1 = np.asarray(p1, float)
+        p2 = np.asarray(p2, float)
+        d = p2 - p1
+        length = float(np.hypot(d[0], d[1]))
+        if length < 1e-12:
+            raise ValueError("wall endpoints must differ")
+        if polygon is None:
+            polygon = Polygon2D.rectangle(length, z_height)
+        elif not isinstance(polygon, Polygon2D):
+            polygon = Polygon2D(vertices=tuple(tuple(v) for v in polygon))
+
+        a_min, up_min, a_max, up_max = polygon.bounding_box
+        tol = 1e-6 * max(length, abs(z_height))
+        if (a_min < -tol or up_min < -tol
+                or a_max > length + tol or up_max > z_height + tol):
+            warnings.warn(
+                "wall region outline extends outside the wall "
+                f"[0, {length:g}] x [0, {z_height:g}]",
+                UserWarning,
+            )
+
+        u_hat = np.array([d[0] / length, d[1] / length, 0.0])
+        n_room = np.array([-u_hat[1], u_hat[0], 0.0])
+        base = np.array([p1[0], p1[1], 0.0]) + a_min * u_hat + normal_offset * n_room
+        verts = polygon.vertices
+        if flip:
+            # v points up from the bottom edge: u x v faces away from the room
+            v_vec = (0.0, 0.0, 1.0)
+            origin = base + np.array([0.0, 0.0, up_min])
+            local = tuple((a - a_min, up - up_min) for a, up in verts)
+        else:
+            # as from_wall: v points down from the top edge, u x v faces in
+            v_vec = (0.0, 0.0, -1.0)
+            origin = base + np.array([0.0, 0.0, up_max])
+            local = tuple((a - a_min, up_max - up) for a, up in verts)
+        return cls(
+            polygon=Polygon2D(vertices=local),
+            origin=tuple(float(c) for c in origin),
+            u_vec=tuple(float(c) for c in u_hat),
+            v_vec=v_vec,
+            **kwargs,
+        )
+
+    @classmethod
     def from_points(cls, *, p0, pU, pV, **kwargs):
         origin = np.asarray(p0, float)
         u = np.asarray(pU, float) - p0

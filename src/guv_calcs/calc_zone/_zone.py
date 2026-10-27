@@ -6,7 +6,7 @@ from datetime import timedelta
 from ..calc_manager import LightingCalculator
 from ..geometry import SurfaceGrid, VolumeGrid, GridPoint
 from ._io import export_plane, export_volume, export_point
-from ..geometry import RoomDimensions
+from ..geometry import RoomDimensions, WallFace
 from ..geometry import Polygon2D
 from .._serialization import init_from_dict, deserialize_geometry, migrate_zone_dict, migrate_legacy_zone_geometry
 from ..plane_calc_mode import PlaneCalcMode
@@ -752,6 +752,40 @@ class CalcPlane(CalcZone):
             spacing_init=spacing,
             num_points_init=num_points,
             offset=offset,
+        )
+        return cls(geometry=geometry, **kwargs)
+
+    @classmethod
+    def from_wall_region(
+        cls,
+        wall: str,
+        dims: "RoomDimensions",
+        polygon=None,
+        normal_offset: float = 0.0,
+        flip: bool = False,
+        **kwargs,
+    ):
+        """Create a CalcPlane on part of a wall, the outline in wall
+        coordinates (along from the wall's first vertex, up from the floor).
+
+        Takes ``spacing``, ``num_points`` and ``offset`` like from_face;
+        other kwargs go to the CalcPlane.
+        """
+        face = dims.faces.get(wall)
+        if not isinstance(face, WallFace):
+            raise KeyError(
+                f"{wall} is not a valid wall ID, must be in {dims.wall_ids}"
+            )
+        geometry = SurfaceGrid.from_wall_region(
+            p1=(face.x1, face.y1),
+            p2=(face.x2, face.y2),
+            z_height=face.z_height,
+            polygon=polygon,
+            normal_offset=normal_offset,
+            flip=flip,
+            spacing_init=kwargs.pop("spacing", None),
+            num_points_init=kwargs.pop("num_points", None),
+            offset=kwargs.pop("offset", True),
         )
         return cls(geometry=geometry, **kwargs)
 
