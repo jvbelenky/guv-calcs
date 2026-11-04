@@ -827,6 +827,16 @@ class Room:
 
         return self
 
+    def release_form_factors(self):
+        """Free the cached surface→zone form factors in every zone and
+        surface, keeping all results. Cuts a calculated room's memory by
+        most of its reflectance share; the next calculation recomputes them."""
+        for zone in self.calc_zones.values():
+            zone.calculator.release_form_factors()
+        for surface in self.all_surfaces.values():
+            surface.plane.calculator.release_form_factors()
+        return self
+
     def calculate_by_id(self, zone_id, hard=False):
         """Calculate just the calc zone selected."""
         valid_lamps = self.lamps.valid()

@@ -2,7 +2,7 @@
 
 import pytest
 import numpy as np
-from guv_calcs import CalcPlane, SurfaceGrid, Polygon2D
+from guv_calcs import CalcPlane, SurfaceGrid, Polygon2D, Room, Lamp
 from guv_calcs.reflectance import Surface, ReflectanceManager, init_room_surfaces
 from guv_calcs.geometry import RoomDimensions
 
@@ -234,3 +234,51 @@ class TestReflectanceCacheInvalidation:
         room.calculate()
         slab.move(x=2.5, y=3.5)
         self._assert_matches_hard(room)
+
+
+class TestReleaseFormFactors:
+    def _room(self):
+        room = Room(x=4, y=6, z=2.7, enable_reflectance=True)
+        room.set_reflectance(0.1)
+        room.set_reflectance_num_points(num_x=4, num_y=4)  # coarse: keeps these tests quick
+        room.add_lamp(Lamp.from_keyword("ushio_b1", lamp_id="L1", x=2, y=3, z=2.7, aimx=2, aimy=3, aimz=0))
+        room.add_standard_zones()
+        for zone in room.calc_zones.values():
+            zone.set_spacing(x_spacing=0.5, y_spacing=0.5)
+        return room
+
+    def _cached_form_factor_bytes(self, room):
+        zones = list(room.calc_zones.values()) + [s.plane for s in room.all_surfaces.values()]
+        return sum(
+            e.form_factors.nbytes
+            for z in zones
+            for e in z.calculator.cache.surface_cache.values()
+            if e.form_factors is not None
+        )
+
+    def test_release_keeps_results_and_frees_form_factors(self):
+        room = self._room().calculate()
+        before = {k: z.get_values().copy() for k, z in room.calc_zones.items()}
+        assert self._cached_form_factor_bytes(room) > 0
+        room.release_form_factors()
+        assert self._cached_form_factor_bytes(room) == 0
+        for k, z in room.calc_zones.items():
+            np.testing.assert_array_equal(z.get_values(), before[k])
+
+    def test_recalculation_after_release_matches_a_fresh_room(self):
+        room = self._room().calculate().release_form_factors()
+        room.lamps["L1"].move(x=1.0, y=2.0, z=2.7)
+        room.calculate()
+        fresh = self._room()
+        fresh.lamps["L1"].move(x=1.0, y=2.0, z=2.7)
+        fresh.calculate()
+        for k, z in room.calc_zones.items():
+            np.testing.assert_allclose(z.get_values(), fresh.calc_zones[k].get_values(), rtol=1e-5)
+        assert self._cached_form_factor_bytes(room) > 0  # rebuilt by the recalculation
+
+    def test_unchanged_room_recalculates_after_release(self):
+        room = self._room().calculate()
+        before = {k: z.get_values().copy() for k, z in room.calc_zones.items()}
+        room.release_form_factors().calculate()
+        for k, z in room.calc_zones.items():
+            np.testing.assert_allclose(z.get_values(), before[k], rtol=1e-5)

@@ -1,5 +1,5 @@
 import numpy as np
-from dataclasses import dataclass, field
+from dataclasses import replace, dataclass, field
 import warnings
 from .units import convert_units, LengthUnits
 from .geometry.occlusion import compute_transmission
@@ -62,6 +62,8 @@ class ZoneCache:
         entry = self.surface_cache.get(surface_id)
         if entry is None:
             return True
+        if entry.form_factors is None:
+            return True  # released to save memory; see release_form_factors
         if entry.zone_calc_state != zone_calc_state:
             return True
         if entry.scene_geometry_state != scene_geometry_state:
@@ -179,6 +181,21 @@ class LightingCalculator:
 
         # sum across lamp values
         return self.aggregate(lamps, zv)
+
+    def release_form_factors(self):
+        """Drop the cached surface→zone form factors, keeping the reflected
+        values. They are the bulk of a calculated zone's memory (a volume
+        zone's run to hundreds of MB) and are recomputed on the next
+        calculation, at about a fifth of its cost."""
+        if not self.cache.surface_cache:
+            return
+        self.cache = replace(
+            self.cache,
+            surface_cache={
+                k: replace(entry, form_factors=None)
+                for k, entry in self.cache.surface_cache.items()
+            },
+        )
 
     def compute_reflectance(self, surfaces, zv, enable_occlusion=True, hard=False):
         """Compute total reflected contribution from all surfaces to a zone."""
