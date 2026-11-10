@@ -1183,3 +1183,136 @@ class TestPlacementWithLayout:
         # 12 cm luminous sides, centered in a 12 cm housing: 6 cm above the photometric center
         lamp = Lamp(lamp_id="t", width=0.58, length=0.58, height=0.12)
         assert LampPlacer.ceiling_offset(lamp) == pytest.approx(0.06 + FIXTURE_MARGIN_M)
+
+
+def _aim_in_sight(polygon, pos, aim, samples=200):
+    """Every point from the lamp to its aim point is inside the room."""
+    for t in np.linspace(0.01, 0.99, samples):
+        x, y = pos[0] + (aim[0] - pos[0]) * t, pos[1] + (aim[1] - pos[1]) * t
+        if not polygon.contains_point_inclusive(x, y, tol=1e-6):
+            return False
+    return True
+
+
+CONCAVE_ROOMS = {
+    "L": [(0, 0), (6, 0), (6, 3), (3, 3), (3, 6), (0, 6)],
+    "U": [(0, 0), (9, 0), (9, 6), (6, 6), (6, 2), (3, 2), (3, 6), (0, 6)],
+    "T": [(0, 0), (9, 0), (9, 3), (6, 3), (6, 7), (3, 7), (3, 3), (0, 3)],
+    "Z": [(0, 0), (4, 0), (4, 4), (8, 4), (8, 8), (3, 8), (3, 3), (0, 3)],
+    "slanted": [(0, 0), (8, 0), (8, 2), (5, 5), (5, 9), (0, 9), (0, 6), (3, 4)],
+}
+
+
+class TestAimStaysInTheRoom:
+    """Corner and edge lamps aim at something they can see, in any room shape."""
+
+    @pytest.mark.parametrize("name", sorted(CONCAVE_ROOMS))
+    @pytest.mark.parametrize("mode", ["corner", "edge"])
+    def test_every_position_aims_in_sight(self, name, mode):
+        polygon = Polygon2D(vertices=tuple(CONCAVE_ROOMS[name]))
+        placer = LampPlacer(polygon, z=2.7)
+        first = placer.get_placement(None, mode=mode, position_index=0, offset=0.1, wall_clearance=0.05, angle=0, max_tilt=90)
+        assert first.count >= 4
+        for i in range(first.count):
+            r = placer.get_placement(None, mode=mode, position_index=i, offset=0.1, wall_clearance=0.05, angle=0, max_tilt=90)
+            assert polygon.contains_point(r.x, r.y)
+            assert _aim_in_sight(polygon, (r.x, r.y), (r.aimx, r.aimy)), f"{name} {mode} {i}: {(r.x, r.y)} -> {(r.aimx, r.aimy)}"
+
+    def test_rectangle_corner_still_aims_at_the_opposite_corner(self):
+        polygon = Polygon2D.rectangle(4, 6)
+        pos, aim = new_lamp_position_corner(1, polygon, [])
+        far = max(polygon.vertices, key=lambda v: (v[0] - pos[0]) ** 2 + (v[1] - pos[1]) ** 2)
+        assert aim == pytest.approx(far)
+
+
+class TestObstaclesAndCeiling:
+    """Structures reaching the lamps, ceiling keep-out areas and the tile grid."""
+
+    ROOM = Polygon2D.rectangle(6, 4)
+    COLUMN = [(2.5, 1.5), (3.5, 1.5), (3.5, 2.5), (2.5, 2.5)]
+
+    def test_downlight_keeps_out_of_a_column(self):
+        x, y = LampPlacer(self.ROOM, z=2.7).get_placement(None, mode="downlight", offset=0.1, wall_clearance=0.05, angle=0, max_tilt=0).position
+        assert (x, y) == pytest.approx((3, 2), abs=0.05)  # the centre, where the column stands
+        placer = LampPlacer(self.ROOM, z=2.7, obstacles=[self.COLUMN])
+        r = placer.get_placement(None, mode="downlight", offset=0.1, wall_clearance=0.05, angle=0, max_tilt=0)
+        assert not (2.5 <= r.x <= 3.5 and 1.5 <= r.y <= 2.5)
+        # ...and as far from it as from the walls
+        gap = max(2.5 - r.x, r.x - 3.5, 1.5 - r.y, r.y - 2.5)
+        assert gap > 0.5
+
+    def test_downlight_keeps_out_of_a_keep_out_area(self):
+        placer = LampPlacer(self.ROOM, z=2.7, keep_out=[[(0, 0), (6, 0), (6, 2.5), (0, 2.5)]])
+        r = placer.get_placement(None, mode="downlight", offset=0.1, wall_clearance=0.05, angle=0, max_tilt=0)
+        assert r.y > 2.5
+
+    def test_downlight_goes_to_a_tile_centre(self):
+        grid = (0.1, 0.0, 0.6, 0.6)
+        placer = LampPlacer(self.ROOM, z=2.7, tile_grid=grid)
+        seen = []
+        for _ in range(4):
+            r = placer.get_placement(None, mode="downlight", offset=0.1, wall_clearance=0.05, angle=0, max_tilt=0)
+            assert ((r.x - 0.1) / 0.6) % 1 == pytest.approx(0.5)
+            assert (r.y / 0.6) % 1 == pytest.approx(0.5)
+            assert (r.x, r.y) not in seen
+            seen.append((r.x, r.y))
+            placer.record(r.x, r.y)
+
+    def test_a_tile_grid_too_coarse_for_the_room_falls_back(self):
+        placer = LampPlacer(Polygon2D.rectangle(0.5, 0.5), z=2.7, tile_grid=(0.0, 0.0, 5.0, 5.0))
+        r = placer.get_placement(None, mode="downlight", offset=0.1, wall_clearance=0.05, angle=0, max_tilt=0)
+        assert (r.x, r.y) == pytest.approx((0.25, 0.25), abs=0.01)
+
+    def test_corner_aim_stops_at_a_column(self):
+        column = [(2.0, 1.0), (4.0, 1.0), (4.0, 3.0), (2.0, 3.0)]
+        placer = LampPlacer(self.ROOM, z=2.7, obstacles=[column])
+        col = Polygon2D(vertices=tuple(column))
+        for i in range(4):
+            r = placer.get_placement(None, mode="corner", position_index=i, offset=0.1, wall_clearance=0.05, angle=0, max_tilt=90)
+            for t in np.linspace(0.01, 0.99, 100):
+                x, y = r.x + (r.aimx - r.x) * t, r.y + (r.aimy - r.y) * t
+                assert not col.contains_point(x, y)
+
+    def test_a_corner_in_a_keep_out_area_is_skipped(self):
+        keep = [(0, 0), (1, 0), (1, 1), (0, 1)]
+        placer = LampPlacer(self.ROOM, z=2.7, keep_out=[keep])
+        first = placer.get_placement(None, mode="corner", position_index=0, offset=0.1, wall_clearance=0.05, angle=0, max_tilt=90)
+        assert first.count == 3
+        for i in range(3):
+            r = placer.get_placement(None, mode="corner", position_index=i, offset=0.1, wall_clearance=0.05, angle=0, max_tilt=90)
+            assert not (r.x < 1 and r.y < 1)
+        # Auto placement skips it too, lamp after lamp
+        for _ in range(3):
+            r = placer.get_placement(None, mode="corner", offset=0.1, wall_clearance=0.05, angle=0, max_tilt=90)
+            assert not (r.x < 1 and r.y < 1)
+            placer.record(r.x, r.y)
+
+    def test_an_edge_lamp_avoids_an_obstacle_against_its_wall(self):
+        # A cabinet up to the ceiling against the middle of the south wall
+        cabinet = [(2.0, 0.0), (4.0, 0.0), (4.0, 1.0), (2.0, 1.0)]
+        placer = LampPlacer(self.ROOM, z=2.7, obstacles=[cabinet])
+        first = placer.get_placement(None, mode="edge", position_index=0, offset=0.1, wall_clearance=0.05, angle=0, max_tilt=90)
+        for i in range(first.count):
+            r = placer.get_placement(None, mode="edge", position_index=i, offset=0.1, wall_clearance=0.05, angle=0, max_tilt=90)
+            assert not (2.0 <= r.x <= 4.0 and r.y <= 1.0)
+
+    def test_a_wall_wholly_behind_a_keep_out_area_is_skipped(self):
+        keep = [(0, 0), (6, 0), (6, 0.5), (0, 0.5)]
+        placer = LampPlacer(self.ROOM, z=2.7, keep_out=[keep])
+        first = placer.get_placement(None, mode="edge", position_index=0, offset=0.1, wall_clearance=0.05, angle=0, max_tilt=90)
+        assert first.count == 3
+
+    def test_obstacle_footprints_takes_what_stands_at_the_lamp_height(self):
+        from guv_calcs.object import Object
+        from guv_calcs.lamp.lamp_placement import obstacle_footprints
+
+        column = Object.box(1, 1, 2.7, position=(3, 2, 0))
+        table = Object.box(1, 2, 0.8, position=(1, 1, 0))
+        off = Object.box(1, 1, 2.7, position=(5, 3, 0), enabled=False)
+        turned = Object.box(2, 1, 2.7, position=(1, 3, 0), yaw=90)
+        found = obstacle_footprints([column, table, off, turned], z=2.6)
+        assert len(found) == 2
+        assert sorted(found[0]) == pytest.approx(sorted([(2.5, 1.5), (3.5, 1.5), (3.5, 2.5), (2.5, 2.5)]))
+        xs = [p[0] for p in found[1]]
+        ys = [p[1] for p in found[1]]
+        assert (min(xs), max(xs), min(ys), max(ys)) == pytest.approx((0.5, 1.5, 2.0, 4.0))

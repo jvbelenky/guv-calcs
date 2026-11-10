@@ -108,6 +108,28 @@ class Object:
         poly_data = shape["polygon"]
         return Polygon2D.from_dict(poly_data) if isinstance(poly_data, dict) else poly_data
 
+    def footprint(self):
+        """
+        The object's outline seen from above, with its lowest and highest z, in
+        room coordinates: (vertices, z_min, z_max).
+
+        Upright (no pitch or roll) the outline is the base polygon, turned and
+        moved; tilted, it is the convex hull of the object's corners.
+        """
+        polygon = self._get_polygon()
+        if self._shape["type"] != "box":
+            cx, cy = polygon.centroid
+            polygon = polygon.translate(-cx, -cy)
+        base = np.array([(x, y, 0.0) for x, y in polygon.vertices])
+        top = base + (0.0, 0.0, self._shape["height"])
+        world = np.vstack([base, top]) @ self._rotation.T + np.asarray(self.position, float)
+        z_min, z_max = float(world[:, 2].min()), float(world[:, 2].max())
+        if self._pitch == 0 and self._roll == 0:
+            outline = [(float(x), float(y)) for x, y, _ in world[: len(base)]]
+        else:
+            outline = _convex_hull(world[:, :2])
+        return outline, z_min, z_max
+
     def set_dimensions(self, *, width=None, length=None, height=None):
         """Update shape dimensions in-place, rebuilding surfaces.
 
@@ -614,6 +636,27 @@ class Object:
         self._restore_faces(face_props)
 
         self._rebuild_world_surfaces()
+
+
+def _convex_hull(points):
+    """Convex hull of 2D points, counter-clockwise (monotone chain)."""
+    pts = sorted({(float(x), float(y)) for x, y in points})
+    if len(pts) <= 2:
+        return pts
+
+    def half(seq):
+        out = []
+        for p in seq:
+            while len(out) >= 2 and (
+                (out[-1][0] - out[-2][0]) * (p[1] - out[-2][1])
+                - (out[-1][1] - out[-2][1]) * (p[0] - out[-2][0])
+            ) <= 0:
+                out.pop()
+            out.append(p)
+        return out
+
+    lower, upper = half(pts), half(reversed(pts))
+    return lower[:-1] + upper[:-1]
 
 
 def _rotation_matrix(yaw, pitch, roll):
