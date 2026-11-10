@@ -66,6 +66,77 @@ def _normalize(dx: float, dy: float) -> tuple[float, float]:
     return (dx / length, dy / length) if length > 1e-10 else (0.0, 0.0)
 
 
+def _as_polygon(shape) -> Polygon2D:
+    return shape if isinstance(shape, Polygon2D) else Polygon2D(vertices=tuple(tuple(v) for v in shape))
+
+
+class _PlacementArea:
+    """
+    The room polygon with what stands in it, shaped like the Polygon2D the
+    placement functions take.
+
+    `obstacles` (footprints that reach the lamps' height) block both placement
+    and sightlines; `keep_out` areas (on the ceiling) block placement only.
+    Room edges come first in `edges`, so room edge indices stay valid, and
+    `wall_edges` are the edges a lamp can be mounted on.
+    """
+
+    def __init__(self, polygon: Polygon2D, obstacles=(), keep_out=()):
+        self.room_polygon = polygon
+        self.obstacles = [_as_polygon(o) for o in obstacles]
+        self.keep_out = [_as_polygon(k) for k in keep_out]
+        self.wall_edges = tuple(polygon.edges)
+        self.edges = self.wall_edges + tuple(e for o in self.obstacles for e in o.edges)
+
+    def __getattr__(self, name):
+        # vertices, edge_normals, centroid, bounding_box, nearest_boundary_point...
+        if name == "room_polygon":
+            raise AttributeError(name)
+        return getattr(self.room_polygon, name)
+
+    @property
+    def is_convex(self) -> bool:
+        return self.room_polygon.is_convex and not self.obstacles
+
+    def blocked(self, x: float, y: float) -> bool:
+        """No lamp can go here: inside an obstacle or a keep-out area."""
+        return any(p.contains_point_inclusive(x, y) for p in (*self.obstacles, *self.keep_out))
+
+    def contains_point(self, x: float, y: float) -> bool:
+        return self.room_polygon.contains_point(x, y) and not self.blocked(x, y)
+
+    def contains_points(self, points: np.ndarray, include_boundary: bool = False) -> np.ndarray:
+        mask = self.room_polygon.contains_points(points, include_boundary=include_boundary)
+        for p in (*self.obstacles, *self.keep_out):
+            mask = mask & ~p.contains_points(points, include_boundary=True)
+        return mask
+
+
+def _room_polygon(polygon) -> Polygon2D:
+    return getattr(polygon, "room_polygon", polygon)
+
+
+def _wall_edges(polygon):
+    return getattr(polygon, "wall_edges", polygon.edges)
+
+
+def _is_blocked(polygon, point) -> bool:
+    blocked = getattr(polygon, "blocked", None)
+    return bool(blocked and blocked(point[0], point[1]))
+
+
+def obstacle_footprints(objects, z: float, tol: float = 1e-6) -> list[list[tuple[float, float]]]:
+    """Footprints of the enabled objects standing at height z (those a lamp there cannot share a spot with or see through)."""
+    out = []
+    for obj in objects:
+        if not getattr(obj, "enabled", True):
+            continue
+        footprint, z_min, z_max = obj.footprint()
+        if z_min - tol <= z <= z_max + tol:
+            out.append(footprint)
+    return out
+
+
 def _offset_inward(
     point: tuple[float, float], inward_dir: tuple[float, float], offset: float = 0.05
 ) -> tuple[float, float]:
@@ -154,8 +225,21 @@ class LampPlacer:
         z: float = None,
         existing_positions: list[tuple[float, float]] = None,
         units="meters",
+        obstacles=None,
+        keep_out=None,
+        tile_grid: tuple[float, float, float, float] = None,
     ):
+        """
+        obstacles: footprints (vertex lists or Polygon2D) of what stands in the
+            room up to the lamps' height: no lamp goes inside one, and none is
+            aimed through one.
+        keep_out: areas of the ceiling where no lamp may go.
+        tile_grid: (origin_x, origin_y, tile_width, tile_height) of a ceiling
+            tile grid; downlights go to tile centres.
+        """
         self.polygon = polygon
+        self.area = _PlacementArea(polygon, obstacles or (), keep_out or ()) if (obstacles or keep_out) else polygon
+        self.tile_grid = tuple(tile_grid) if tile_grid else None
         self.z = z
         self.units = LengthUnits.from_any(units)
         self.scale = _per_meter(self.units)  # room units per meter
@@ -183,9 +267,9 @@ class LampPlacer:
         return cls(polygon, z=z, existing_positions=existing, units=units)
 
     @classmethod
-    def for_dims(cls, dims, existing: list[tuple[float, float]] = None) -> "LampPlacer":
+    def for_dims(cls, dims, existing: list[tuple[float, float]] = None, **kwargs) -> "LampPlacer":
         """Create placer from a RoomDimensions object (placement distances follow its units)."""
-        return cls(dims.polygon, z=dims.z, existing_positions=existing, units=dims.units)
+        return cls(dims.polygon, z=dims.z, existing_positions=existing, units=dims.units, **kwargs)
 
     def get_placement(
         self,
@@ -309,7 +393,7 @@ class LampPlacer:
 
     def _place_downlight(self, idx: int, **kwargs) -> PlacementResult:
         x, y = new_lamp_position_downlight(
-            self.polygon, self._existing
+            self.area, self._existing, tile_grid=self.tile_grid
         )
         return PlacementResult(x=x, y=y, aimx=x, aimy=y)
 
@@ -317,7 +401,7 @@ class LampPlacer:
         beam_angle = kwargs.get("beam_angle", 30.0)
         wall_offset = kwargs.get("wall_offset", WALL_OFFSET_M * self.scale)
         (x, y), (aim_x, aim_y) = new_lamp_position_corner(
-            idx, self.polygon, self._existing, beam_angle=beam_angle,
+            idx, self.area, self._existing, beam_angle=beam_angle,
             wall_offset=wall_offset, scale=self.scale,
         )
         return PlacementResult(x=x, y=y, aimx=aim_x, aimy=aim_y)
@@ -325,7 +409,7 @@ class LampPlacer:
     def _place_edge(self, idx: int, **kwargs) -> PlacementResult:
         wall_offset = kwargs.get("wall_offset", WALL_OFFSET_M * self.scale)
         (x, y), (aim_x, aim_y) = new_lamp_position_edge(
-            idx, self.polygon, self._existing, wall_offset=wall_offset, scale=self.scale,
+            idx, self.area, self._existing, wall_offset=wall_offset, scale=self.scale,
         )
         return PlacementResult(x=x, y=y, aimx=aim_x, aimy=aim_y)
 
@@ -363,37 +447,30 @@ class LampPlacer:
         beam_angle = kwargs.get("beam_angle", 30.0)
 
         corners = get_corners(self.polygon)
-        ranked = _rank_corners_by_visibility(self.polygon)
+        ranked = _usable_corners(_rank_corners_by_visibility(self.area), corners, self.area, wall_offset)
         count = len(ranked)
         idx = index % count
 
         corner = corners[ranked[idx]]
-        inward = _get_corner_inward_direction(corner, self.polygon)
-        position = _offset_inward(corner, inward, offset=wall_offset)
-
-        if not self.polygon.contains_point(*position):
-            position = _offset_inward(corner, inward, offset=min(wall_offset, MIN_OFFSET_M * self.scale))
-        if not self.polygon.contains_point(*position):
-            position = corner
-
-        aim = _calculate_corner_aim(position, self.polygon, beam_angle)
+        position = _corner_position(corner, self.area, wall_offset, self.scale)
+        aim = _calculate_corner_aim(position, self.area, beam_angle, vertex=corner)
         return PlacementResult(x=position[0], y=position[1], aimx=aim[0], aimy=aim[1], index=idx, count=count)
 
     def _ranked_edge(self, index: int, **kwargs) -> PlacementResult:
         """Return placement for the Nth-ranked edge."""
         wall_offset = kwargs.get("wall_offset", WALL_OFFSET_M * self.scale)
 
-        ranked = _rank_edges_by_sightline(self.polygon)
+        ranked = _usable_edges(_rank_edges_by_sightline(self.area), self.area, wall_offset)
         count = len(ranked)
         idx = index % count
         chosen_edge_idx = ranked[idx]
 
-        best_pos, _ = _best_position_on_edge(chosen_edge_idx, self.polygon)
+        best_pos, _ = _best_position_on_edge(chosen_edge_idx, self.area, wall_offset=wall_offset)
         outward = self.polygon.edge_normals[chosen_edge_idx]
         inward = (-outward[0], -outward[1])
         position = _offset_inward(best_pos, inward, offset=wall_offset)
 
-        aim = _calculate_edge_perpendicular_aim(position, chosen_edge_idx, self.polygon)
+        aim = _calculate_edge_perpendicular_aim(position, chosen_edge_idx, self.area)
         return PlacementResult(x=position[0], y=position[1], aimx=aim[0], aimy=aim[1], index=idx, count=count)
 
     def _get_beam_angle(self, lamp, default: float = 30.0) -> float:
@@ -414,9 +491,9 @@ class LampPlacer:
     ) -> tuple[float, float]:
         """Apply tilt constraints to aim point."""
         if tilt is not None:
-            return apply_tilt(lamp_pos, aim_point, self.polygon, tilt)
+            return apply_tilt(lamp_pos, aim_point, self.area, tilt)
         elif max_tilt is not None:
-            return clamp_aim_to_max_tilt(lamp_pos, aim_point, max_tilt, self.polygon)
+            return clamp_aim_to_max_tilt(lamp_pos, aim_point, max_tilt, self.area)
         return aim_point
 
     def _nudge_into_bounds(self, lamp, max_iterations: int = 3):
@@ -430,18 +507,20 @@ class LampPlacer:
     def _get_corner_cache(self) -> list:
         """Return cached ranked corner indices, computing on first call."""
         if self._corner_cache is None:
-            self._corner_cache = _rank_corners_by_visibility(self.polygon)
+            self._corner_cache = _rank_corners_by_visibility(self.area)
         return self._corner_cache
 
     def _get_edge_cache(self) -> dict:
         """Return cached edge ranking + best positions, computing on first call."""
         if self._edge_cache is None:
-            edge_centers = get_edge_centers(self.polygon)
+            edge_centers = get_edge_centers(self.area)
             scored = []
             best_positions = {}
             for _, (mx, my, edge_idx) in enumerate(edge_centers):
-                mid_sight = _calculate_sightline_distance((mx, my), edge_idx, self.polygon)
-                best_pos, best_sight = _best_position_on_edge(edge_idx, self.polygon)
+                mid_sight = _calculate_sightline_distance((mx, my), edge_idx, self.area)
+                best_pos, best_sight = _best_position_on_edge(edge_idx, self.area)
+                if best_sight < 0:
+                    continue  # nowhere on this wall is free
                 scored.append((edge_idx, mid_sight, best_sight))
                 best_positions[edge_idx] = best_pos
             scored.sort(key=lambda x: (-x[1], -x[2]))
@@ -455,15 +534,9 @@ class LampPlacer:
     def _get_grid_cache(self) -> dict:
         """Return cached interior grid + boundary distances, computing on first call."""
         if self._grid_cache is None:
-            x_min, y_min, x_max, y_max = self.polygon.bounding_box
-            xp = np.linspace(x_min, x_max, 101)
-            yp = np.linspace(y_min, y_max, 101)
-            xx, yy = np.meshgrid(xp, yp, indexing="ij")
-            all_points = np.column_stack([xx.ravel(), yy.ravel()])
-            inside_mask = self.polygon.contains_points(all_points)
-            candidates = all_points[inside_mask]
+            candidates = _downlight_candidates(self.area, 100, self.tile_grid)
             boundary_dists = np.array(
-                [_distance_to_polygon_boundary(candidates[i], self.polygon)
+                [_distance_to_polygon_boundary(candidates[i], self.area)
                  for i in range(len(candidates))]
             )
             self._grid_cache = {
@@ -528,17 +601,12 @@ class LampPlacer:
             for i, (cx, cy) in enumerate(corners):
                 if hypot(ex - cx, ey - cy) < tolerance:
                     occupied.add(i)
-        available = [i for i in ranked if i not in occupied]
+        available = [i for i in ranked if i not in occupied and _corner_usable(corners[i], self.area, wall_clearance)]
 
         if available:
             corner = corners[available[0]]
-            inward = _get_corner_inward_direction(corner, self.polygon)
-            position = _offset_inward(corner, inward, offset=wall_clearance)
-            if not self.polygon.contains_point(*position):
-                position = _offset_inward(corner, inward, offset=min(wall_clearance, MIN_OFFSET_M * self.scale))
-            if not self.polygon.contains_point(*position):
-                position = corner
-            aim = _calculate_corner_aim(position, self.polygon, beam_angle)
+            position = _corner_position(corner, self.area, wall_clearance, self.scale)
+            aim = _calculate_corner_aim(position, self.area, beam_angle, vertex=corner)
             return PlacementResult(x=position[0], y=position[1], aimx=aim[0], aimy=aim[1])
 
         # All corners occupied — delegate to edge
@@ -565,14 +633,14 @@ class LampPlacer:
                 inward = (-self.polygon.edge_normals[edge_idx][0],
                           -self.polygon.edge_normals[edge_idx][1])
                 position = _offset_inward(best_pos, inward, offset=wall_clearance)
-                aim = _calculate_edge_perpendicular_aim(position, edge_idx, self.polygon)
+                aim = _calculate_edge_perpendicular_aim(position, edge_idx, self.area)
                 return PlacementResult(
                     x=position[0], y=position[1], aimx=aim[0], aimy=aim[1],
                 )
 
         # All edges occupied — farthest perimeter point
         position, aim = _farthest_perimeter_position(
-            self.polygon, self._existing, wall_offset=wall_clearance,
+            self.area, self._existing, wall_offset=wall_clearance,
         )
         return PlacementResult(x=position[0], y=position[1], aimx=aim[0], aimy=aim[1])
 
@@ -752,7 +820,7 @@ class LampPlacer:
             )
 
         if aim_mode == "centroid":
-            cx, cy = _visible_centroid((lx, ly), self.polygon)
+            cx, cy = _visible_centroid((lx, ly), self.area)
             return AimResult(aimx=cx, aimy=cy, aimz=0.0)
 
         if aim_mode == "furthest_edge":
@@ -1120,12 +1188,51 @@ def _angle_to_wall(
     return min(degrees(angle), 90.0)
 
 
+def _segment_clear(a: tuple[float, float], b: tuple[float, float], polygon, samples: int = 16) -> bool:
+    """True when b is in plain sight of a: the segment crosses no edge and stays inside the room."""
+    if _line_intersects_polygon_edge(a, b, polygon, _find_origin_edge(a, polygon)):
+        return False
+    room = _room_polygon(polygon)
+    for i in range(1, samples):
+        t = i / samples
+        x, y = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+        if not room.contains_point_inclusive(x, y) or _is_blocked(polygon, (x, y)):
+            return False
+    return True
+
+
+def _corner_position(corner, polygon, wall_offset: float, scale: float = 1.0) -> tuple[float, float]:
+    """The lamp's spot for a corner: `wall_offset` along its bisector, nearer if that leaves the room."""
+    inward = _get_corner_inward_direction(corner, polygon)
+    position = _offset_inward(corner, inward, offset=wall_offset)
+    if not polygon.contains_point(*position):
+        position = _offset_inward(corner, inward, offset=min(wall_offset, MIN_OFFSET_M * scale))
+    if not polygon.contains_point(*position):
+        position = corner
+    return position
+
+
+def _corner_usable(corner, polygon, wall_offset: float) -> bool:
+    """False when an obstacle or keep-out area takes the corner's spot."""
+    if not hasattr(polygon, "blocked"):
+        return True
+    inward = _get_corner_inward_direction(corner, polygon)
+    return not _is_blocked(polygon, corner) and not _is_blocked(polygon, _offset_inward(corner, inward, offset=wall_offset))
+
+
+def _usable_corners(ranked: list[int], corners, polygon, wall_offset: float) -> list[int]:
+    """The ranked corners a lamp can go in (all of them when none is free)."""
+    usable = [i for i in ranked if _corner_usable(corners[i], polygon, wall_offset)]
+    return usable or ranked
+
+
 def _calculate_corner_aim(
     corner: tuple[float, float],
     polygon: Polygon2D,
     beam_angle: float = 30.0,
     num_candidates: int = 72,
     min_wall_angle: float = 15.0,
+    vertex: tuple[float, float] = None,
 ) -> tuple[float, float]:
     """
     Calculate optimal aim point for a corner-mounted lamp.
@@ -1140,8 +1247,10 @@ def _calculate_corner_aim(
         beam_angle: Lamp beam angle in degrees
         num_candidates: Number of directions to sample
         min_wall_angle: Minimum angle (degrees) from wall direction to consider
+        vertex: The room corner the lamp sits by, when `corner` is offset from
+            it (its two walls are the ones the aim keeps off)
     """
-    edge_dirs = _get_corner_edge_directions(corner, polygon)
+    edge_dirs = _get_corner_edge_directions(vertex if vertex is not None else corner, polygon)
 
     # Get bisector as reference angle for symmetric sampling
     inward = _get_corner_inward_direction(corner, polygon)
@@ -1199,7 +1308,8 @@ def _calculate_corner_aim(
         wall_bonus = min_angle / 90.0
         score = dist_to_corner * (0.5 + 0.5 * wall_bonus)
 
-        if score > best_score:
+        # A far corner round a bend is no target: the aim must be in plain sight
+        if score > best_score and _segment_clear(corner, (vx, vy), polygon):
             best_score = score
             best_point = (vx, vy)
 
@@ -1246,7 +1356,7 @@ def _get_corner_inward_direction(
 
     # Test if bisector points inward (into polygon)
     test_point = (corner[0] + bx * 0.01, corner[1] + by * 0.01)
-    if not polygon.contains_point(*test_point):
+    if not _room_polygon(polygon).contains_point(*test_point):
         # Flip direction
         bx, by = -bx, -by
 
@@ -1292,26 +1402,16 @@ def new_lamp_position_corner(
             if hypot(ex - cx, ey - cy) < tolerance:
                 occupied_corners.add(i)
 
-    available = [i for i in ranked_indices if i not in occupied_corners]
+    available = [
+        i for i in ranked_indices
+        if i not in occupied_corners and _corner_usable(corners[i], polygon, wall_offset)
+    ]
 
     if available:
-        # Place at best available corner
-        corner_idx = available[0]
-        corner = corners[corner_idx]
-
-        # Get inward direction using corner bisector
-        inward = _get_corner_inward_direction(corner, polygon)
-        position = _offset_inward(corner, inward, offset=wall_offset)
-
-        # Verify position is inside polygon; if not, reduce offset
-        if not polygon.contains_point(*position):
-            position = _offset_inward(corner, inward, offset=min(wall_offset, MIN_OFFSET_M * scale))
-
-        # Final check - if still outside, use corner directly
-        if not polygon.contains_point(*position):
-            position = corner
-
-        aim = _calculate_corner_aim(position, polygon, beam_angle)
+        # Place at best available corner, offset along its bisector
+        corner = corners[available[0]]
+        position = _corner_position(corner, polygon, wall_offset, scale)
+        aim = _calculate_corner_aim(position, polygon, beam_angle, vertex=corner)
         return position, aim
     else:
         # All corners occupied, delegate to edge placement
@@ -1330,7 +1430,7 @@ def get_edge_centers(polygon: Polygon2D) -> list[tuple[float, float, int]]:
     Return (x, y, edge_index) for each edge midpoint.
     """
     centers = []
-    for i, ((x1, y1), (x2, y2)) in enumerate(polygon.edges):
+    for i, ((x1, y1), (x2, y2)) in enumerate(_wall_edges(polygon)):
         mx, my = (x1 + x2) / 2, (y1 + y2) / 2
         centers.append((mx, my, i))
     return centers
@@ -1370,10 +1470,19 @@ def _calculate_sightline_distance(
     return hypot(aim[0] - position[0], aim[1] - position[1])
 
 
+def _usable_edges(ranked: list[int], polygon, wall_offset: float = 0.0) -> list[int]:
+    """The ranked walls with a free spot for a lamp (all of them when none has one)."""
+    if not hasattr(polygon, "blocked"):
+        return ranked
+    usable = [i for i in ranked if _best_position_on_edge(i, polygon, wall_offset=wall_offset)[1] >= 0]
+    return usable or ranked
+
+
 def _best_position_on_edge(
     edge_idx: int,
     polygon: Polygon2D,
     num_samples: int = 11,
+    wall_offset: float = 0.0,
 ) -> tuple[tuple[float, float], float]:
     """Find the position on an edge with the longest perpendicular sightline.
 
@@ -1388,15 +1497,31 @@ def _best_position_on_edge(
     # Sample sightlines along the edge
     t_values = [i / (num_samples - 1) for i in range(num_samples)]
     sightlines = []
+    outward = polygon.edge_normals[edge_idx]
+    probe = max(wall_offset, 1e-6 * (hypot(x2 - x1, y2 - y1) or 1.0))
     for t in t_values:
         px = x1 + t * (x2 - x1)
         py = y1 + t * (y2 - y1)
+        # A spot taken by an obstacle or a keep-out area is no place for a lamp
+        if _is_blocked(polygon, (px - outward[0] * probe, py - outward[1] * probe)):
+            sightlines.append(-1.0)
+            continue
         sightlines.append(_calculate_sightline_distance((px, py), edge_idx, polygon))
 
     best_sightline = max(sightlines)
 
-    # Collect all t values that achieve the best sightline, pick their center
-    best_ts = [t for t, s in zip(t_values, sightlines) if abs(s - best_sightline) <= 1e-6]
+    # The longest unbroken run of samples achieving the best sightline; its center
+    # (two runs either side of an obstacle have no common middle to stand in)
+    runs, run = [], []
+    for t, sight in zip(t_values, sightlines):
+        if abs(sight - best_sightline) <= 1e-6:
+            run.append(t)
+        elif run:
+            runs.append(run)
+            run = []
+    if run:
+        runs.append(run)
+    best_ts = max(runs, key=len)
     center_t = (min(best_ts) + max(best_ts)) / 2
 
     best_pos = (x1 + center_t * (x2 - x1), y1 + center_t * (y2 - y1))
@@ -1456,7 +1581,8 @@ def new_lamp_position_edge(
             if _point_to_segment_distance(ex, ey, x1, y1, x2, y2) < tolerance:
                 occupied_edges.add(i)
 
-    available = [i for i in range(len(edge_centers)) if i not in occupied_edges]
+    usable = set(_usable_edges([e[2] for e in edge_centers], polygon, wall_offset))
+    available = [i for i in range(len(edge_centers)) if i not in occupied_edges and edge_centers[i][2] in usable]
 
     if available:
         # Score each edge: midpoint sightline primary, best-position sightline tiebreaker.
@@ -1483,7 +1609,7 @@ def new_lamp_position_edge(
         _, _, edge_idx = edge_centers[best_center_idx]
 
         # Find best position on the chosen edge (may differ from midpoint in concave rooms)
-        best_pos, _ = _best_position_on_edge(edge_idx, polygon)
+        best_pos, _ = _best_position_on_edge(edge_idx, polygon, wall_offset=wall_offset)
 
         # Offset slightly inward from edge
         inward = (-polygon.edge_normals[edge_idx][0], -polygon.edge_normals[edge_idx][1])
@@ -1507,10 +1633,13 @@ def _farthest_perimeter_position(
     best_edge_idx = 0
     best_score = -1.0
 
-    for edge_idx, ((x1, y1), (x2, y2)) in enumerate(polygon.edges):
+    for edge_idx, ((x1, y1), (x2, y2)) in enumerate(_wall_edges(polygon)):
+        outward = polygon.edge_normals[edge_idx]
         for i in range(num_samples_per_edge):
             t = (i + 0.5) / num_samples_per_edge
             px, py = x1 + t * (x2 - x1), y1 + t * (y2 - y1)
+            if _is_blocked(polygon, (px - outward[0] * wall_offset, py - outward[1] * wall_offset)):
+                continue
 
             if existing_positions:
                 min_dist = min(hypot(ex - px, ey - py) for ex, ey in existing_positions)
@@ -1521,6 +1650,11 @@ def _farthest_perimeter_position(
                 best_score = min_dist
                 best_pos = (px, py)
                 best_edge_idx = edge_idx
+
+    if best_pos is None:
+        # Every wall spot is taken by an obstacle or a keep-out area
+        (x1, y1), (x2, y2) = _wall_edges(polygon)[0]
+        best_pos = ((x1 + x2) / 2, (y1 + y2) / 2)
 
     # Offset slightly inward
     inward = (-polygon.edge_normals[best_edge_idx][0], -polygon.edge_normals[best_edge_idx][1])
@@ -1833,10 +1967,35 @@ def _place_points(grid_size, num_points):
     return points
 
 
+def _downlight_candidates(polygon, num_divisions: int = 100, tile_grid=None) -> np.ndarray:
+    """
+    Candidate downlight positions inside the room (and clear of obstacles and
+    keep-out areas): the centres of the ceiling tiles when there is a tile grid
+    with a free tile, otherwise a regular grid over the bounding box.
+    """
+    x_min, y_min, x_max, y_max = polygon.bounding_box
+    if tile_grid is not None:
+        ox, oy, tw, th = tile_grid
+        if tw > 0 and th > 0 and (x_max - x_min) / tw <= 500 and (y_max - y_min) / th <= 500:
+            xp = ox + (np.arange(np.floor((x_min - ox) / tw), np.ceil((x_max - ox) / tw)) + 0.5) * tw
+            yp = oy + (np.arange(np.floor((y_min - oy) / th), np.ceil((y_max - oy) / th)) + 0.5) * th
+            xx, yy = np.meshgrid(xp, yp, indexing="ij")
+            centres = np.column_stack([xx.ravel(), yy.ravel()])
+            centres = centres[polygon.contains_points(centres)]
+            if len(centres):
+                return centres
+    xp = np.linspace(x_min, x_max, num_divisions + 1)
+    yp = np.linspace(y_min, y_max, num_divisions + 1)
+    xx, yy = np.meshgrid(xp, yp, indexing="ij")
+    all_points = np.column_stack([xx.ravel(), yy.ravel()])
+    return all_points[polygon.contains_points(all_points)]
+
+
 def new_lamp_position_downlight(
     polygon: "Polygon2D",
     existing_positions: list[tuple[float, float]] | None = None,
     num_divisions: int = 100,
+    tile_grid: tuple[float, float, float, float] | None = None,
 ) -> tuple[float, float]:
     """
     Get position for downlight placement inside a polygon.
@@ -1853,15 +2012,7 @@ def new_lamp_position_downlight(
         (x, y) position for the new lamp
     """
     existing = existing_positions or []
-    x_min, y_min, x_max, y_max = polygon.bounding_box
-
-    xp = np.linspace(x_min, x_max, num_divisions + 1)
-    yp = np.linspace(y_min, y_max, num_divisions + 1)
-    xx, yy = np.meshgrid(xp, yp, indexing="ij")
-    all_points = np.column_stack([xx.ravel(), yy.ravel()])
-
-    inside_mask = polygon.contains_points(all_points)
-    candidates = all_points[inside_mask]
+    candidates = _downlight_candidates(polygon, num_divisions, tile_grid)
 
     if len(candidates) == 0:
         return polygon.centroid

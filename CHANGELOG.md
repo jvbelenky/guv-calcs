@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- `LampPlacer` takes `obstacles` (footprints of what stands in the room up to the lamps' height: no lamp is placed inside one or aimed through one), `keep_out` (ceiling areas no lamp may go in) and `tile_grid` (downlights go to ceiling tile centres); `obstacle_footprints(objects, z)` and `Object.footprint()` give the footprints of a room's objects.
 - `Room.release_form_factors()` frees the cached surface→zone form factors (most of a calculated room's memory when reflectance is on) while keeping every result; the next calculation recomputes them
 - Calc planes can be built on part of any wall, with an outline drawn in wall coordinates: `SurfaceGrid.from_wall_region`, `CalcPlane.from_wall_region`; `geometry.wall_frame_of` finds the wall a vertical plane sits on and its outline there
 - ASHRAE 241 compliance check: `Room.ashrae241` inputs (saved with the room) and `room.check_ashrae241()`, with an airflow verdict (equivalent clean airflow vs. the occupants' requirement, UV from the whole-room fluence) and a UV-safety verdict against ACGIH; `check_lamps` takes an optional `standard`, overriding the room's for the TLVs
@@ -20,6 +21,7 @@ All notable changes to this project will be documented in this file.
 - plot_plane takes a polygon plane's values as computed (the points inside the outline) again; values already expanded onto the full grid, accepted in 0.10.0, are no longer
 
 ### Fixed
+- Corner lamps in L-, T-, U- and other non-convex rooms no longer aim at a far corner they cannot see (the aim line left the room); the walls a corner lamp keeps its aim off are the corner's own, also when they are not axis-aligned. An edge lamp is no longer placed in the gap between two equally good stretches of its wall.
 - Results no longer depend on the length unit a room is expressed in. Four places let float noise or unit-relative rounding decide: a point count (`num_points_init`) now divides the span exactly instead of searching for a rounded "nice" spacing (17 ft at 25 points was 0.68 ft but the same span in meters got 0.2 m, a 3.5% narrower grid); grid points on a polygon's outline count as inside (`Polygon2D.contains_points(include_boundary=True)`, new `geometry.polygon.points_in_polygon`) and a ray meeting a surface exactly on an edge is blocked, at a tolerance relative to the polygon's size; the reflection form factor's coplanar cutoff (an obstacle's base on the floor) is relative to distance; and a point straight below a lamp gets azimuth 0 rather than one picked by noise. A new slow test calculates an L-shaped room with obstacles and reflectance in every unit and requires the same results
 - Loading a file whose standard zones didn't match its room (a polygon room's zones spanning the bounding box, say) kept those zones, so the points outside the room diluted the averages until the next room edit refitted them. Loading now refits them
 
