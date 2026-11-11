@@ -3,7 +3,7 @@ import copy
 import hashlib
 from dataclasses import dataclass
 from .calc_zone import CalcPlane
-from .calc_manager import apply_plane_filters, view_angles
+from .calc_manager import apply_plane_filters, view_angles, _chunk_rows
 from .geometry import RoomDimensions
 from ._serialization import init_from_dict
 
@@ -256,42 +256,60 @@ class Surface:
             return shape
         return (int(np.prod(shape)), 1)
 
+    def _surface_points(self):
+        """(S, 3) surface point coordinates."""
+        return self.plane.coords.reshape(-1, 3)
+
+    def _incident_values(self):
+        """(S,) incident irradiance per surface point, float64, with the
+        non-finite entries (a point under a lamp that sits on this surface)
+        zeroed, the way a masked sum would drop them."""
+        values = np.ma.masked_invalid(
+            np.asarray(self.plane.values, dtype="float64").reshape(-1)
+        )
+        return np.ma.filled(values, 0.0)
+
     def _calculate_values(self, form_factors, zv):
+        """Reflected irradiance at each zone point: the incident irradiance
+        on each surface point times its form factor to the zone point,
+        summed over the surface, as a (*zone grid) float32 array.
 
-        I_r = self.plane.values.reshape(*self._grid_shape())[
-            :, :, np.newaxis, np.newaxis, np.newaxis
-        ]
+        A volume zone has no angular filters, so the sum is one matrix
+        product and never materialises the (S, Z) product. A plane or point
+        zone weights each (surface point, zone point) pair by its arrival
+        angle, so the product is built and filtered in chunks of surface
+        points (see _chunk_rows).
+        """
+        I_r = self._incident_values()
+        ff = form_factors.reshape(I_r.size, -1)
 
-        values = (I_r * form_factors).astype("float32")
+        if zv.is_volume():
+            values = I_r.astype("float32") @ ff
+            return values.reshape(*zv.num_points)
 
-        # clean nans
-        if (~np.isfinite(values)).any():
-            values = np.ma.masked_invalid(values)
-
-        if not zv.is_volume():
-            theta, elevation, azimuth = self._zone_angles(zv)
-            values = apply_plane_filters(values, theta, zv, elevation, azimuth)
-
-        # Sum over all self.plane points to get total values at each volume point
-        values = np.sum(values, axis=(0, 1))  # Collapse the dimensions
+        values = np.zeros(ff.shape[1], dtype="float32")
+        for rows in _chunk_rows(*ff.shape, bytes_per_entry=_VALUES_BYTES_PER_ENTRY):
+            chunk = (I_r[rows, np.newaxis] * ff[rows]).astype("float32")
+            theta, elevation, azimuth = self._zone_angles(zv, rows)
+            chunk = apply_plane_filters(chunk, theta, zv, elevation, azimuth)
+            values += np.sum(chunk, axis=0)
         return values.reshape(*zv.num_points)
 
-    def _zone_differences(self, zv):
-        """(surface point - zone point) vectors, broadcast to
-        (*surface grid, 1, 1, 1, 3) - (*zone grid, 3)."""
-        surface_points = self.plane.coords.reshape(*self._grid_shape(), 3)
-        zone_points = zv.coords.reshape(*zv.num_points, 3)
-        return (
-            surface_points[:, :, np.newaxis, np.newaxis, np.newaxis, :] - zone_points
-        )
+    def _zone_differences(self, zv, rows=slice(None)):
+        """(surface point - zone point) vectors for the given surface
+        points, shape (rows, Z, 3)."""
+        surface_points = self._surface_points()[rows]
+        zone_points = zv.coords.reshape(-1, 3)
+        return surface_points[:, np.newaxis, :] - zone_points[np.newaxis, :, :]
 
-    def _zone_angles(self, zv):
-        """Angles of light arriving at each zone point from each surface point:
-        (theta, elevation, azimuth) relative to the zone's view direction in
-        view mode, else (theta, None, None) relative to the zone's normal."""
-        differences = self._zone_differences(zv)
+    def _zone_angles(self, zv, rows=slice(None)):
+        """Angles of light arriving at each zone point from each of the given
+        surface points, each (rows, Z) float32: (theta, elevation, azimuth)
+        relative to the zone's view direction in view mode, else
+        (theta, None, None) relative to the zone's normal."""
+        differences = self._zone_differences(zv, rows)
         if zv.has_view_mode():
-            forward = zv.compute_view_normals().reshape(*zv.num_points, 3)
+            forward = zv.compute_view_normals().reshape(-1, 3)
             theta, elevation, azimuth = view_angles(differences, forward)
             return (theta.astype("float32"), elevation.astype("float32"),
                     azimuth.astype("float32"))
@@ -307,13 +325,28 @@ class Surface:
         return theta, None, None
 
     def _calculate_coordinates(self, zv):
-        """Compute analytical patch-to-point form factors.
+        """Compute analytical patch-to-point form factors, shape
+        (*surface grid, *zone grid), float32.
 
         Uses the closed-form integral of cos(theta)/(pi*d^2) over each
         rectangular surface element, eliminating grid-resolution artifacts
         that appear when zone points are close to coarse surface elements.
+
+        The float64 intermediates are about thirty times the size of the
+        result, so the surface points are processed in chunks sized to keep
+        them under _CHUNK_BYTES (see _chunk_rows).
         """
-        differences = self._zone_differences(zv)
+        n_surface = self._surface_points().shape[0]
+        n_zone = zv.coords.reshape(-1, 3).shape[0]
+        form_factors = np.empty((n_surface, n_zone), dtype="float32")
+        for rows in _chunk_rows(n_surface, n_zone, bytes_per_entry=_FORM_FACTOR_BYTES_PER_ENTRY):
+            form_factors[rows] = self._form_factors_for(zv, rows)
+        return form_factors.reshape(*self._grid_shape(), *zv.num_points)
+
+    def _form_factors_for(self, zv, rows):
+        """Form factors from the given surface points to every zone point,
+        shape (rows, Z), float32."""
+        differences = self._zone_differences(zv, rows)
 
         # project into surface local frame: [u, v, normal]
         rel_surface = differences @ self.plane.basis
@@ -345,6 +378,15 @@ class Surface:
         form_factors /= np.pi
         form_factors[~facing] = 0
         return form_factors.astype("float32")
+
+
+# Bytes of intermediates per (surface point, zone point) entry: the
+# difference vectors and their projection (2 x 3 x 8), the distances, the
+# facing mask and safe_h, and the running form factor with the per-corner
+# xi, eta, r and arctan2 temporaries.
+_FORM_FACTOR_BYTES_PER_ENTRY = 144
+# The float32 product, the float64 difference vectors and angle arrays.
+_VALUES_BYTES_PER_ENTRY = 96
 
 
 def init_room_surfaces(

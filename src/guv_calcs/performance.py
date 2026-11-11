@@ -35,25 +35,33 @@ _TIME_EXTRA_PASS = 0.000000047
 # Memory Estimation Coefficients
 # =============================================================================
 
-# Empirically fitted from tracemalloc profiling across 11 configurations.
-# Validated: all reflectance cases overpredict by 1.24-1.34× (conservative).
+# Fitted (non-negative least squares) to the resident-set peak of
+# room.calculate() measured over 20 configurations: rooms 2x2 to 12x15 m,
+# 1-3 lamps, 5-40 surface points per axis, 670-24,000 zone points. Resident
+# memory is what a server is limited on, so the fit is to RSS rather than
+# to tracemalloc. The fitted values were 23 MB, 4.2, 3.5, 412 and 3.7 MB;
+# each is rounded up so the estimate lands at 0.95-1.3x the measured peak
+# for every case above 50 MB (small cases overpredict, which is harmless).
 
-# Per lamp: IES photometry (~66 KB) + spectrum (~112 KB) + metadata
-BYTES_PER_LAMP = 1_000_000
+# Per lamp: IES photometry, spectrum, and the per-zone lamp cache entries.
+BYTES_PER_LAMP = 4_000_000
 
-# Per zone point: zone result arrays + lamp cache overhead
-BYTES_PER_ZONE_POINT = 90
+# Per zone point: result arrays, per-lamp base and filtered values, and the
+# reflected-value temporaries.
+BYTES_PER_ZONE_POINT = 500
 
-# Fixed overhead when reflectance is enabled: manager copies, surface
-# data structures, and intermediate arrays during interreflection.
-# 50 MB keeps worst-case small-room underpredict above 0.89×.
-REFLECTANCE_OVERHEAD = 50_000_000
+# Fixed overhead when reflectance is enabled: the surface managers' deep
+# copies and the bounded chunk of float64 temporaries the solver works in
+# (calc_manager._CHUNK_BYTES).
+REFLECTANCE_OVERHEAD = 30_000_000
 
-# Form factor cache: each (surface_point, zone_point) pair stores
-# a form_factors entry, plus transient angle arrays while reflected values
-# are filtered.  Empirically fitted to 14 bytes/entry
-# (NNLS fit to tracemalloc peak data across 13 reflectance configurations).
-BYTES_PER_FORM_FACTOR_ENTRY = 14
+# Surface→zone form factor cache: one float32 per (surface point, zone
+# point) pair, plus its share of temporaries.
+BYTES_PER_FORM_FACTOR_ENTRY = 5
+
+# Surface↔surface form factor cache for the interreflection passes: one
+# float32 per (surface point, surface point) pair.
+BYTES_PER_SURFACE_PAIR = 4
 
 # Floor: minimum peak estimate regardless of configuration
 MIN_PEAK_BYTES = 10_000_000
@@ -127,20 +135,19 @@ def estimate_calculation_time(room) -> float:
 def estimate_memory(room) -> dict:
     """Estimate peak memory usage (bytes) for a Room during calculation.
 
-    Memory model (empirically calibrated from tracemalloc profiling across
-    29 configurations):
+    Memory model (fitted to the resident-set peak of room.calculate() over
+    20 configurations; see the coefficient comments above):
 
-    - Per lamp: ~1 MB (IES photometry + spectrum + metadata)
-    - Per zone point: 90 bytes (zone result arrays + lamp cache)
-    - Reflectance overhead: 50 MB fixed (manager copies, surface structures)
-    - Form factor cache: 14 bytes per (surface_point × zone_point) entry
+    - Per lamp: 4 MB
+    - Per zone point: 500 bytes
+    - Reflectance overhead: 30 MB fixed (manager copies, solver chunk)
+    - Surface→zone form factors: 5 bytes per (surface point x zone point)
+    - Surface↔surface form factors: 4 bytes per (surface point)^2
     - Floor: 10 MB minimum
 
-    Validated against measured peak memory:
-    - All reflectance configs (86-1357 MB) predicted within [0.89, 1.65]×
-    - Non-reflectance configs (~10 MB) predicted within [0.94, 1.47]×
-    - 14L non-reflectance peak (70.9 MB) underpredicted (temporary lamp
-      arrays spike during calculation) but is irrelevant for OOM prevention.
+    Lands at 0.95-1.3x the measured peak for every fitted case above
+    50 MB. The reflectance share dominates: form factors scale with
+    surface resolution squared (per axis) times zone points.
 
     Args:
         room: A Room instance with lamps, calc_zones, surfaces, and ref_manager.
@@ -166,9 +173,11 @@ def estimate_memory(room) -> dict:
         hasattr(room, 'ref_manager')
         and room.ref_manager.enabled
     )
-    num_surfaces = len(room.surfaces)
+    # Room walls and object faces alike get form factors to every zone
+    all_surfs = room.all_surfaces
+    num_surfaces = len(all_surfs)
     reflectance_grid_points = sum(
-        prod(s.plane.num_points) for s in room.surfaces.values()
+        prod(s.plane.num_points) for s in all_surfs.values()
     )
 
     # Memory estimate
@@ -177,11 +186,10 @@ def estimate_memory(room) -> dict:
 
     reflectance_bytes = 0
     if reflectance_enabled and reflectance_grid_points > 0:
-        # Fixed overhead: manager copies, surface data structures
-        # Form factor cache: refl_points × zone_points × 14 bytes
         reflectance_bytes = (
             REFLECTANCE_OVERHEAD
             + reflectance_grid_points * total_zone_points * BYTES_PER_FORM_FACTOR_ENTRY
+            + reflectance_grid_points ** 2 * BYTES_PER_SURFACE_PAIR
         )
 
     peak_bytes = max(

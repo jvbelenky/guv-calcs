@@ -2,7 +2,7 @@
 
 import pytest
 import numpy as np
-from guv_calcs import CalcPlane, SurfaceGrid, Polygon2D, Room, Lamp
+from guv_calcs import CalcPlane, SurfaceGrid, Polygon2D, Room, Lamp, Object
 from guv_calcs.reflectance import Surface, ReflectanceManager, init_room_surfaces
 from guv_calcs.geometry import RoomDimensions
 
@@ -282,3 +282,76 @@ class TestReleaseFormFactors:
         room.release_form_factors().calculate()
         for k, z in room.calc_zones.items():
             np.testing.assert_allclose(z.get_values(), before[k], rtol=1e-5)
+
+
+class TestReflectanceMemory:
+    """The surface→zone form factors and reflected values are computed in
+    chunks of surface points, so the float64 temporaries stay bounded no
+    matter how fine the surface grid is. Before chunking, one 25x25 surface
+    against the default 25^3 volume needed ~1.1 GB of temporaries for a
+    39 MB result, and six surfaces did that in turn."""
+
+    @staticmethod
+    def _room(objects=False, coarse=False):
+        room = Room(x=4, y=6, z=2.7, enable_reflectance=True)
+        room.set_reflectance(0.1)
+        room.add_lamp(Lamp.from_keyword(
+            "ushio_b1", lamp_id="L1", x=2, y=3, z=2.7, aimx=2, aimy=3, aimz=0))
+        room.add_standard_zones()
+        if coarse:  # keeps the chunk-equivalence test quick
+            room.set_reflectance_num_points(num_x=5, num_y=5)
+            for zone in room.calc_zones.values():
+                zone.set_spacing(x_spacing=0.5, y_spacing=0.5)
+        if objects:
+            room.add_object(Object.box(0.6, 0.6, 0.8, object_id="box", position=(1, 1, 0), R=0.2))
+        return room
+
+    def test_form_factor_peak_is_bounded(self):
+        import tracemalloc
+        room = self._room()
+        room.set_reflectance_num_points(num_x=25, num_y=25, wall_id="floor")
+        floor = room.surfaces["floor"]
+        zv = room.calc_zones["WholeRoomFluence"].to_view()
+        tracemalloc.start()
+        ff = floor._calculate_coordinates(zv)
+        peak = tracemalloc.get_traced_memory()[1]
+        tracemalloc.stop()
+        assert ff.dtype == np.float32
+        assert peak < ff.nbytes + 100 * 2**20, f"peak {peak/2**20:.0f} MB for a {ff.nbytes/2**20:.0f} MB result"
+
+    def test_tiny_chunks_give_the_same_results(self, monkeypatch):
+        import guv_calcs.calc_manager as calc_manager
+        from guv_calcs import CalcPoint
+        def build():
+            room = self._room(objects=True, coarse=True)
+            room.add_calc_zone(CalcPoint.at(
+                (2, 3, 1.0), aim_point=(2, 0, 1.0), zone_id="view",
+                horiz=False, use_normal=True, fov_vert=60, fov_horiz=90))
+            return room
+        default = build().calculate()
+        monkeypatch.setattr(calc_manager, "_CHUNK_BYTES", 16 * 1024)  # one or a few rows per chunk
+        chunked = build().calculate()
+        for k, z in default.calc_zones.items():
+            np.testing.assert_allclose(
+                chunked.calc_zones[k].get_values(), z.get_values(), rtol=1e-5, err_msg=k)
+            np.testing.assert_allclose(
+                chunked.calc_zones[k].result.reflected_values,
+                z.result.reflected_values, rtol=1e-5, err_msg=k)
+
+    def test_volume_values_match_the_elementwise_sum(self):
+        """The volume path is a matrix product; it must equal the plain
+        sum over surface points, with non-finite surface values (the lamp
+        sits on the ceiling) dropped the way a masked sum drops them."""
+        room = self._room()
+        room.ref_manager.calculate_incidence(room.lamps, room.surfaces)
+        ceiling = room.surfaces["ceiling"]
+        base = np.array(ceiling.plane.result.base_values, dtype="float32")
+        base[0, 0], base[3, 4] = np.inf, np.nan
+        ceiling.plane.result.base_values = base
+        assert not np.isfinite(np.asarray(ceiling.plane.values, dtype=float)).all()
+        zv = room.calc_zones["WholeRoomFluence"].to_view()
+        ff = ceiling._calculate_coordinates(zv)
+        values = ceiling._calculate_values(ff, zv)
+        I_r = np.ma.masked_invalid(np.asarray(ceiling.plane.values, dtype="float64").ravel())
+        expected = np.ma.sum(I_r[:, None] * ff.reshape(I_r.size, -1), axis=0)
+        np.testing.assert_allclose(values.ravel(), np.ma.filled(expected, 0.0), rtol=1e-5)

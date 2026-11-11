@@ -221,10 +221,7 @@ class LightingCalculator:
             if RECALC:
                 form_factors = surface._calculate_coordinates(zv)
                 if enable_occlusion:
-                    transmission = compute_transmission(
-                        surface.plane.coords, zv.coords, surfaces, exclude=surface_id
-                    )
-                    form_factors = form_factors * transmission.reshape(form_factors.shape)
+                    _apply_transmission(form_factors, surface, surface_id, zv, surfaces)
             else:
                 entry = self.cache.surface_cache[surface_id]
                 form_factors = entry.form_factors
@@ -443,6 +440,43 @@ class LightingCalculator:
         value_sums = value_sums.squeeze(-1)  # Shape (N, M)
 
         return np.max(value_sums, axis=1)  # Shape (N,)
+
+
+# Transient memory budget for one chunk of a surface→zone computation. The
+# chunk loops size their surface-point slices so that the float64
+# intermediates (several arrays of (rows, zone points) entries) stay under
+# this, whatever the surface resolution. Before chunking, one 25x25 surface
+# against a 25^3 volume needed ~1.1 GB of temporaries for a 39 MB result.
+_CHUNK_BYTES = 48 * 2**20
+
+
+def _chunk_rows(n_rows, n_cols, bytes_per_entry):
+    """Yield row slices of an (n_rows, n_cols) computation whose
+    intermediates, at bytes_per_entry each, fit in _CHUNK_BYTES."""
+    rows = max(1, int(_CHUNK_BYTES // max(1, n_cols * bytes_per_entry)))
+    for start in range(0, n_rows, rows):
+        yield slice(start, min(start + rows, n_rows))
+
+
+def _apply_transmission(form_factors, surface, surface_id, zv, surfaces):
+    """Scale the (surface grid, zone grid) form factors in place by the
+    transmission of the other surfaces along each surface point → zone
+    point ray. Done in chunks of surface points: the ray tests build several
+    float64 (rows, Z, 3) arrays per occluder."""
+    sources = surface.plane.coords.reshape(-1, 3)
+    targets = zv.coords.reshape(-1, 3)
+    flat = form_factors.reshape(sources.shape[0], targets.shape[0])
+    for rows in _chunk_rows(*flat.shape, bytes_per_entry=_TRANSMISSION_BYTES_PER_ENTRY):
+        transmission = compute_transmission(
+            sources[rows], targets, surfaces, exclude=surface_id
+        )
+        flat[rows] *= transmission.astype("float32")
+
+
+# Bytes of ray-test intermediates per (surface point, zone point) pair in
+# compute_transmission: the float64 transmission, the hit test's (rows, Z, 3)
+# direction and hit-point arrays and its boolean masks.
+_TRANSMISSION_BYTES_PER_ENTRY = 128
 
 
 # reused in reflectance.py
